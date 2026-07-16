@@ -1,0 +1,21 @@
+[
+  "building_ratio",
+  "avg_ground_floor_count",
+  "max_ground_floor_count",
+  "floor_area_ratio_proxy",
+  "road_ratio",
+  "zoning_residential_ratio",
+  "zoning_commercial_ratio",
+  "zoning_industrial_ratio",
+  "zoning_green_ratio",
+  "ndvi",
+  "green_ratio",
+  "impervious_ratio",
+  "built_surface_ratio",
+  "nearest_park_distance_m",
+  "park_area_within_500m",
+  "nearest_stream_distance_m",
+  "elevation_m",
+  "slope_deg",
+  "albedo"
+]

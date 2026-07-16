@@ -1,0 +1,1327 @@
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import type { Feature, FeatureCollection, Geometry } from 'geojson';
+import L, { type PathOptions } from 'leaflet';
+import {
+  GeoJSON,
+  MapContainer,
+  Marker,
+  ScaleControl,
+  TileLayer,
+  useMap,
+  useMapEvents,
+  ZoomControl
+} from 'react-leaflet';
+import {
+  ApiRequestError,
+  getDistrictResolutionGrid,
+  getGeoJson,
+  getResolutionGrid,
+  simulateGridPolicy
+} from '../services/api';
+import type {
+  GridAnalysisProperties,
+  GridResolution,
+  LayerKey,
+  PolicyOptionKey,
+  SimulationResponse
+} from '../types/dashboard';
+
+const ALL_DISTRICTS = '전체';
+const DEFAULT_DISTRICT = ALL_DISTRICTS;
+const DEFAULT_LAYER: LayerKey = 'priority_score';
+const DEFAULT_GRID_RESOLUTION: GridResolution = '100m';
+const DEFAULT_CENTER: [number, number] = [37.5665, 126.978];
+const SEOUL_OVERVIEW_ZOOM = 11;
+const DISTRICT_DETAIL_ZOOM = 13;
+const DISTRICT_OVERVIEW_ZOOM = 12;
+const ANALYSIS_PERIOD_LABEL = '분석 기준: 2023~2025년 여름철 평균';
+const DATA_PENDING = '데이터 준비중';
+const NEUTRAL_COLOR = '#d7dce3';
+const SIMULATION_GRID_NOTICE =
+  '시뮬레이션은 100m 격자 선택 시 가능합니다. 250m/500m 격자는 분석 결과 조회용입니다.';
+
+interface DistrictOption {
+  district: string;
+  sigCode: string;
+  center: [number, number];
+  labelCenter: [number, number];
+}
+
+interface LayerOption {
+  key: LayerKey;
+  label: string;
+  help: string;
+}
+
+interface DetailField {
+  key: keyof GridAnalysisProperties;
+  label: string;
+}
+
+interface PolicyOption {
+  key: PolicyOptionKey;
+  label: string;
+}
+
+interface GridResolutionOption {
+  key: GridResolution;
+  label: string;
+}
+
+interface SimulationInputValues {
+  greenRatioPercent: number;
+  imperviousReductionPercent: number;
+  parkAreaM2: number;
+}
+
+interface SimulationPolicyChange {
+  key: PolicyOptionKey;
+  label: string;
+  value: string;
+}
+
+const HEAT_ISLAND_INDICATORS: LayerOption[] = [
+  { key: 'priority_score', label: '개선 우선순위', help: 'priority_score 0~100' },
+  { key: 'mean_actual_anomaly', label: '현재 열 위험', help: '구 평균 대비 온도 편차' },
+  { key: 'mean_actual_lst', label: '실제 지표면온도', help: 'mean_actual_lst' },
+  { key: 'green_delta_c', label: '시나리오 저감효과', help: 'green_delta_c, 음수는 냉각' },
+  { key: 'green_ratio', label: '녹지율', help: 'green_ratio' },
+  { key: 'ndvi', label: '식생지수', help: 'ndvi' },
+  { key: 'building_ratio', label: '건물 비율', help: 'building_ratio' },
+  { key: 'impervious_ratio', label: '불투수면 비율', help: 'impervious_ratio' },
+  { key: 'nearest_shelter_distance_m', label: '쉼터 접근성', help: 'nearest_shelter_distance_m' }
+];
+
+const GRID_DETAIL_FIELDS: DetailField[] = [
+  { key: 'grid_id', label: 'grid_id' },
+  { key: 'display_grid_id', label: 'display_grid_id' },
+  { key: 'gu_name', label: 'gu_name' },
+  { key: 'priority_score', label: 'priority_score' },
+  { key: 'priority_rank', label: 'priority_rank' },
+  { key: 'mean_actual_lst', label: 'mean_actual_lst' },
+  { key: 'mean_actual_anomaly', label: 'mean_actual_anomaly' },
+  { key: 'seoul_anomaly', label: 'seoul_anomaly' },
+  { key: 'pred_anomaly', label: 'pred_anomaly' },
+  { key: 'pred_anomaly_std', label: 'pred_anomaly_std' },
+  { key: 'green_delta_c', label: 'green_delta_c' },
+  { key: 'building_form_group', label: 'building_form_group' },
+  { key: 'est_population', label: 'est_population' },
+  { key: 'est_elderly', label: 'est_elderly' },
+  { key: 'nearest_shelter_distance_m', label: 'nearest_shelter_distance_m' },
+  { key: 'shelter_count_within_500m', label: 'shelter_count_within_500m' },
+  { key: 'shelter_capacity_within_500m', label: 'shelter_capacity_within_500m' },
+  { key: 'green_ratio', label: 'green_ratio' },
+  { key: 'ndvi', label: 'ndvi' },
+  { key: 'building_ratio', label: 'building_ratio' },
+  { key: 'impervious_ratio', label: 'impervious_ratio' },
+  { key: 'built_surface_ratio', label: 'built_surface_ratio' },
+  { key: 'avg_ground_floor_count', label: 'avg_ground_floor_count' },
+  { key: 'elevation_m', label: 'elevation_m' },
+  { key: 'albedo', label: 'albedo' },
+  { key: 'nearest_park_distance_m', label: 'nearest_park_distance_m' },
+  { key: 'park_area_within_500m', label: 'park_area_within_500m' },
+  { key: 'nearest_stream_distance_m', label: 'nearest_stream_distance_m' },
+  { key: 'top1_feature', label: 'top1_feature' },
+  { key: 'top1_shap', label: 'top1_shap' },
+  { key: 'top2_feature', label: 'top2_feature' },
+  { key: 'top2_shap', label: 'top2_shap' },
+  { key: 'top3_feature', label: 'top3_feature' },
+  { key: 'top3_shap', label: 'top3_shap' }
+];
+
+const POLICY_OPTIONS: PolicyOption[] = [
+  { key: 'green_ratio_increase', label: '녹지율 증가' },
+  { key: 'impervious_ratio_reduction', label: '불투수면 저감' },
+  { key: 'park_area_expansion', label: '공원 면적 확충' }
+];
+
+const DEFAULT_POLICY_OPTIONS: PolicyOptionKey[] = [
+  'green_ratio_increase',
+  'impervious_ratio_reduction',
+  'park_area_expansion'
+];
+
+const GRID_RESOLUTION_OPTIONS: GridResolutionOption[] = [
+  { key: '100m', label: '100M' },
+  { key: '250m', label: '250M' },
+  { key: '500m', label: '500M' }
+];
+
+const DISTRICT_LABEL_CENTER_OVERRIDES: Record<string, [number, number]> = {
+  종로구: [37.576, 126.982]
+};
+
+const DEFAULT_SIMULATION_INPUTS: SimulationInputValues = {
+  greenRatioPercent: 5,
+  imperviousReductionPercent: 5,
+  parkAreaM2: 1000
+};
+
+function getFeatureProperties(feature?: Feature<Geometry>): GridAnalysisProperties {
+  return (feature?.properties ?? {}) as GridAnalysisProperties;
+}
+
+function getDistrictName(feature: Feature<Geometry>) {
+  const properties = getFeatureProperties(feature);
+  if (typeof properties.district === 'string') return properties.district;
+  if (typeof properties.gu_name === 'string') return properties.gu_name;
+  return '';
+}
+
+function getDistrictCode(feature: Feature<Geometry>) {
+  const properties = getFeatureProperties(feature);
+  if (typeof properties.sig_cd === 'string') return properties.sig_cd;
+  if (typeof properties.gu_code === 'string' || typeof properties.gu_code === 'number') {
+    return String(properties.gu_code);
+  }
+  return '';
+}
+
+function getResolutionMeters(resolution: GridResolution) {
+  return Number(resolution.replace('m', ''));
+}
+
+function getFeatureGuCode(feature: Feature<Geometry>) {
+  const properties = getFeatureProperties(feature);
+  const guCode = properties.gu_code ?? properties.sig_cd;
+  return typeof guCode === 'string' || typeof guCode === 'number' ? String(guCode) : '';
+}
+
+function filterGridByDistrict(geoJson: FeatureCollection, sigCode: string) {
+  return {
+    ...geoJson,
+    features: geoJson.features.filter((feature) =>
+      getFeatureGuCode(feature as Feature<Geometry>) === sigCode
+    )
+  };
+}
+
+function collectLngLatPairs(input: unknown, pairs: Array<[number, number]> = []) {
+  if (!Array.isArray(input)) {
+    return pairs;
+  }
+
+  if (
+    input.length >= 2 &&
+    typeof input[0] === 'number' &&
+    typeof input[1] === 'number' &&
+    Number.isFinite(input[0]) &&
+    Number.isFinite(input[1])
+  ) {
+    pairs.push([input[0], input[1]]);
+    return pairs;
+  }
+
+  input.forEach((item) => collectLngLatPairs(item, pairs));
+  return pairs;
+}
+
+function getFeatureCenter(feature: Feature<Geometry>): [number, number] {
+  const pairs =
+    feature.geometry.type === 'GeometryCollection'
+      ? feature.geometry.geometries.flatMap((geometry) =>
+          'coordinates' in geometry ? collectLngLatPairs(geometry.coordinates) : []
+        )
+      : collectLngLatPairs(feature.geometry.coordinates);
+
+  if (pairs.length === 0) {
+    return DEFAULT_CENTER;
+  }
+
+  const totals = pairs.reduce(
+    (result, [lng, lat]) => ({
+      lng: result.lng + lng,
+      lat: result.lat + lat
+    }),
+    { lng: 0, lat: 0 }
+  );
+
+  return [totals.lat / pairs.length, totals.lng / pairs.length];
+}
+
+function buildDistrictOptions(geoJson: FeatureCollection | null): DistrictOption[] {
+  return (geoJson?.features ?? [])
+    .map((feature) => {
+      const typedFeature = feature as Feature<Geometry>;
+      const district = getDistrictName(typedFeature);
+      const sigCode = getDistrictCode(typedFeature);
+      const center = getFeatureCenter(typedFeature);
+
+      return {
+        district,
+        sigCode,
+        center,
+        labelCenter: DISTRICT_LABEL_CENTER_OVERRIDES[district] ?? center
+      };
+    })
+    .filter((option) => option.district && option.sigCode);
+}
+
+function getLayerLabel(layer: LayerKey) {
+  return HEAT_ISLAND_INDICATORS.find((indicator) => indicator.key === layer)?.label ?? layer;
+}
+
+function getNumericProperty(properties: GridAnalysisProperties, key: LayerKey) {
+  const value = properties[key];
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function getGridIdentifier(properties: GridAnalysisProperties | null) {
+  if (!properties) {
+    return DATA_PENDING;
+  }
+
+  return properties.grid_id ?? properties.display_grid_id ?? DATA_PENDING;
+}
+
+function formatNumber(value: number, digits = 1) {
+  return Number.isFinite(value) ? value.toFixed(digits) : DATA_PENDING;
+}
+
+function formatAnyProperty(properties: GridAnalysisProperties | null, key: keyof GridAnalysisProperties) {
+  if (!properties) {
+    return DATA_PENDING;
+  }
+
+  const value = properties[key];
+
+  if (value === undefined || value === null || value === '') {
+    return DATA_PENDING;
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return DATA_PENDING;
+    if (
+      key === 'green_ratio' ||
+      key === 'building_ratio' ||
+      key === 'impervious_ratio' ||
+      key === 'built_surface_ratio' ||
+      key === 'dong_elderly_ratio'
+    ) {
+      return `${formatNumber(value * 100, 1)}%`;
+    }
+    if (key === 'ndvi' || key === 'albedo') return formatNumber(value, 2);
+    if (
+      key === 'mean_actual_lst' ||
+      key === 'mean_actual_anomaly' ||
+      key === 'green_delta_c' ||
+      key === 'seoul_anomaly' ||
+      key === 'pred_anomaly' ||
+      key === 'pred_anomaly_std'
+    ) {
+      return `${formatNumber(value, 1)}℃`;
+    }
+    if (
+      key === 'nearest_park_distance_m' ||
+      key === 'nearest_stream_distance_m' ||
+      key === 'nearest_shelter_distance_m' ||
+      key === 'elevation_m'
+    ) {
+      return `${formatNumber(value, 0)}m`;
+    }
+    if (key === 'park_area_within_500m' || key === 'area_m2') {
+      return `${formatNumber(value, 0)}㎡`;
+    }
+    if (key === 'top1_shap' || key === 'top2_shap' || key === 'top3_shap') {
+      return formatNumber(value, 3);
+    }
+
+    return Number.isInteger(value) ? value.toLocaleString() : formatNumber(value, 1);
+  }
+
+  return String(value);
+}
+
+function formatLayerProperty(properties: GridAnalysisProperties | null, layer: LayerKey) {
+  return formatAnyProperty(properties, layer);
+}
+
+function colorByScore(value: number, highIsRisk = true) {
+  if (highIsRisk) {
+    if (value >= 80) return '#cf3f3f';
+    if (value >= 60) return '#f29a4b';
+    if (value >= 40) return '#f2cf5b';
+    return '#6fbf73';
+  }
+
+  if (value >= 80) return '#2f855a';
+  if (value >= 60) return '#78b66a';
+  if (value >= 40) return '#f2cf5b';
+  return '#cf3f3f';
+}
+
+function colorByRatio(value: number, highIsRisk: boolean) {
+  if (highIsRisk) {
+    if (value >= 0.7) return '#cf3f3f';
+    if (value >= 0.5) return '#f29a4b';
+    if (value >= 0.3) return '#f2cf5b';
+    return '#6fbf73';
+  }
+
+  if (value >= 0.35) return '#2f855a';
+  if (value >= 0.22) return '#78b66a';
+  if (value >= 0.12) return '#f2cf5b';
+  return '#cf3f3f';
+}
+
+function colorByLayerValue(properties: GridAnalysisProperties, layer: LayerKey) {
+  const value = getNumericProperty(properties, layer);
+
+  if (value === null) {
+    return NEUTRAL_COLOR;
+  }
+
+  if (layer === 'priority_score') return colorByScore(value);
+  if (layer === 'mean_actual_lst') {
+    if (value >= 41) return '#cf3f3f';
+    if (value >= 38) return '#f29a4b';
+    if (value >= 35) return '#f2cf5b';
+    return '#6fbf73';
+  }
+  if (layer === 'mean_actual_anomaly') {
+    if (value >= 3) return '#cf3f3f';
+    if (value >= 1.5) return '#f29a4b';
+    if (value >= 0) return '#f2cf5b';
+    return '#6fbf73';
+  }
+  if (layer === 'green_delta_c') {
+    if (value <= -2) return '#2f855a';
+    if (value < -1) return '#75c8a2';
+    if (value < 0) return '#b9dce8';
+    if (value === 0) return NEUTRAL_COLOR;
+    return '#cf3f3f';
+  }
+  if (layer === 'green_ratio' || layer === 'ndvi') return colorByRatio(value, false);
+  if (layer === 'building_ratio' || layer === 'impervious_ratio') return colorByRatio(value, true);
+  if (layer === 'nearest_shelter_distance_m') {
+    if (value <= 250) return '#2f855a';
+    if (value <= 500) return '#78b66a';
+    if (value <= 1000) return '#f2cf5b';
+    return '#cf3f3f';
+  }
+
+  return NEUTRAL_COLOR;
+}
+
+function getBoundaryStyle(
+  feature: Feature<Geometry> | undefined,
+  selectedDistrict: string,
+  selectedLayer: LayerKey,
+  isDistrictOverview: boolean
+): PathOptions {
+  const districtName = feature ? getDistrictName(feature) : '';
+  const isSelected = districtName === selectedDistrict;
+  const properties = feature ? getFeatureProperties(feature) : {};
+  const fillColor = colorByLayerValue(properties, selectedLayer);
+  const hasLayerValue = getNumericProperty(properties, selectedLayer) !== null;
+
+  if (isDistrictOverview) {
+    return {
+      color: isSelected ? '#063f25' : '#1f2933',
+      fillColor,
+      fillOpacity: hasLayerValue ? (isSelected ? 0.68 : 0.5) : 0.18,
+      opacity: isSelected ? 1 : 0.72,
+      weight: isSelected ? 3.2 : 1.4
+    };
+  }
+
+  return {
+    color: isSelected ? '#0a7a3d' : '#1f2933',
+    fillColor: isSelected ? '#b7e4cf' : '#ffffff',
+    fillOpacity: isSelected ? 0.1 : 0.02,
+    opacity: isSelected ? 1 : 0.5,
+    weight: isSelected ? 3.2 : 1.5
+  };
+}
+
+function makeDistrictLabel(district: DistrictOption) {
+  return L.divIcon({
+    className: 'districtLabelIcon',
+    html: `<span class="districtLabelName">${district.district}</span>`,
+    iconSize: [92, 24],
+    iconAnchor: [46, 12]
+  });
+}
+
+function buildDistrictTooltip(feature: Feature<Geometry>, selectedLayer: LayerKey) {
+  const properties = getFeatureProperties(feature);
+  const district = getDistrictName(feature);
+
+  return `
+    <div class="districtTempTooltipBody">
+      <strong>${district}</strong>
+      <span>${getLayerLabel(selectedLayer)} ${formatLayerProperty(properties, selectedLayer)}</span>
+      <small>구 단위 ML 속성은 향후 GeoJSON properties로 제공 예정</small>
+    </div>
+  `;
+}
+
+function buildGridTooltip(feature: Feature<Geometry>, layer: LayerKey, gridMeters: number) {
+  const properties = getFeatureProperties(feature);
+  const gridSize = formatAnyProperty(properties, 'grid_size_m');
+  const sizeLabel = gridSize === DATA_PENDING ? `${gridMeters}m` : `${gridSize}m`;
+
+  return `
+    <div class="districtTempTooltipBody">
+      <strong>${formatAnyProperty(properties, 'gu_name')} ${sizeLabel} 격자</strong>
+      <span>${getLayerLabel(layer)} ${formatLayerProperty(properties, layer)}</span>
+      <small>${getGridIdentifier(properties)} · 면적 ${formatAnyProperty(properties, 'area_m2')}</small>
+    </div>
+  `;
+}
+
+function ZoomLevelWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
+  useMapEvents({
+    zoomend: (event) => {
+      onZoomChange(event.target.getZoom());
+    }
+  });
+
+  return null;
+}
+
+function MapFocus({ center, zoom }: { center: [number, number]; zoom: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setView(center, zoom, { animate: true });
+  }, [center, zoom, map]);
+
+  return null;
+}
+
+function LoadingContent({ message }: { message: string }) {
+  return (
+    <div className="mapLoadingCard">
+      <span className="mapLoadingSpinner" aria-hidden="true" />
+      <strong>{message}</strong>
+      <small>분석 격자와 지도 레이어를 준비하고 있습니다</small>
+    </div>
+  );
+}
+
+export function MapDashboard() {
+  const [geoJson, setGeoJson] = useState<FeatureCollection | null>(null);
+  const [gridGeoJson, setGridGeoJson] = useState<FeatureCollection | null>(null);
+  const [selectedDistrict, setSelectedDistrict] = useState(DEFAULT_DISTRICT);
+  const [selectedLayer, setSelectedLayer] = useState<LayerKey>(DEFAULT_LAYER);
+  const [selectedGridResolution, setSelectedGridResolution] =
+    useState<GridResolution>(DEFAULT_GRID_RESOLUTION);
+  const [selectedGridProperties, setSelectedGridProperties] =
+    useState<GridAnalysisProperties | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(SEOUL_OVERVIEW_ZOOM);
+  const [loading, setLoading] = useState(true);
+  const [gridLoading, setGridLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getGeoJson()
+      .then((geoJsonData) => setGeoJson(geoJsonData))
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : '데이터 요청 실패');
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const districts = useMemo(() => buildDistrictOptions(geoJson), [geoJson]);
+  const isAllDistricts = selectedDistrict === ALL_DISTRICTS;
+  const selectedDistrictMeta = districts.find((district) => district.district === selectedDistrict);
+  const districtCodeByName = useMemo(
+    () => new Map(districts.map((district) => [district.district, district.sigCode])),
+    [districts]
+  );
+
+  useEffect(() => {
+    setSelectedGridProperties(null);
+
+    if (isAllDistricts) {
+      let isActive = true;
+
+      setGridLoading(true);
+      getResolutionGrid(selectedGridResolution)
+        .then((data) => {
+          if (isActive) {
+            setGridGeoJson(data);
+          }
+        })
+        .catch((requestError: unknown) => {
+          if (isActive) {
+            setGridGeoJson(null);
+            setError(requestError instanceof Error ? requestError.message : '서울 전체 격자 데이터 요청 실패');
+          }
+        })
+        .finally(() => {
+          if (isActive) {
+            setGridLoading(false);
+          }
+        });
+
+      return () => {
+        isActive = false;
+      };
+    }
+
+    const sigCode = districtCodeByName.get(selectedDistrict);
+
+    if (!sigCode) {
+      setGridGeoJson(null);
+      setGridLoading(false);
+      return;
+    }
+
+    let isActive = true;
+
+    setGridLoading(true);
+    getDistrictResolutionGrid(selectedGridResolution, sigCode, selectedDistrict)
+      .then((data) => {
+        if (isActive) {
+          setGridGeoJson(
+            selectedGridResolution === '500m' ? filterGridByDistrict(data, sigCode) : data
+          );
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (isActive) {
+          setGridGeoJson(null);
+          setError(requestError instanceof Error ? requestError.message : '격자 데이터 요청 실패');
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setGridLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [districtCodeByName, isAllDistricts, selectedDistrict, selectedGridResolution]);
+
+  const center = selectedDistrictMeta?.center ?? DEFAULT_CENTER;
+  const targetZoom = isAllDistricts ? SEOUL_OVERVIEW_ZOOM : DISTRICT_DETAIL_ZOOM;
+  const isDistrictOverview = isAllDistricts || zoomLevel <= DISTRICT_OVERVIEW_ZOOM;
+  const gridCount = gridGeoJson?.features.length ?? 0;
+  const gridMeters = getResolutionMeters(selectedGridResolution);
+
+  return (
+    <div className="gisShell">
+      {loading && (
+        <div className="gisState">
+          <LoadingContent message="지도 데이터 로딩 중" />
+        </div>
+      )}
+      {error && <div className="gisState errorText">{error}</div>}
+      {!loading && !error && geoJson && (
+        <MapContainer
+          center={center}
+          zoom={SEOUL_OVERVIEW_ZOOM}
+          minZoom={11}
+          className="gisMap"
+          zoomControl={false}
+          scrollWheelZoom
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <ZoomLevelWatcher onZoomChange={setZoomLevel} />
+          <MapFocus center={center} zoom={targetZoom} />
+          <GeoJSON
+            key={`${selectedDistrict}-${selectedLayer}-${isDistrictOverview}`}
+            data={geoJson}
+            interactive={isDistrictOverview}
+            style={(feature) =>
+              getBoundaryStyle(
+                feature as Feature<Geometry>,
+                selectedDistrict,
+                selectedLayer,
+                isDistrictOverview
+              )
+            }
+            onEachFeature={(feature, layer) => {
+              const typedFeature = feature as Feature<Geometry>;
+              const districtName = getDistrictName(typedFeature);
+
+              if (isDistrictOverview) {
+                layer.bindTooltip(buildDistrictTooltip(typedFeature, selectedLayer), {
+                  className: 'districtTempTooltip',
+                  direction: 'top',
+                  opacity: 1,
+                  sticky: true
+                });
+              }
+
+              layer.on({
+                click: () => setSelectedDistrict(districtName),
+                mouseover: () => {
+                  if (isDistrictOverview) {
+                    (layer as L.Path).setStyle({
+                      fillOpacity: 0.32,
+                      opacity: 1,
+                      weight: 3.4
+                    });
+                  }
+                },
+                mouseout: () => {
+                  if (isDistrictOverview) {
+                    (layer as L.Path).setStyle(
+                      getBoundaryStyle(
+                        typedFeature,
+                        selectedDistrict,
+                        selectedLayer,
+                        isDistrictOverview
+                      )
+                    );
+                  }
+                }
+              });
+            }}
+          />
+          {gridGeoJson && (
+            <GeoJSON
+              key={`${selectedDistrict}-${selectedLayer}-${gridMeters}m-grid-${gridCount}-${isDistrictOverview}`}
+              data={gridGeoJson}
+              interactive
+              style={(feature) => {
+                const properties = getFeatureProperties(feature as Feature<Geometry>);
+                const hasLayerValue = getNumericProperty(properties, selectedLayer) !== null;
+                const gridColor = colorByLayerValue(properties, selectedLayer);
+
+                return {
+                  color: gridColor,
+                  fillColor: gridColor,
+                  fillOpacity: hasLayerValue ? 0.68 : 0.22,
+                  opacity: hasLayerValue ? 0.32 : 0.18,
+                  weight: isDistrictOverview ? 0.12 : 0.35
+                };
+              }}
+              onEachFeature={(feature, layer) => {
+                const typedFeature = feature as Feature<Geometry>;
+
+                layer.bindTooltip(buildGridTooltip(typedFeature, selectedLayer, gridMeters), {
+                  className: 'gridTempTooltip',
+                  direction: 'top',
+                  opacity: 1,
+                  sticky: true
+                });
+                layer.on({
+                  click: () => setSelectedGridProperties(getFeatureProperties(typedFeature))
+                });
+              }}
+            />
+          )}
+          {districts.map((district) => (
+            <Marker
+              key={district.district}
+              position={district.labelCenter}
+              icon={makeDistrictLabel(district)}
+              eventHandlers={{ click: () => setSelectedDistrict(district.district) }}
+            />
+          ))}
+          <ZoomControl position="bottomright" />
+          <ScaleControl position="bottomright" metric imperial={false} />
+        </MapContainer>
+      )}
+      {!loading && !error && gridLoading && (
+        <div className="mapLoadingOverlay">
+          <LoadingContent message={`${selectedGridResolution} 격자 데이터 로딩 중`} />
+        </div>
+      )}
+
+      <SearchPanel
+        districts={districts}
+        selectedDistrict={selectedDistrict}
+        selectedLayer={selectedLayer}
+        selectedGridResolution={selectedGridResolution}
+        gridCount={gridCount}
+        gridLoading={gridLoading}
+        selectedGridProperties={selectedGridProperties}
+        onDistrictChange={setSelectedDistrict}
+        onGridResolutionChange={setSelectedGridResolution}
+        onLayerChange={setSelectedLayer}
+      />
+      <DatasetRail />
+      <TopMenu />
+      <RightToolbar />
+      <MapNotice />
+    </div>
+  );
+}
+
+interface SearchPanelProps {
+  districts: DistrictOption[];
+  selectedDistrict: string;
+  selectedLayer: LayerKey;
+  selectedGridResolution: GridResolution;
+  gridCount: number;
+  gridLoading: boolean;
+  selectedGridProperties: GridAnalysisProperties | null;
+  onDistrictChange: (district: string) => void;
+  onGridResolutionChange: (resolution: GridResolution) => void;
+  onLayerChange: (layer: LayerKey) => void;
+}
+
+function SearchPanel({
+  districts,
+  selectedDistrict,
+  selectedLayer,
+  selectedGridResolution,
+  gridCount,
+  gridLoading,
+  selectedGridProperties,
+  onDistrictChange,
+  onGridResolutionChange,
+  onLayerChange
+}: SearchPanelProps) {
+  return (
+    <aside className="gisLeftPanel heatIslandPanel">
+      <div className="heatPanelHeader">
+        <p>Urban Heat Island</p>
+        <h1>도시 열섬 해결 대시보드</h1>
+      </div>
+
+      <div className="heatControlBlock">
+        <label>
+          <span>분석 지역</span>
+          <select
+            value={selectedDistrict}
+            onChange={(event) => onDistrictChange(event.target.value)}
+            aria-label="자치구"
+          >
+            <option value={ALL_DISTRICTS}>{ALL_DISTRICTS}</option>
+            {districts.map((district) => (
+              <option key={district.district} value={district.district}>
+                {district.district}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>분석 기준</span>
+          <div className="fixedGridSize">{ANALYSIS_PERIOD_LABEL}</div>
+        </label>
+        <label>
+          <span>격자 크기</span>
+          <select
+            value={selectedGridResolution}
+            onChange={(event) => onGridResolutionChange(event.target.value as GridResolution)}
+            aria-label="격자 해상도"
+          >
+            {GRID_RESOLUTION_OPTIONS.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <section className="indicatorPanel">
+        <div className="indicatorHeader">
+          <strong>지도 지표 선택</strong>
+          <span>{getLayerLabel(selectedLayer)}</span>
+        </div>
+        <div className="indicatorList">
+          {HEAT_ISLAND_INDICATORS.map((indicator) => (
+            <button
+              key={indicator.key}
+              type="button"
+              className={selectedLayer === indicator.key ? 'active' : ''}
+              onClick={() => onLayerChange(indicator.key)}
+            >
+              <span>
+                <strong>{indicator.label}</strong>
+                <small>{indicator.help}</small>
+              </span>
+              <b>{formatLayerProperty(selectedGridProperties, indicator.key)}</b>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="resultPanel heatResultPanel">
+        <div className="resultHeader">
+          <strong>선택 지역 요약</strong>
+          <span className="mlStatusBadge">ML 대기</span>
+        </div>
+        <dl>
+          <dt>선택지역</dt>
+          <dd>{selectedDistrict}</dd>
+          <dt>생성 격자</dt>
+          <dd>{gridLoading ? '로딩 중' : `${gridCount.toLocaleString()}개`}</dd>
+          <dt>선택 격자</dt>
+          <dd>{getGridIdentifier(selectedGridProperties)}</dd>
+        </dl>
+      </section>
+
+      <SimulationApiPanel
+        properties={selectedGridProperties}
+        selectedGridResolution={selectedGridResolution}
+      />
+      <GridDetailPanel properties={selectedGridProperties} />
+    </aside>
+  );
+}
+
+function GridDetailPanel({ properties }: { properties: GridAnalysisProperties | null }) {
+  return (
+    <section className="resultPanel heatResultPanel gridDetailPanel">
+      <div className="resultHeader">
+        <strong>선택 격자 상세</strong>
+        <span className="mlStatusBadge">properties</span>
+      </div>
+      <dl>
+        {GRID_DETAIL_FIELDS.map((field) => (
+          <Fragment key={String(field.key)}>
+            <dt>{field.label}</dt>
+            <dd>{formatAnyProperty(properties, field.key)}</dd>
+          </Fragment>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function formatSimulationValue(value: unknown, suffix = '') {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DATA_PENDING;
+  }
+
+  return `${value.toFixed(3)}${suffix}`;
+}
+
+function getSimulationFeatureLabel(feature: string) {
+  const labels: Record<string, string> = {
+    green_ratio: '녹지율',
+    impervious_ratio: '불투수면',
+    built_surface_ratio: '시가화면 비율',
+    building_ratio: '건물 비율',
+    park_area_within_500m: '공원 영향 면적',
+    nearest_park_distance_m: '공원 접근 거리',
+    nearest_stream_distance_m: '하천 접근 거리',
+    ndvi: '식생지수'
+  };
+
+  return labels[feature] ?? feature;
+}
+
+function formatSimulationFeatureValue(feature: string, value: number) {
+  if (!Number.isFinite(value)) {
+    return DATA_PENDING;
+  }
+
+  if (
+    feature === 'green_ratio' ||
+    feature === 'impervious_ratio' ||
+    feature === 'built_surface_ratio' ||
+    feature === 'building_ratio'
+  ) {
+    return `${formatNumber(value * 100, 2)}%`;
+  }
+
+  if (feature === 'park_area_within_500m') {
+    return `${Math.round(value).toLocaleString()}㎡`;
+  }
+
+  if (feature.endsWith('_distance_m')) {
+    return `${formatNumber(value, 0)}m`;
+  }
+
+  return formatSimulationValue(value);
+}
+
+function getDeltaDescription(delta: unknown) {
+  if (typeof delta !== 'number' || !Number.isFinite(delta)) {
+    return DATA_PENDING;
+  }
+
+  if (delta < 0) return '모델 기준 예상 저감';
+  if (delta > 0) return '모델 기준 예상 증가';
+  return '변화 없음';
+}
+
+function SimulationResultSummary({
+  result,
+  policyChanges
+}: {
+  result: SimulationResponse;
+  policyChanges: SimulationPolicyChange[];
+}) {
+  const changedFeatures = result.changed_features ?? {};
+  const changedFeatureEntries = Object.entries(changedFeatures);
+  const deltaDescription = getDeltaDescription(result.delta_c);
+
+  return (
+    <div className="simulationResultSummary">
+      <div className="simulationResultTitle">
+        <strong>시뮬레이션 결과</strong>
+        <span className={typeof result.delta_c === 'number' && result.delta_c < 0 ? 'cooling' : 'warming'}>
+          {deltaDescription}: {formatSimulationValue(result.delta_c, '℃')}
+        </span>
+      </div>
+
+      <dl>
+        <dt>기존 예측값</dt>
+        <dd>{formatSimulationValue(result.before_anomaly, '℃')}</dd>
+        <dt>시나리오 후 예측값</dt>
+        <dd>{formatSimulationValue(result.after_anomaly, '℃')}</dd>
+        <dt>모델 기준 예상 변화</dt>
+        <dd>
+          <strong className={typeof result.delta_c === 'number' && result.delta_c < 0 ? 'cooling' : 'warming'}>
+            {formatSimulationValue(result.delta_c, '℃')}
+          </strong>
+          <span>{deltaDescription}</span>
+        </dd>
+        {typeof result.uncertainty_std === 'number' && Number.isFinite(result.uncertainty_std) && (
+          <>
+            <dt>불확실성</dt>
+            <dd>{formatSimulationValue(result.uncertainty_std)}</dd>
+          </>
+        )}
+      </dl>
+
+      <div className="policyChangeList">
+        <strong>입력한 정책 변화</strong>
+        {policyChanges.length > 0 ? (
+          <ul>
+            {policyChanges.map((change) => (
+              <li key={change.key}>
+                <span>{change.label}</span>
+                <b>{change.value}</b>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>입력한 정책 변화가 없습니다.</p>
+        )}
+      </div>
+
+      <div className="changedFeatureList">
+        <strong>모델에 반영된 변수 변화</strong>
+        {changedFeatureEntries.length > 0 ? (
+          <ul>
+            {changedFeatureEntries.map(([feature, values]) => (
+              <li key={feature}>
+                <span>{getSimulationFeatureLabel(feature)}</span>
+                <b>
+                  {formatSimulationFeatureValue(feature, values.before)} →{' '}
+                  {formatSimulationFeatureValue(feature, values.after)}
+                </b>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>변경된 변수가 없습니다.</p>
+        )}
+      </div>
+
+      {Array.isArray(result.warnings) && result.warnings.length > 0 && (
+        <div className="simulationWarnings">
+          <strong>경고</strong>
+          <ul>
+            {result.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="simulationResultNotice">
+        이 결과는 선택한 100m 격자에 대한 임시 예측값입니다. 원본 지도 데이터와 전체 지도 색상은
+        변경되지 않습니다.
+      </p>
+    </div>
+  );
+}
+
+function getSimulationErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 501) return 'ML 모델이 아직 연결되지 않았습니다.';
+    if (error.status === 404) return '선택한 격자를 데이터셋에서 찾을 수 없습니다.';
+    if (error.status === 500) return '시뮬레이션 처리 중 서버 오류가 발생했습니다.';
+  }
+
+  return '시뮬레이션 요청 중 오류가 발생했습니다.';
+}
+
+function SimulationApiPanel({
+  properties,
+  selectedGridResolution
+}: {
+  properties: GridAnalysisProperties | null;
+  selectedGridResolution: GridResolution;
+}) {
+  const gridId = typeof properties?.grid_id === 'string' ? properties.grid_id : '';
+  const guName = formatAnyProperty(properties, 'gu_name');
+  const canSimulate = selectedGridResolution === '100m' && Boolean(gridId);
+  const [policyOptions, setPolicyOptions] = useState<PolicyOptionKey[]>(DEFAULT_POLICY_OPTIONS);
+  const [inputValues, setInputValues] = useState<SimulationInputValues>(DEFAULT_SIMULATION_INPUTS);
+  const [simulationResult, setSimulationResult] = useState<SimulationResponse | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [simulationLoading, setSimulationLoading] = useState(false);
+  const [submittedPolicyChanges, setSubmittedPolicyChanges] = useState<SimulationPolicyChange[]>([]);
+  const simulationResultRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setSimulationResult(null);
+    setSimulationError(null);
+    setSubmittedPolicyChanges([]);
+  }, [gridId, selectedGridResolution]);
+
+  useEffect(() => {
+    if (simulationResult) {
+      simulationResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [simulationResult]);
+
+  function updateInputValue(key: keyof SimulationInputValues, value: number) {
+    setInputValues((current) => ({
+      ...current,
+      [key]: Number.isFinite(value) ? value : 0
+    }));
+  }
+
+  function getSimulationParameters() {
+    return {
+      green_ratio_delta: policyOptions.includes('green_ratio_increase')
+        ? inputValues.greenRatioPercent / 100
+        : 0,
+      impervious_ratio_delta: policyOptions.includes('impervious_ratio_reduction')
+        ? -Math.abs(inputValues.imperviousReductionPercent) / 100
+        : 0,
+      park_area_m2: policyOptions.includes('park_area_expansion') ? inputValues.parkAreaM2 : 0
+    };
+  }
+
+  function getSubmittedPolicyChanges(): SimulationPolicyChange[] {
+    const changes: SimulationPolicyChange[] = [];
+
+    if (policyOptions.includes('green_ratio_increase')) {
+      changes.push({
+        key: 'green_ratio_increase',
+        label: '녹지율 증가',
+        value: `+${formatNumber(inputValues.greenRatioPercent, 1)}%p`
+      });
+    }
+
+    if (policyOptions.includes('impervious_ratio_reduction')) {
+      changes.push({
+        key: 'impervious_ratio_reduction',
+        label: '불투수면 감소',
+        value: `-${formatNumber(Math.abs(inputValues.imperviousReductionPercent), 1)}%p`
+      });
+    }
+
+    if (policyOptions.includes('park_area_expansion')) {
+      changes.push({
+        key: 'park_area_expansion',
+        label: '공원 영향 면적 증가',
+        value: `+${Math.round(inputValues.parkAreaM2).toLocaleString()}㎡`
+      });
+    }
+
+    return changes;
+  }
+
+  function togglePolicyOption(option: PolicyOptionKey) {
+    setPolicyOptions((current) =>
+      current.includes(option)
+        ? current.filter((item) => item !== option)
+        : [...current, option]
+    );
+  }
+
+  async function handleSimulation() {
+    if (!canSimulate) {
+      setSimulationError(SIMULATION_GRID_NOTICE);
+      return;
+    }
+
+    setSimulationLoading(true);
+    setSimulationError(null);
+    setSimulationResult(null);
+    setSubmittedPolicyChanges([]);
+
+    try {
+      const submittedChanges = getSubmittedPolicyChanges();
+      const response = await simulateGridPolicy({
+        grid_id: gridId,
+        policy_options: policyOptions,
+        parameters: getSimulationParameters()
+      });
+      console.log('simulation result', response);
+
+      if (typeof response.error === 'string') {
+        setSimulationError(
+          response.error.includes('grid_id')
+            ? '선택한 격자를 데이터셋에서 찾을 수 없습니다.'
+            : response.error
+        );
+        return;
+      }
+
+      setSimulationResult(response);
+      setSubmittedPolicyChanges(submittedChanges);
+      setSimulationError(null);
+    } catch (error) {
+      setSimulationError(getSimulationErrorMessage(error));
+    } finally {
+      setSimulationLoading(false);
+    }
+  }
+
+  return (
+    <section className="resultPanel heatResultPanel simulationPanel">
+      <div className="resultHeader">
+        <strong>시뮬레이션 API</strong>
+        <span className="mlStatusBadge">POST</span>
+      </div>
+      <div className="simulationForm">
+        <div className="simulationGridInfo">
+          <dl>
+            <dt>선택 격자</dt>
+            <dd>{gridId || DATA_PENDING}</dd>
+            <dt>자치구</dt>
+            <dd>{guName}</dd>
+            <dt>해상도</dt>
+            <dd>{selectedGridResolution}</dd>
+          </dl>
+        </div>
+        {!canSimulate && <p className="simulationStatus warning">{SIMULATION_GRID_NOTICE}</p>}
+
+        <div className="fieldGroup">
+          <span>정책 옵션</span>
+          <div className="policyOptionList">
+            {POLICY_OPTIONS.map((option) => (
+              <label className="policyOption" key={option.key}>
+                <input
+                  type="checkbox"
+                  checked={policyOptions.includes(option.key)}
+                  onChange={() => togglePolicyOption(option.key)}
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <label className="fieldGroup">
+          <span>녹지율 증가폭(%)</span>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={inputValues.greenRatioPercent}
+            disabled={!policyOptions.includes('green_ratio_increase')}
+            onChange={(event) => updateInputValue('greenRatioPercent', Number(event.target.value))}
+          />
+        </label>
+
+        <label className="fieldGroup">
+          <span>불투수면 감소폭(%)</span>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={inputValues.imperviousReductionPercent}
+            disabled={!policyOptions.includes('impervious_ratio_reduction')}
+            onChange={(event) =>
+              updateInputValue('imperviousReductionPercent', Number(event.target.value))
+            }
+          />
+        </label>
+
+        <label className="fieldGroup">
+          <span>공원 영향 면적 증가(㎡)</span>
+          <input
+            type="number"
+            min="0"
+            step="100"
+            value={inputValues.parkAreaM2}
+            disabled={!policyOptions.includes('park_area_expansion')}
+            onChange={(event) => updateInputValue('parkAreaM2', Number(event.target.value))}
+          />
+        </label>
+
+        <button
+          className="primaryButton"
+          type="button"
+          onClick={handleSimulation}
+          disabled={simulationLoading || !canSimulate}
+        >
+          {simulationLoading ? '시뮬레이션 계산 중...' : '시뮬레이션 요청'}
+        </button>
+
+        {simulationLoading && <p className="simulationStatus">시뮬레이션 계산 중...</p>}
+        {simulationError && <p className="simulationStatus error">{simulationError}</p>}
+        {simulationResult && (
+          <div ref={simulationResultRef}>
+            <SimulationResultSummary
+              result={simulationResult}
+              policyChanges={submittedPolicyChanges}
+            />
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DatasetRail() {
+  const items = ['범례', '지도 분할', '지도 출력', '차트 보기', '속성 조회', '범위 색상', '보고서 출력', '투명도 제기'];
+
+  return (
+    <nav className="datasetRail" aria-label="지도 자료 도구">
+      {items.map((item, index) => (
+        <button className={index === 0 ? 'active' : ''} key={item} type="button">
+          {item}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function TopMenu() {
+  return (
+    <nav className="topMenu" aria-label="상단 메뉴">
+      <button type="button">홈</button>
+      <button type="button">로그인</button>
+      <button type="button">사이트맵</button>
+      <button type="button">이용가이드</button>
+    </nav>
+  );
+}
+
+function RightToolbar() {
+  const tools = ['지도선택', '이동', '분할', '거리', '면적', '지우개'];
+
+  return (
+    <nav className="rightToolbar" aria-label="지도 조작 도구">
+      {tools.map((tool) => (
+        <button key={tool} type="button">
+          <span>{tool === '지도선택' ? '▰' : tool === '이동' ? '✥' : tool === '거리' ? '↔' : tool === '면적' ? '▣' : tool === '지우개' ? '⌫' : '▤'}</span>
+          {tool}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function MapNotice() {
+  return (
+    <p className="gisNotice">
+      100m 격자 지오메트리는 제공된 GeoJSON polygon을 그대로 렌더링합니다. ML 분석 속성이 아직
+      없는 격자는 값을 만들지 않고 데이터 준비중으로 표시합니다.
+    </p>
+  );
+}
