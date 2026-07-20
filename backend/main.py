@@ -19,6 +19,7 @@ DASHBOARD_GRID_PATHS = {
     "250m": DASHBOARD_DIR / "seoul_grid_250m.geojson",
     "500m": DASHBOARD_DIR / "seoul_grid_500m.geojson",
 }
+DASHBOARD_100M_MAP_PATH = DASHBOARD_DIR / "seoul_grid_100m_map.geojson"
 DASHBOARD_GRID_500M_PATH = DASHBOARD_DIR / "seoul_grid_500m.geojson"
 DASHBOARD_GU_LEVEL_PATH = DASHBOARD_DIR / "seoul_gu_level.geojson"
 VALID_GRID_RESOLUTIONS = set(DASHBOARD_GRID_PATHS)
@@ -218,6 +219,12 @@ def dashboard_500m():
 @app.get("/api/dashboard/grids/{resolution}")
 def dashboard_grid_by_resolution(resolution: str):
     return _geojson_file_response(_dashboard_grid_path(resolution))
+
+
+@app.head("/api/dashboard/grids/100m/map")
+@app.get("/api/dashboard/grids/100m/map")
+def dashboard_100m_map():
+    return _geojson_file_response(DASHBOARD_100M_MAP_PATH)
 
 
 @app.head("/api/dashboard/grids/{resolution}/{gu_code}")
