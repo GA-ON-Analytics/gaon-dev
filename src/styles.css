@@ -1501,6 +1501,7 @@ td {
   height: 100%;
   padding: 20px;
   overflow-y: auto;
+  overflow-x: hidden;   /* 툴팁 등이 삐져나가도 가로 스크롤 안 생기게 */
   box-sizing: border-box;
 }
 
@@ -1763,19 +1764,38 @@ td {
   user-select:none;
 }
 .gridDetailSidePanel .infotip-bubble{
-  position:absolute; bottom:calc(100% + 7px); left:0;
-  width:210px; max-width:min(210px, 55vw); padding:9px 11px; border-radius:9px;
+  position:absolute; bottom:calc(100% + 7px);
+  width:200px; padding:9px 11px; border-radius:9px;
   background:var(--gdp-ink); color:#fff;
   font-size:11px; line-height:1.55; font-weight:500; font-style:normal;
   text-align:left; white-space:normal; letter-spacing:0;
   box-shadow:var(--gdp-shadow);
-  opacity:0; visibility:hidden; transform:translateY(3px);
+  opacity:0; visibility:hidden;
   transition:opacity .12s ease, transform .12s ease; z-index:20; pointer-events:none;
 }
+/* 아이콘 위치에 따라 펼치는 방향 (패널 밖으로 안 나가게) */
+.gridDetailSidePanel .infotip-left .infotip-bubble{ left:0; transform:translateY(3px); }
+.gridDetailSidePanel .infotip-right .infotip-bubble{ right:0; transform:translateY(3px); }
+.gridDetailSidePanel .infotip-center .infotip-bubble{ left:50%; transform:translate(-50%,3px); }
 .gridDetailSidePanel .infotip:hover .infotip-bubble,
-.gridDetailSidePanel .infotip:focus-visible .infotip-bubble{
-  opacity:1; visibility:visible; transform:translateY(0);
+.gridDetailSidePanel .infotip:focus-visible .infotip-bubble{ opacity:1; visibility:visible; }
+.gridDetailSidePanel .infotip-left:hover .infotip-bubble,
+.gridDetailSidePanel .infotip-left:focus-visible .infotip-bubble{ transform:translateY(0); }
+.gridDetailSidePanel .infotip-right:hover .infotip-bubble,
+.gridDetailSidePanel .infotip-right:focus-visible .infotip-bubble{ transform:translateY(0); }
+.gridDetailSidePanel .infotip-center:hover .infotip-bubble,
+.gridDetailSidePanel .infotip-center:focus-visible .infotip-bubble{ transform:translate(-50%,0); }
+
+/* --- 환경 도넛 3개 --- */
+.gridDetailSidePanel .donuts{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.gridDetailSidePanel .donut{ display:flex; flex-direction:column; align-items:center; gap:9px; }
+.gridDetailSidePanel .d-wrap{ position:relative; width:80px; height:80px; }
+.gridDetailSidePanel .donut svg{ transform:rotate(-90deg); }
+.gridDetailSidePanel .d-num{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:16px; font-weight:800;
 }
+.gridDetailSidePanel .d-lab{ font-size:12px; color:var(--gdp-ink2); }
 
 /* 온도 톤: 지도 색 기준과 동일 (< 0 시원=파랑 · 0~1.5 보통=회색 · 1.5~3 더움=주황(기본) · ≥3 위험=빨강) */
 .gridDetailSidePanel .ht-num.cool{ color:var(--gdp-cool); }

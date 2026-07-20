@@ -265,7 +265,7 @@ function getLayerLabel(layer: LayerKey) {
 }
 
 function getNumericProperty(properties: GridAnalysisProperties, key: LayerKey) {
-  const value = properties[key];
+  const value: unknown = properties[key];   // geojson 값은 문자열일 수도 있어 unknown으로 받는다
 
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
