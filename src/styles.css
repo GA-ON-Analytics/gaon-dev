@@ -508,6 +508,11 @@ td {
     Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* 마우스로 격자를 클릭할 때 브라우저가 SVG 경계 상자에 그리는 포커스 링을 숨긴다. */
+.gisMap path.leaflet-interactive:focus {
+  outline: none;
+}
+
 .gisMap .leaflet-tile-pane {
   filter: saturate(0.92) contrast(0.98) brightness(1.02);
 }
@@ -536,6 +541,37 @@ td {
   background: rgba(255, 255, 255, 0.58);
   backdrop-filter: blur(6px);
   pointer-events: auto;
+}
+
+.mapResolutionNotice {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 696;
+  display: grid;
+  gap: 6px;
+  width: min(360px, calc(100vw - 48px));
+  padding: 17px 20px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(10, 122, 61, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 30px rgba(23, 32, 51, 0.2);
+  color: #172033;
+  text-align: center;
+  pointer-events: none;
+}
+
+.mapResolutionNotice strong {
+  color: #0a7a3d;
+  font-size: 15px;
+}
+
+.mapResolutionNotice span {
+  color: #66717d;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .mapLoadingCard {
@@ -655,6 +691,28 @@ td {
   line-height: 1.3;
   white-space: normal;
   word-break: keep-all;
+}
+
+.selectionGuide {
+  display: grid;
+  gap: 4px;
+  margin: 10px 12px 0;
+  padding: 10px 11px;
+  border: 1px solid rgba(10, 122, 61, 0.24);
+  border-radius: 4px;
+  background: #f1f8f4;
+}
+
+.selectionGuide strong {
+  color: #0a7a3d;
+  font-size: 12px;
+}
+
+.selectionGuide span {
+  color: #5f6e68;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .gisTabs {
@@ -919,6 +977,17 @@ td {
 
 .gridDetailPanel dl {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+}
+
+.emptyDetailGuide {
+  margin: 0;
+  padding: 16px 12px;
+  background: #f7faf9;
+  color: #0a7a3d;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.45;
+  text-align: center;
 }
 
 .simulationPanel .simulationForm {
@@ -1408,6 +1477,191 @@ td {
 
   .rightToolbar {
     top: 10px;
-    right: 10px;
+    right: 396px;
   }
+}
+
+.gridDetailSidePanel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  background: #ffffff;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+  transition: transform 0.3s ease;   /* 접히고 펴질 때 부드럽게 */
+}
+
+.gridDetailSidePanel.collapsed {
+  transform: translateX(100%);        /* 오른쪽으로 통째로 밀어냄 */
+}
+
+.sidePanelBody {
+  height: 100%;
+  padding: 20px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.sidePanelToggle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);   /* 세로 가운데 */
+  left: -20px;
+  width: 20px;                    /* 32 → 20, 얇게 */
+  height: 56px;
+  border: none;
+  border-radius: 6px 0 0 6px;
+  background: #ffffff;
+  box-shadow: -3px 0 10px rgba(0, 0, 0, 0.10);
+  cursor: pointer;
+  font-size: 15px;
+  color: #555;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+/* 사이드바가 펴지면 오른쪽 UI들이 왼쪽으로 함께 이동 */
+.topMenu,
+.rightToolbar {
+  transition: right 0.3s ease;
+}
+.gisShell.panelOpen .topMenu {
+  right: 396px;                   /* 380(패널) + 16(간격) */
+}
+.gisShell.panelOpen .rightToolbar {
+  right: 396px;
+}
+
+.leaflet-bottom.leaflet-right {
+  transition: transform 0.3s ease;
+}
+.gisShell.panelOpen .leaflet-bottom.leaflet-right {
+  transform: translateX(-396px);  /* 줌/축척도 왼쪽으로 */
+}
+
+.rightToolbar button.active {
+  background: #0d5743;   /* 앱 초록색 */
+  color: #ffffff;
+}
+
+/* 격자 선택 팝업 — 예전 툴팁 색감 그대로 */
+/* 팝업 루트는 투명하게 (박스는 아래 content-wrapper가 담당, 이중 박스 방지) */
+.leaflet-popup.gridTempTooltip {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.gridTempTooltip .leaflet-popup-content-wrapper {
+  display: block;   /* .gridTempTooltip div 의 grid 규칙 무력화 */
+  border: 1px solid rgba(20, 24, 31, 0.18);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  color: #202733;
+}
+
+.gridTempTooltip .leaflet-popup-content {
+  display: block;
+  margin: 9px 12px;
+  min-width: auto;
+}
+
+.gridTempTooltip .leaflet-popup-tip-container {
+  display: none;   /* 꼬리표 제거 */
+}
+
+/* ── 우측 상세 리포트 ── */
+.gridReport {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.gridReportHead {
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.gridReportGu {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.gridReportId {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.gridReportPriority {
+  margin-top: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.gridReportPriority strong {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  color: #0d5743;
+}
+
+.gridReportPriority span {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.gridReportSection h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #0d5743;
+}
+
+.gridReportSection dl {
+  margin: 0;
+}
+
+.gridReportRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f1f3f5;
+}
+
+.gridReportRow:last-child {
+  border-bottom: none;
+}
+
+.gridReportRow dt {
+  font-size: 13px;
+  color: #374151;
+}
+
+.gridReportRow dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #111827;
+}
+
+.gridReportEmpty h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.gridReportEmpty p {
+  font-size: 13px;
+  color: #6b7280;
 }
