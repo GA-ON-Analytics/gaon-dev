@@ -590,6 +590,8 @@ export function MapDashboard() {
     useState<GridResolution>(DEFAULT_GRID_RESOLUTION);
   const [selectedGridProperties, setSelectedGridProperties] =
     useState<GridAnalysisProperties | null>(null);
+  // 선택 격자가 속한 '구'의 전체 격자 수 (priority_rank의 분모). 100m 상세 로딩 때 채운다.
+  const [selectedGridGuTotal, setSelectedGridGuTotal] = useState<number | null>(null);
   const [selected100mFeature, setSelected100mFeature] =
     useState<Feature<Geometry> | null>(null);
   const [selected100mPopupPosition, setSelected100mPopupPosition] =
@@ -782,6 +784,8 @@ export function MapDashboard() {
       detailRequest
         .then((collection) => {
           if (selectedGridIdRef.current !== gridId) return;
+          // 이 구별 상세 파일의 격자 수 = 구 내부 순위(priority_rank)의 분모
+          setSelectedGridGuTotal(collection.features.length);
           const fullFeature = collection.features.find(
             (feature) => getGridIdentifier(getFeatureProperties(feature as Feature<Geometry>)) === gridId
           );
@@ -811,6 +815,7 @@ export function MapDashboard() {
       setSelected100mFeature(feature);
       setSelected100mPopupPosition(latLng);
       setSelectedGridProperties(properties);
+      setSelectedGridGuTotal(null);   // 새 구 상세가 로드되면 다시 채워진다
       hydrateSelectedGridProperties(properties);
     },
     [hydrateSelectedGridProperties]
@@ -827,6 +832,8 @@ export function MapDashboard() {
   isDistrictOverviewRef.current = isDistrictOverview;
   gridResolutionRef.current = selectedGridResolution;
   hydrateSelectedGridPropertiesRef.current = hydrateSelectedGridProperties;
+  const gridGeoJsonRef = useRef(gridGeoJson);
+  gridGeoJsonRef.current = gridGeoJson;   // 현재 화면에 로드된 격자들 (250/500m 분모 계산용)
 
   const handleGridClick = useCallback((event: L.LeafletMouseEvent) => {
     if (activeToolRef.current !== '지도선택') return;
@@ -846,9 +853,22 @@ export function MapDashboard() {
     layer.setStyle({ color: '#111827', weight: 3, opacity: 1 });
     selectedGridLayerRef.current = layer;
     setSelectedGridProperties(props);
+    setSelectedGridGuTotal(null);   // 100m면 아래 hydrate가 다시 채운다
     selectedGridIdRef.current = gridId;
     if (resolution === '100m') {
       hydrateSelectedGridPropertiesRef.current(props);
+    } else {
+      // 250/500m: priority_rank는 구 내부 순위 → 같은 구의 그 해상도 격자 수가 분모
+      const guKey = props.gu_code ?? props.gu_name;
+      const feats = gridGeoJsonRef.current?.features ?? [];
+      const total =
+        guKey != null
+          ? feats.filter((f) => {
+              const p = getFeatureProperties(f as Feature<Geometry>);
+              return (p.gu_code ?? p.gu_name) === guKey;
+            }).length
+          : feats.length;
+      setSelectedGridGuTotal(total || null);
     }
     layer
       .bindPopup(buildGridTooltip(feature, selectedLayerKeyRef.current, meters), {
@@ -1005,9 +1025,23 @@ export function MapDashboard() {
                       sticky: true
                     })
                     .openTooltip();
+                  // 주황 테두리: 지도선택 모드 & 선택 격자가 아닐 때만
+                  if (
+                    activeToolRef.current === '지도선택' &&
+                    selectedGridLayerRef.current !== layer
+                  ) {
+                    (layer as L.Path).setStyle({ color: '#e8590c', weight: 2.5, opacity: 1 });
+                  }
                 },
                 mouseout: (event) => {
-                  event.sourceTarget?.unbindTooltip?.();
+                  const layer = event.sourceTarget;
+                  layer?.unbindTooltip?.();
+                  // 선택 격자면 검은 테두리 유지, 아니면 원래 스타일로 복원
+                  if (layer && selectedGridLayerRef.current !== layer) {
+                    (layer as L.Path).setStyle(
+                      gridFeatureStyle(layer.feature, selectedLayer, isDistrictOverview)
+                    );
+                  }
                 }
               }}
             />
@@ -1077,6 +1111,7 @@ export function MapDashboard() {
       />
       <GridDetailSidePanel
         properties={selectedGridProperties}
+        guGridTotal={selectedGridGuTotal}
         selectedDistrict={selectedDistrict}
         selectedGridResolution={selectedGridResolution}
         isOpen={isPanelOpen}

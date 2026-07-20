@@ -283,6 +283,7 @@ export default function CanvasGridLayer({
     };
 
     let hoverTooltip: L.Tooltip | null = null;
+    let hoverRect: L.Rectangle | null = null;   // 호버 중인 격자 주황 테두리
     let hoveredGridId = '';
     let frame = 0;
     const handleMouseMove = (event: LeafletMouseEvent) => {
@@ -293,7 +294,9 @@ export default function CanvasGridLayer({
 
         if (!feature) {
           if (hoverTooltip) map.removeLayer(hoverTooltip);
+          if (hoverRect) map.removeLayer(hoverRect);
           hoverTooltip = null;
+          hoverRect = null;
           hoveredGridId = '';
           return;
         }
@@ -308,6 +311,19 @@ export default function CanvasGridLayer({
             .setContent(tooltip(feature))
             .setLatLng(event.latlng);
           hoverTooltip.addTo(map);
+
+          // 주황 테두리: '지도선택' 모드에서만, 호버한 격자 경계 위에 그린다
+          if (activeTool === '지도선택') {
+            const bounds = L.geoJSON(feature).getBounds();
+            if (hoverRect) hoverRect.setBounds(bounds);
+            else
+              hoverRect = L.rectangle(bounds, {
+                color: '#e8590c',
+                weight: 2,
+                fill: false,
+                interactive: false
+              }).addTo(map);
+          }
           hoveredGridId = gridId;
         }
 
@@ -317,7 +333,9 @@ export default function CanvasGridLayer({
     const clearTooltip = () => {
       cancelAnimationFrame(frame);
       if (hoverTooltip) map.removeLayer(hoverTooltip);
+      if (hoverRect) map.removeLayer(hoverRect);
       hoverTooltip = null;
+      hoverRect = null;
       hoveredGridId = '';
     };
 
@@ -331,6 +349,7 @@ export default function CanvasGridLayer({
       map.off('mousemove', handleMouseMove);
       map.off('mouseout', clearTooltip);
       if (hoverTooltip) map.removeLayer(hoverTooltip);
+      if (hoverRect) map.removeLayer(hoverRect);
     };
   }, [activeTool, index, map, onFeatureClick, tooltip]);
 
