@@ -1,10 +1,11 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import L, { type PathOptions } from 'leaflet';
 import {
   GeoJSON,
   MapContainer,
   Marker,
+  Popup,
   ScaleControl,
   TileLayer,
   useMap,
@@ -25,6 +26,8 @@ import type {
   PolicyOptionKey,
   SimulationResponse
 } from '../types/dashboard';
+import GridDetailSidePanel from './GridDetailSidePanel';
+import CanvasGridLayer from './CanvasGridLayer';
 
 const ALL_DISTRICTS = '전체';
 const DEFAULT_DISTRICT = ALL_DISTRICTS;
@@ -466,6 +469,23 @@ function buildDistrictTooltip(feature: Feature<Geometry>, selectedLayer: LayerKe
   `;
 }
 
+function gridFeatureStyle(
+  feature: Feature<Geometry>,
+  layer: LayerKey,
+  isDistrictOverview: boolean
+): PathOptions {
+  const properties = getFeatureProperties(feature);
+  const hasLayerValue = getNumericProperty(properties, layer) !== null;
+  const gridColor = colorByLayerValue(properties, layer);
+  return {
+    color: gridColor,
+    fillColor: gridColor,
+    fillOpacity: hasLayerValue ? 0.68 : 0.22,
+    opacity: hasLayerValue ? 0.32 : 0.18,
+    weight: isDistrictOverview ? 0.12 : 0.35
+  };
+}
+
 function buildGridTooltip(feature: Feature<Geometry>, layer: LayerKey, gridMeters: number) {
   const properties = getFeatureProperties(feature);
   const gridSize = formatAnyProperty(properties, 'grid_size_m');
@@ -480,12 +500,14 @@ function buildGridTooltip(feature: Feature<Geometry>, layer: LayerKey, gridMeter
   `;
 }
 
-function ZoomLevelWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
-  useMapEvents({
-    zoomend: (event) => {
-      onZoomChange(event.target.getZoom());
-    }
+function MapZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
+  const map = useMapEvents({
+    zoomend: (event) => onZoomChange(event.target.getZoom())
   });
+
+  useEffect(() => {
+    onZoomChange(map.getZoom());
+  }, [map, onZoomChange]);
 
   return null;
 }
@@ -496,6 +518,55 @@ function MapFocus({ center, zoom }: { center: [number, number]; zoom: number }) 
   useEffect(() => {
     map.setView(center, zoom, { animate: true });
   }, [center, zoom, map]);
+
+  return null;
+}
+
+function RightDragPan() {
+  const map = useMap();
+
+  // 오른쪽 버튼 드래그 팬 (왼쪽 드래그는 Leaflet 기본값 = 항상 켜짐)
+  useEffect(() => {
+    const container = map.getContainer();
+    let panning = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 2) return;
+      panning = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      container.style.cursor = 'grabbing';
+    };
+    const onMouseMove = (event: MouseEvent) => {
+      if (!panning) return;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      map.panBy([-dx, -dy], { animate: false });
+    };
+    const onMouseUp = () => {
+      panning = false;
+      container.style.cursor = '';
+    };
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+
+    container.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    container.addEventListener('contextmenu', onContextMenu);
+
+    return () => {
+      container.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      container.removeEventListener('contextmenu', onContextMenu);
+    };
+  }, [map]);
 
   return null;
 }
@@ -519,6 +590,27 @@ export function MapDashboard() {
     useState<GridResolution>(DEFAULT_GRID_RESOLUTION);
   const [selectedGridProperties, setSelectedGridProperties] =
     useState<GridAnalysisProperties | null>(null);
+  const [selected100mFeature, setSelected100mFeature] =
+    useState<Feature<Geometry> | null>(null);
+  const [selected100mPopupPosition, setSelected100mPopupPosition] =
+    useState<L.LatLng | null>(null);
+  const [isPanelOpen, setIsPanelOpen] = useState(true);
+  const [activeTool, setActiveTool] = useState('지도선택');
+  const activeToolRef = useRef(activeTool);
+  activeToolRef.current = activeTool;   // 항상 최신 모드를 담아둠 (클릭 핸들러가 참조)
+  const selectedGridIdRef = useRef<string | null>(null);   // 현재 팝업이 열린 격자 id
+  const selectedGridLayerRef = useRef<L.Path | null>(null);   // 현재 선택 격자의 Leaflet 레이어
+  const selectedResetRef = useRef<(() => void) | null>(null);   // 선택 격자 테두리 원복 함수
+  const seoul100mMapCacheRef = useRef<FeatureCollection | null>(null);
+  const district100mCacheRef = useRef(new Map<string, FeatureCollection>());
+
+  // 격자를 새로 누르면 사이드바가 자동으로 펴진다     
+  useEffect(() => {
+    if (selectedGridProperties) {
+      setIsPanelOpen(true);
+    }
+  }, [selectedGridProperties]);
+
   const [zoomLevel, setZoomLevel] = useState(SEOUL_OVERVIEW_ZOOM);
   const [loading, setLoading] = useState(true);
   const [gridLoading, setGridLoading] = useState(false);
@@ -540,8 +632,53 @@ export function MapDashboard() {
     () => new Map(districts.map((district) => [district.district, district.sigCode])),
     [districts]
   );
+  useEffect(() => {
+    if (selectedGridResolution !== '100m') return;
+
+    selectedResetRef.current?.();
+    selectedGridIdRef.current = null;
+    setSelected100mFeature(null);
+    setSelected100mPopupPosition(null);
+    setSelectedGridProperties(null);
+    const sigCode = isAllDistricts ? null : districtCodeByName.get(selectedDistrict);
+
+    if (!isAllDistricts && !sigCode) {
+      setGridGeoJson(null);
+      setGridLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    const cached = seoul100mMapCacheRef.current;
+
+    setGridLoading(!cached);
+    (cached ? Promise.resolve(cached) : getResolutionGrid('100m'))
+      .then((data) => {
+        if (!isActive) return;
+        seoul100mMapCacheRef.current = data;
+        setGridGeoJson(sigCode ? filterGridByDistrict(data, sigCode) : data);
+      })
+      .catch((requestError: unknown) => {
+        if (!isActive) return;
+        setGridGeoJson(null);
+        setError(requestError instanceof Error ? requestError.message : '서울 전체 100m 격자 요청 실패');
+      })
+      .finally(() => {
+        if (isActive) setGridLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [districtCodeByName, isAllDistricts, selectedDistrict, selectedGridResolution]);
 
   useEffect(() => {
+    if (selectedGridResolution === '100m') return;
+
+    selectedResetRef.current?.();
+    selectedGridIdRef.current = null;
+    setSelected100mFeature(null);
+    setSelected100mPopupPosition(null);
     setSelectedGridProperties(null);
 
     if (isAllDistricts) {
@@ -582,6 +719,7 @@ export function MapDashboard() {
     let isActive = true;
 
     setGridLoading(true);
+
     getDistrictResolutionGrid(selectedGridResolution, sigCode, selectedDistrict)
       .then((data) => {
         if (isActive) {
@@ -605,16 +743,162 @@ export function MapDashboard() {
     return () => {
       isActive = false;
     };
-  }, [districtCodeByName, isAllDistricts, selectedDistrict, selectedGridResolution]);
+  }, [
+    districtCodeByName,
+    isAllDistricts,
+    selectedDistrict,
+    selectedGridResolution
+  ]);
 
   const center = selectedDistrictMeta?.center ?? DEFAULT_CENTER;
   const targetZoom = isAllDistricts ? SEOUL_OVERVIEW_ZOOM : DISTRICT_DETAIL_ZOOM;
   const isDistrictOverview = isAllDistricts || zoomLevel <= DISTRICT_OVERVIEW_ZOOM;
   const gridCount = gridGeoJson?.features.length ?? 0;
   const gridMeters = getResolutionMeters(selectedGridResolution);
+  const gridLayerKey =
+    selectedGridResolution === '100m'
+      ? `100m-${selectedDistrict}-grid-${gridCount}`
+      : `${selectedDistrict}-${gridMeters}m-grid-${gridCount}`;
+
+  const hydrateSelectedGridProperties = useCallback(
+    (previewProperties: GridAnalysisProperties) => {
+      const gridId = getGridIdentifier(previewProperties);
+      const districtName =
+        typeof previewProperties.gu_name === 'string' ? previewProperties.gu_name : '';
+      const sigCode = String(
+        previewProperties.gu_code ?? districtCodeByName.get(districtName) ?? ''
+      );
+
+      if (!gridId || !districtName || !/^\d{5}$/.test(sigCode)) return;
+
+      const cached = district100mCacheRef.current.get(sigCode);
+      const detailRequest = cached
+        ? Promise.resolve(cached)
+        : getDistrictResolutionGrid('100m', sigCode, districtName).then((collection) => {
+            district100mCacheRef.current.set(sigCode, collection);
+            return collection;
+          });
+
+      detailRequest
+        .then((collection) => {
+          if (selectedGridIdRef.current !== gridId) return;
+          const fullFeature = collection.features.find(
+            (feature) => getGridIdentifier(getFeatureProperties(feature as Feature<Geometry>)) === gridId
+          );
+          if (fullFeature) {
+            setSelectedGridProperties(
+              getFeatureProperties(fullFeature as Feature<Geometry>)
+            );
+          }
+        })
+        .catch(() => {
+          // 지도용 속성만으로도 선택과 팝업은 유지한다. 상세 요청은 다음 선택 시 재시도한다.
+        });
+    },
+    [districtCodeByName]
+  );
+  const selected100mGridId = selected100mFeature
+    ? getGridIdentifier(getFeatureProperties(selected100mFeature))
+    : null;
+  const handle100mFeatureClick = useCallback(
+    (feature: Feature<Geometry>, latLng: L.LatLng) => {
+      const properties = getFeatureProperties(feature);
+      const gridId = getGridIdentifier(properties);
+
+      selectedResetRef.current?.();
+      selectedGridIdRef.current = gridId;
+      selectedGridLayerRef.current = null;
+      setSelected100mFeature(feature);
+      setSelected100mPopupPosition(latLng);
+      setSelectedGridProperties(properties);
+      hydrateSelectedGridProperties(properties);
+    },
+    [hydrateSelectedGridProperties]
+  );
+  const build100mTooltip = useCallback(
+    (feature: Feature<Geometry>) => buildGridTooltip(feature, selectedLayer, 100),
+    [selectedLayer]
+  );
+  const selectedLayerKeyRef = useRef(selectedLayer);
+  const isDistrictOverviewRef = useRef(isDistrictOverview);
+  const gridResolutionRef = useRef(selectedGridResolution);
+  const hydrateSelectedGridPropertiesRef = useRef(hydrateSelectedGridProperties);
+  selectedLayerKeyRef.current = selectedLayer;
+  isDistrictOverviewRef.current = isDistrictOverview;
+  gridResolutionRef.current = selectedGridResolution;
+  hydrateSelectedGridPropertiesRef.current = hydrateSelectedGridProperties;
+
+  const handleGridClick = useCallback((event: L.LeafletMouseEvent) => {
+    if (activeToolRef.current !== '지도선택') return;
+    if (event.originalEvent && event.originalEvent.button !== 0) return;
+    const layer = (event.target ?? event.sourceTarget) as L.Path & {
+      feature?: Feature<Geometry>;
+    };
+    if (!layer.feature) return;
+    const feature = layer.feature;
+    const props = getFeatureProperties(feature);
+
+    const gridId = getGridIdentifier(props);
+    const resolution = gridResolutionRef.current;
+    const meters = getResolutionMeters(resolution);
+
+    selectedResetRef.current?.();
+    layer.setStyle({ color: '#111827', weight: 3, opacity: 1 });
+    selectedGridLayerRef.current = layer;
+    setSelectedGridProperties(props);
+    selectedGridIdRef.current = gridId;
+    if (resolution === '100m') {
+      hydrateSelectedGridPropertiesRef.current(props);
+    }
+    layer
+      .bindPopup(buildGridTooltip(feature, selectedLayerKeyRef.current, meters), {
+        className: 'gridTempTooltip',
+        autoPan: false,
+        closeOnClick: false
+      })
+      .openPopup();
+
+    selectedResetRef.current = () => {
+      selectedGridIdRef.current = null;
+      selectedGridLayerRef.current = null;
+      selectedResetRef.current = null;
+      layer.setStyle(
+        gridFeatureStyle(feature, selectedLayerKeyRef.current, isDistrictOverviewRef.current)
+      );
+      layer.closePopup();
+      layer.unbindPopup();
+      setSelectedGridProperties(null);
+    };
+
+    layer.once('popupclose', () => {
+      if (selectedGridIdRef.current !== gridId) return;
+      selectedGridIdRef.current = null;
+      selectedGridLayerRef.current = null;
+      selectedResetRef.current = null;
+      layer.setStyle(
+        gridFeatureStyle(feature, selectedLayerKeyRef.current, isDistrictOverviewRef.current)
+      );
+      layer.unbindPopup();
+      setSelectedGridProperties(null);
+    });
+  }, []);
+
+  // style 함수를 고정(useCallback)해야 리렌더 때 react-leaflet이 전체를 다시 칠하지 않음
+  // (안 그러면 선택 격자에 준 테두리가 리렌더마다 지워짐)
+  const gridStyle = useCallback(
+    (feature?: Feature<Geometry>) =>
+      gridFeatureStyle(feature as Feature<Geometry>, selectedLayer, isDistrictOverview),
+    [selectedLayer, isDistrictOverview]
+  );
+
+  // 지표/줌 변경으로 전체 격자 스타일이 갱신된 뒤에도 선택 테두리는 유지한다.
+  useEffect(() => {
+    if (!selectedGridIdRef.current || !selectedGridLayerRef.current) return;
+    selectedGridLayerRef.current.setStyle({ color: '#111827', weight: 3, opacity: 1 });
+  }, [gridStyle]);
 
   return (
-    <div className="gisShell">
+    <div className={isPanelOpen ? 'gisShell panelOpen' : 'gisShell'}>
       {loading && (
         <div className="gisState">
           <LoadingContent message="지도 데이터 로딩 중" />
@@ -629,17 +913,19 @@ export function MapDashboard() {
           className="gisMap"
           zoomControl={false}
           scrollWheelZoom
+          preferCanvas
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <ZoomLevelWatcher onZoomChange={setZoomLevel} />
+          <MapZoomWatcher onZoomChange={setZoomLevel} />
           <MapFocus center={center} zoom={targetZoom} />
+          <RightDragPan />
           <GeoJSON
             key={`${selectedDistrict}-${selectedLayer}-${isDistrictOverview}`}
             data={geoJson}
-            interactive={isDistrictOverview}
+            interactive={selectedGridResolution !== '100m' && isDistrictOverview}
             style={(feature) =>
               getBoundaryStyle(
                 feature as Feature<Geometry>,
@@ -666,7 +952,7 @@ export function MapDashboard() {
                 mouseover: () => {
                   if (isDistrictOverview) {
                     (layer as L.Path).setStyle({
-                      fillOpacity: 0.32,
+                    fillOpacity: 0.32,
                       opacity: 1,
                       weight: 3.4
                     });
@@ -687,39 +973,72 @@ export function MapDashboard() {
               });
             }}
           />
-          {gridGeoJson && (
+          {gridGeoJson && selectedGridResolution === '100m' && (
+            <CanvasGridLayer
+              data={gridGeoJson}
+              activeTool={activeTool}
+              selectedGridId={selected100mGridId}
+              style={gridStyle}
+              tooltip={build100mTooltip}
+              onFeatureClick={handle100mFeatureClick}
+            />
+          )}
+          {gridGeoJson && selectedGridResolution !== '100m' && (
             <GeoJSON
-              key={`${selectedDistrict}-${selectedLayer}-${gridMeters}m-grid-${gridCount}-${isDistrictOverview}`}
+              key={gridLayerKey}
               data={gridGeoJson}
               interactive
-              style={(feature) => {
-                const properties = getFeatureProperties(feature as Feature<Geometry>);
-                const hasLayerValue = getNumericProperty(properties, selectedLayer) !== null;
-                const gridColor = colorByLayerValue(properties, selectedLayer);
-
-                return {
-                  color: gridColor,
-                  fillColor: gridColor,
-                  fillOpacity: hasLayerValue ? 0.68 : 0.22,
-                  opacity: hasLayerValue ? 0.32 : 0.18,
-                  weight: isDistrictOverview ? 0.12 : 0.35
-                };
+              style={gridStyle}
+              onEachFeature={(_feature, layer) => {
+                layer.on('click', handleGridClick);
               }}
-              onEachFeature={(feature, layer) => {
-                const typedFeature = feature as Feature<Geometry>;
-
-                layer.bindTooltip(buildGridTooltip(typedFeature, selectedLayer, gridMeters), {
-                  className: 'gridTempTooltip',
-                  direction: 'top',
-                  opacity: 1,
-                  sticky: true
-                });
-                layer.on({
-                  click: () => setSelectedGridProperties(getFeatureProperties(typedFeature))
-                });
+              eventHandlers={{
+                // hover: 마우스 올린 격자에만 그때그때 툴팁 (미리 6만 개 만들지 않음)
+                mouseover: (event) => {
+                  const layer = event.sourceTarget;
+                  if (!layer?.feature) return;
+                  layer
+                    .bindTooltip(buildGridTooltip(layer.feature, selectedLayer, gridMeters), {
+                      className: 'gridTempTooltip',
+                      direction: 'top',
+                      opacity: 1,
+                      sticky: true
+                    })
+                    .openTooltip();
+                },
+                mouseout: (event) => {
+                  event.sourceTarget?.unbindTooltip?.();
+                }
               }}
             />
           )}
+          {selectedGridResolution === '100m' &&
+            selected100mFeature &&
+            selected100mPopupPosition &&
+            selected100mGridId && (
+              <Popup
+                key={selected100mGridId}
+                position={selected100mPopupPosition}
+                className="gridTempTooltip"
+                autoPan={false}
+                closeOnClick={false}
+                eventHandlers={{
+                  remove: () => {
+                    if (selectedGridIdRef.current !== selected100mGridId) return;
+                    selectedGridIdRef.current = null;
+                    setSelected100mFeature(null);
+                    setSelected100mPopupPosition(null);
+                    setSelectedGridProperties(null);
+                  }
+                }}
+              >
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: build100mTooltip(selected100mFeature)
+                  }}
+                />
+              </Popup>
+            )}
           {districts.map((district) => (
             <Marker
               key={district.district}
@@ -737,7 +1056,6 @@ export function MapDashboard() {
           <LoadingContent message={`${selectedGridResolution} 격자 데이터 로딩 중`} />
         </div>
       )}
-
       <SearchPanel
         districts={districts}
         selectedDistrict={selectedDistrict}
@@ -752,8 +1070,19 @@ export function MapDashboard() {
       />
       <DatasetRail />
       <TopMenu />
-      <RightToolbar />
-      <MapNotice />
+      <RightToolbar activeTool={activeTool} onSelectTool={setActiveTool} />
+      <MapNotice
+        selectedDistrict={selectedDistrict}
+        selectedGridResolution={selectedGridResolution}
+      />
+      <GridDetailSidePanel
+        properties={selectedGridProperties}
+        selectedDistrict={selectedDistrict}
+        selectedGridResolution={selectedGridResolution}
+        isOpen={isPanelOpen}
+        onToggle={() => setIsPanelOpen((prev) => !prev)}
+        formatValue={formatAnyProperty}
+      />
     </div>
   );
 }
@@ -783,6 +1112,22 @@ function SearchPanel({
   onGridResolutionChange,
   onLayerChange
 }: SearchPanelProps) {
+  const selectionPrompt =
+    selectedDistrict === ALL_DISTRICTS && selectedGridResolution === '100m'
+      ? {
+          title: '서울 전체에서 분석할 격자를 클릭하세요',
+          description: '모든 자치구의 100m 격자를 바로 선택할 수 있습니다.'
+        }
+      : selectedDistrict === ALL_DISTRICTS
+      ? {
+          title: '지도에서 분석할 지역을 클릭하세요',
+          description: '자치구 이름이나 지역 내부를 클릭하면 해당 지역의 격자를 확인할 수 있습니다.'
+        }
+      : {
+          title: `${selectedDistrict}에서 분석할 격자를 클릭하세요`,
+          description: '격자를 선택하면 지표값과 상세 분석 데이터가 표시됩니다.'
+        };
+
   return (
     <aside className="gisLeftPanel heatIslandPanel">
       <div className="heatPanelHeader">
@@ -826,6 +1171,13 @@ function SearchPanel({
         </label>
       </div>
 
+      {!selectedGridProperties && (
+        <div className="selectionGuide" role="status">
+          <strong>{selectionPrompt.title}</strong>
+          <span>{selectionPrompt.description}</span>
+        </div>
+      )}
+
       <section className="indicatorPanel">
         <div className="indicatorHeader">
           <strong>지도 지표 선택</strong>
@@ -843,7 +1195,11 @@ function SearchPanel({
                 <strong>{indicator.label}</strong>
                 <small>{indicator.help}</small>
               </span>
-              <b>{formatLayerProperty(selectedGridProperties, indicator.key)}</b>
+              <b>
+                {selectedGridProperties
+                  ? formatLayerProperty(selectedGridProperties, indicator.key)
+                  : '선택 전'}
+              </b>
             </button>
           ))}
         </div>
@@ -858,9 +1214,17 @@ function SearchPanel({
           <dt>선택지역</dt>
           <dd>{selectedDistrict}</dd>
           <dt>생성 격자</dt>
-          <dd>{gridLoading ? '로딩 중' : `${gridCount.toLocaleString()}개`}</dd>
+          <dd>
+            {gridLoading ? '로딩 중' : `${gridCount.toLocaleString()}개`}
+          </dd>
           <dt>선택 격자</dt>
-          <dd>{getGridIdentifier(selectedGridProperties)}</dd>
+          <dd>
+            {selectedGridProperties
+              ? getGridIdentifier(selectedGridProperties)
+              : selectedDistrict === ALL_DISTRICTS && selectedGridResolution !== '100m'
+                ? '지역을 클릭하세요'
+                : '격자를 클릭하세요'}
+          </dd>
         </dl>
       </section>
 
@@ -868,26 +1232,36 @@ function SearchPanel({
         properties={selectedGridProperties}
         selectedGridResolution={selectedGridResolution}
       />
-      <GridDetailPanel properties={selectedGridProperties} />
+      <GridDetailPanel properties={selectedGridProperties} selectionPrompt={selectionPrompt.title} />
     </aside>
   );
 }
 
-function GridDetailPanel({ properties }: { properties: GridAnalysisProperties | null }) {
+function GridDetailPanel({
+  properties,
+  selectionPrompt
+}: {
+  properties: GridAnalysisProperties | null;
+  selectionPrompt: string;
+}) {
   return (
     <section className="resultPanel heatResultPanel gridDetailPanel">
       <div className="resultHeader">
         <strong>선택 격자 상세</strong>
         <span className="mlStatusBadge">properties</span>
       </div>
-      <dl>
-        {GRID_DETAIL_FIELDS.map((field) => (
-          <Fragment key={String(field.key)}>
-            <dt>{field.label}</dt>
-            <dd>{formatAnyProperty(properties, field.key)}</dd>
-          </Fragment>
-        ))}
-      </dl>
+      {properties ? (
+        <dl>
+          {GRID_DETAIL_FIELDS.map((field) => (
+            <Fragment key={String(field.key)}>
+              <dt>{field.label}</dt>
+              <dd>{formatAnyProperty(properties, field.key)}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      ) : (
+        <p className="emptyDetailGuide">{selectionPrompt}</p>
+      )}
     </section>
   );
 }
@@ -1062,7 +1436,7 @@ function SimulationApiPanel({
   selectedGridResolution: GridResolution;
 }) {
   const gridId = typeof properties?.grid_id === 'string' ? properties.grid_id : '';
-  const guName = formatAnyProperty(properties, 'gu_name');
+  const guName = properties ? formatAnyProperty(properties, 'gu_name') : '격자 선택 후 표시';
   const canSimulate = selectedGridResolution === '100m' && Boolean(gridId);
   const [policyOptions, setPolicyOptions] = useState<PolicyOptionKey[]>(DEFAULT_POLICY_OPTIONS);
   const [inputValues, setInputValues] = useState<SimulationInputValues>(DEFAULT_SIMULATION_INPUTS);
@@ -1190,7 +1564,7 @@ function SimulationApiPanel({
         <div className="simulationGridInfo">
           <dl>
             <dt>선택 격자</dt>
-            <dd>{gridId || DATA_PENDING}</dd>
+            <dd>{gridId || '지도에서 격자를 선택하세요'}</dd>
             <dt>자치구</dt>
             <dd>{guName}</dd>
             <dt>해상도</dt>
@@ -1302,13 +1676,24 @@ function TopMenu() {
   );
 }
 
-function RightToolbar() {
+function RightToolbar({
+  activeTool,
+  onSelectTool
+}: {
+  activeTool: string;
+  onSelectTool: (tool: string) => void;
+}) {
   const tools = ['지도선택', '이동', '분할', '거리', '면적', '지우개'];
 
   return (
     <nav className="rightToolbar" aria-label="지도 조작 도구">
       {tools.map((tool) => (
-        <button key={tool} type="button">
+        <button
+          key={tool}
+          type="button"
+          className={tool === activeTool ? 'active' : undefined}
+          onClick={() => onSelectTool(tool)}
+        >
           <span>{tool === '지도선택' ? '▰' : tool === '이동' ? '✥' : tool === '거리' ? '↔' : tool === '면적' ? '▣' : tool === '지우개' ? '⌫' : '▤'}</span>
           {tool}
         </button>
@@ -1317,11 +1702,28 @@ function RightToolbar() {
   );
 }
 
-function MapNotice() {
+function MapNotice({
+  selectedDistrict,
+  selectedGridResolution
+}: {
+  selectedDistrict: string;
+  selectedGridResolution: GridResolution;
+}) {
+  if (selectedGridResolution === '100m') {
+    return (
+      <p className="gisNotice">
+        {selectedDistrict === ALL_DISTRICTS
+          ? '서울 전체 100m 격자를 표시합니다.'
+          : `${selectedDistrict}의 100m 격자만 표시합니다.`}{' '}
+        지도 이동·확대 후에도 선택한 격자와 상세 정보가 유지됩니다.
+      </p>
+    );
+  }
+
   return (
     <p className="gisNotice">
-      100m 격자 지오메트리는 제공된 GeoJSON polygon을 그대로 렌더링합니다. ML 분석 속성이 아직
-      없는 격자는 값을 만들지 않고 데이터 준비중으로 표시합니다.
+      서울 전체 격자를 표시합니다. ML 분석 속성이 없는 격자는 값을 만들지 않고 데이터 준비중으로
+      표시합니다.
     </p>
   );
 }
