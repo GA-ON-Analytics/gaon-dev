@@ -69,11 +69,57 @@ const METRIC_DESC: Record<string, string> = {
 };
 
 // ⓘ 아이콘에 마우스를 올리면 설명 말풍선을 띄우는 커스텀 툴팁
-function InfoTip({ text }: { text: string }) {
+// align: 말풍선이 열리는 방향 (아이콘이 패널 왼쪽이면 'left'=오른쪽으로 펼침, 오른쪽이면 'right')
+function InfoTip({ text, align = 'left' }: { text: string; align?: 'left' | 'center' | 'right' }) {
   return (
-    <span className="infotip" tabIndex={0} aria-label={text}>
+    <span className={`infotip infotip-${align}`} tabIndex={0} aria-label={text}>
       i<span className="infotip-bubble" role="tooltip">{text}</span>
     </span>
+  );
+}
+
+// SVG 도넛: 비율(0~1)을 원호로. pathLength=100 트릭으로 dasharray를 퍼센트처럼 쓴다.
+function Donut({
+  value,
+  color,
+  label,
+  tip,
+  tipAlign,
+  estimated
+}: {
+  value?: number | null;
+  color: string;
+  label: string;
+  tip?: string;
+  tipAlign?: 'left' | 'center' | 'right';
+  estimated?: boolean;
+}) {
+  const pct = value != null ? Math.max(0, Math.min(100, value * 100)) : 0;
+  return (
+    <div className="donut">
+      <div className="d-wrap">
+        <svg width="80" height="80" viewBox="0 0 80 80">
+          <circle cx="40" cy="40" r="33" fill="none" stroke="var(--gdp-sub2)" strokeWidth="8" />
+          <circle
+            cx="40"
+            cy="40"
+            r="33"
+            fill="none"
+            stroke={color}
+            strokeWidth="8"
+            strokeLinecap="round"
+            pathLength={100}
+            strokeDasharray={`${pct} 100`}
+          />
+        </svg>
+        <div className="d-num">{value != null ? `${Math.round(pct)}%` : '—'}</div>
+      </div>
+      <div className="d-lab">
+        {label}
+        {estimated ? ' (추정)' : ''}
+        {tip && <InfoTip text={tip} align={tipAlign} />}
+      </div>
+    </div>
   );
 }
 
@@ -265,21 +311,38 @@ function GridDetailSidePanel({
               </div>
             )}
 
-            <ReportSection title="환경">
-              <ReportRow label="녹지율" value={fmt('green_ratio')} />
-              <ReportRow label="식생지수 (NDVI)" value={fmt('ndvi')} />
-              <ReportRow
-                label={buildingEstimated ? '건물 비율 (추정)' : '건물 비율'}
-                value={`${buildingEstimated ? '≈ ' : ''}${fmt('building_ratio')}`}
-              />
-              <ReportRow label="불투수면 비율" value={fmt('impervious_ratio')} />
-            </ReportSection>
-            {buildingEstimated && (
-              <p className="gdpNote">
-                * 이 격자는 건물 도형(VWorld) 데이터가 없어, 위성 지표면(built-up)으로
-                건물 비율을 추정한 값입니다.
-              </p>
-            )}
+            <div className="card">
+              <div className="sec-title">환경 프로필</div>
+              <div className="donuts">
+                <Donut
+                  value={properties.green_ratio}
+                  color="var(--gdp-green)"
+                  label="녹지율"
+                  tip={METRIC_DESC.green_ratio}
+                  tipAlign="left"
+                />
+                <Donut
+                  value={properties.impervious_ratio}
+                  color="var(--gdp-hot)"
+                  label="불투수면"
+                  tip={METRIC_DESC.impervious_ratio}
+                  tipAlign="center"
+                />
+                <Donut
+                  value={properties.building_ratio}
+                  color="var(--gdp-ink2)"
+                  label="건물"
+                  tip={METRIC_DESC.building_ratio}
+                  tipAlign="right"
+                  estimated={buildingEstimated}
+                />
+              </div>
+              {buildingEstimated && (
+                <p className="gdpNote">
+                  * 건물 비율은 건물 도형(VWorld) 데이터가 없어 위성 지표면으로 추정한 값입니다.
+                </p>
+              )}
+            </div>
 
             <ReportSection title="취약성">
               <ReportRow
