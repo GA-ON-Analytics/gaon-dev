@@ -1665,3 +1665,89 @@ td {
   font-size: 13px;
   color: #6b7280;
 }
+
+/* ===================== 격자 상세 패널 (목업 이식) ===================== */
+/* 색·모양 변수: :root 대신 패널 '안에서만' 살아있게 스코프 → 앱 전역 색과 충돌 방지 */
+.gridDetailSidePanel {
+  --gdp-page:#eef1f4; --gdp-card:#ffffff; --gdp-sub:#f5f7f9; --gdp-sub2:#eaedf0;
+  --gdp-ink:#191f28; --gdp-ink2:#4e5968; --gdp-ink3:#8b95a1; --gdp-line:#eceef1;
+  --gdp-green:#0d5743; --gdp-green2:#12876a; --gdp-green-soft:#e5f1ec;
+  --gdp-hot:#e8590c; --gdp-hot-soft:#fceadd; --gdp-cool:#1c7ed6; --gdp-cool-soft:#e2effb;
+  --gdp-danger:#e03131; --gdp-danger-soft:#fbe3e3;   /* 지도 빨강(≥3℃) 티어 */
+  --gdp-shadow:0 1px 2px rgba(20,30,45,.04), 0 8px 24px rgba(20,30,45,.05);
+  --gdp-r:18px;
+  background:var(--gdp-page);   /* 패널 배경 흰색 → 연회색 (흰 카드가 떠 보이게) */
+}
+.gridDetailSidePanel .gridReport{
+  gap:12px; color:var(--gdp-ink); font-variant-numeric:tabular-nums;
+}
+
+/* 카드 껍데기 & 공통 글자 (패널 안에서만 적용) */
+.gridDetailSidePanel .card{
+  background:var(--gdp-card); border-radius:var(--gdp-r);
+  padding:22px; box-shadow:var(--gdp-shadow);
+}
+.gridDetailSidePanel .eyebrow{
+  font-size:11px; font-weight:700; letter-spacing:.06em;
+  color:var(--gdp-green); text-transform:uppercase;
+}
+.gridDetailSidePanel .sec-title{ font-size:14px; font-weight:700; margin-bottom:16px; }
+.gridDetailSidePanel .muted{ color:var(--gdp-ink3); }
+
+/* --- 히어로 카드 --- */
+.gridDetailSidePanel .gu{ font-size:21px; font-weight:800; letter-spacing:-.02em; margin-top:8px; }
+.gridDetailSidePanel .id{ font-size:12px; color:var(--gdp-ink3); margin-top:4px; }
+.gridDetailSidePanel .hero-main{
+  display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-top:20px;
+}
+.gridDetailSidePanel .ht-num{
+  font-size:42px; font-weight:800; letter-spacing:-.03em; line-height:.95; color:var(--gdp-hot);
+}
+.gridDetailSidePanel .ht-num span{ font-size:22px; font-weight:700; margin-left:2px; }
+.gridDetailSidePanel .ht-sub{ font-size:12px; color:var(--gdp-ink2); margin-top:9px; }
+.gridDetailSidePanel .ht-sub b{ color:var(--gdp-hot); font-weight:700; }
+.gridDetailSidePanel .risk{
+  flex:none; font-size:12px; font-weight:700; padding:7px 13px; border-radius:20px;
+  background:var(--gdp-hot-soft); color:var(--gdp-hot);
+}
+.gridDetailSidePanel .heatbar{
+  position:relative; height:8px; border-radius:4px; background:var(--gdp-sub2);
+  margin-top:18px; overflow:hidden;
+}
+.gridDetailSidePanel .heatbar .hb{ height:100%; background:var(--gdp-hot); border-radius:4px; }
+.gridDetailSidePanel .hb-lab{
+  display:flex; justify-content:space-between; font-size:11px; color:var(--gdp-ink3); margin-top:7px;
+}
+.gridDetailSidePanel .chips{ display:flex; gap:8px; margin-top:18px; }
+.gridDetailSidePanel .chip{
+  font-size:12px; font-weight:600; padding:6px 12px; border-radius:9px;
+  background:var(--gdp-green-soft); color:var(--gdp-green);
+}
+.gridDetailSidePanel .chip.ghost{ background:var(--gdp-sub); color:var(--gdp-ink2); }
+
+/* --- 핵심 타일 2개 --- */
+.gridDetailSidePanel .tiles{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.gridDetailSidePanel .tile{ background:var(--gdp-sub); border-radius:14px; padding:15px 16px; }
+.gridDetailSidePanel .tile .t-lab{ font-size:12px; color:var(--gdp-ink3); margin-bottom:7px; }
+.gridDetailSidePanel .tile .t-num{ font-size:22px; font-weight:800; letter-spacing:-.02em; }
+.gridDetailSidePanel .t-num.hot{ color:var(--gdp-hot); }
+.gridDetailSidePanel .t-num.cool{ color:var(--gdp-cool); }
+
+/* 온도 톤: 지도 색 기준과 동일 (< 0 시원=파랑 · 0~1.5 보통=회색 · 1.5~3 더움=주황(기본) · ≥3 위험=빨강) */
+.gridDetailSidePanel .ht-num.cool{ color:var(--gdp-cool); }
+.gridDetailSidePanel .ht-num.neutral{ color:var(--gdp-ink); }
+.gridDetailSidePanel .ht-num.danger{ color:var(--gdp-danger); }
+.gridDetailSidePanel .ht-sub b.cool{ color:var(--gdp-cool); }
+.gridDetailSidePanel .ht-sub b.neutral{ color:var(--gdp-ink2); }
+.gridDetailSidePanel .ht-sub b.danger{ color:var(--gdp-danger); }
+.gridDetailSidePanel .risk.cool{ background:var(--gdp-cool-soft); color:var(--gdp-cool); }
+.gridDetailSidePanel .risk.neutral{ background:var(--gdp-sub); color:var(--gdp-ink2); }
+.gridDetailSidePanel .risk.danger{ background:var(--gdp-danger-soft); color:var(--gdp-danger); }
+.gridDetailSidePanel .heatbar .hb.cool{ background:var(--gdp-cool); }
+.gridDetailSidePanel .heatbar .hb.neutral{ background:var(--gdp-ink3); }
+.gridDetailSidePanel .heatbar .hb.danger{ background:var(--gdp-danger); }
+
+/* 추정값 안내 캡션 */
+.gridDetailSidePanel .gdpNote{
+  margin:-6px 2px 0; font-size:11px; line-height:1.5; color:var(--gdp-hot);
+}
