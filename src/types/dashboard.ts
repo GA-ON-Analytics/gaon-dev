@@ -90,6 +90,8 @@ export interface GridAnalysisProperties {
   building_form_group?: string;
   mean_actual_lst?: number;
   building_ratio?: number;
+  // building_ratio가 위성 지표면 기반 추정값이면 true (VWorld 건물 도형 누락 보정)
+  building_ratio_estimated?: boolean;
   green_ratio?: number;
   ndvi?: number;
   built_surface_ratio?: number;
