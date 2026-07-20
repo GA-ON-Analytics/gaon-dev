@@ -72,6 +72,13 @@ export function getDistrictGrid(sigCode: string): Promise<FeatureCollection> {
 }
 
 export function getResolutionGrid(resolution: GridResolution): Promise<FeatureCollection> {
+  if (resolution === '100m') {
+    return fetchJsonWithFallback<FeatureCollection>(
+      '/api/dashboard/grids/100m/map',
+      '/dashboard/seoul_grid_100m_map.geojson'
+    );
+  }
+
   return fetchJsonWithFallback<FeatureCollection>(
     `/api/dashboard/grids/${resolution}`,
     `/dashboard/seoul_grid_${resolution}.geojson`
@@ -84,7 +91,10 @@ export function getDistrictResolutionGrid(
   district: string
 ): Promise<FeatureCollection> {
   if (resolution === '100m') {
-    return getDistrictGrid(sigCode);
+    return fetchJsonWithFallback<FeatureCollection>(
+      `/api/grids/${sigCode}`,
+      `/dashboard/100m/${sigCode}_${district}.geojson`
+    );
   }
 
   return fetchJsonWithFallback<FeatureCollection>(
