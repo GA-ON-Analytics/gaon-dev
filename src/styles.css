@@ -1732,6 +1732,50 @@ td {
 .gridDetailSidePanel .tile .t-num{ font-size:22px; font-weight:800; letter-spacing:-.02em; }
 .gridDetailSidePanel .t-num.hot{ color:var(--gdp-hot); }
 .gridDetailSidePanel .t-num.cool{ color:var(--gdp-cool); }
+.gridDetailSidePanel .t-num.t-na{ font-size:15px; color:var(--gdp-ink3); }
+
+/* --- SHAP 다이버징 막대 --- */
+.gridDetailSidePanel .shap{ display:flex; flex-direction:column; gap:15px; }
+.gridDetailSidePanel .shap-item{ display:flex; flex-direction:column; gap:8px; }
+.gridDetailSidePanel .si-top{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.gridDetailSidePanel .si-name{ font-size:13px; font-weight:600; }
+.gridDetailSidePanel .si-actual{ font-size:12px; color:var(--gdp-ink3); white-space:nowrap; }
+.gridDetailSidePanel .si-actual b{ color:var(--gdp-ink2); font-weight:700; }
+.gridDetailSidePanel .si-bot{ display:flex; align-items:center; gap:10px; }
+.gridDetailSidePanel .track{ position:relative; height:9px; background:var(--gdp-sub2); border-radius:5px; flex:1; }
+.gridDetailSidePanel .track:before{ content:""; position:absolute; left:50%; top:-2px; bottom:-2px; width:1px; background:var(--gdp-line); }
+.gridDetailSidePanel .bar{ position:absolute; top:0; height:100%; }
+.gridDetailSidePanel .bar.pos{ left:50%; background:var(--gdp-hot); border-radius:0 5px 5px 0; }
+.gridDetailSidePanel .bar.neg{ right:50%; background:var(--gdp-cool); border-radius:5px 0 0 5px; }
+.gridDetailSidePanel .shap-val{ font-size:12px; font-weight:700; min-width:54px; text-align:right; }
+.gridDetailSidePanel .shap-val.hot{ color:var(--gdp-hot); }
+.gridDetailSidePanel .shap-val.cool{ color:var(--gdp-cool); }
+.gridDetailSidePanel .legend{ margin-top:16px; display:flex; gap:14px; font-size:11px; color:var(--gdp-ink3); flex-wrap:wrap; }
+.gridDetailSidePanel .legend b{ font-weight:600; color:var(--gdp-ink2); }
+.gridDetailSidePanel .dot{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:5px; vertical-align:1px; }
+
+/* --- 지표 설명 커스텀 툴팁 (ⓘ) --- */
+.gridDetailSidePanel .infotip{
+  position:relative; display:inline-flex; align-items:center; justify-content:center;
+  width:14px; height:14px; margin-left:4px; border-radius:50%;
+  background:var(--gdp-sub2); color:var(--gdp-ink3);
+  font-size:9px; font-weight:700; font-style:italic; cursor:help; vertical-align:middle;
+  user-select:none;
+}
+.gridDetailSidePanel .infotip-bubble{
+  position:absolute; bottom:calc(100% + 7px); left:0;
+  width:210px; max-width:min(210px, 55vw); padding:9px 11px; border-radius:9px;
+  background:var(--gdp-ink); color:#fff;
+  font-size:11px; line-height:1.55; font-weight:500; font-style:normal;
+  text-align:left; white-space:normal; letter-spacing:0;
+  box-shadow:var(--gdp-shadow);
+  opacity:0; visibility:hidden; transform:translateY(3px);
+  transition:opacity .12s ease, transform .12s ease; z-index:20; pointer-events:none;
+}
+.gridDetailSidePanel .infotip:hover .infotip-bubble,
+.gridDetailSidePanel .infotip:focus-visible .infotip-bubble{
+  opacity:1; visibility:visible; transform:translateY(0);
+}
 
 /* 온도 톤: 지도 색 기준과 동일 (< 0 시원=파랑 · 0~1.5 보통=회색 · 1.5~3 더움=주황(기본) · ≥3 위험=빨강) */
 .gridDetailSidePanel .ht-num.cool{ color:var(--gdp-cool); }
