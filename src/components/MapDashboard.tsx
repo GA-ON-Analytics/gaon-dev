@@ -1244,34 +1244,6 @@ function SearchPanel({
         </div>
       </section>
 
-      <section className="resultPanel heatResultPanel">
-        <div className="resultHeader">
-          <strong>선택 지역 요약</strong>
-          <span className="mlStatusBadge">ML 대기</span>
-        </div>
-        <dl>
-          <dt>선택지역</dt>
-          <dd>{selectedDistrict}</dd>
-          <dt>생성 격자</dt>
-          <dd>
-            {gridLoading ? '로딩 중' : `${gridCount.toLocaleString()}개`}
-          </dd>
-          <dt>선택 격자</dt>
-          <dd>
-            {selectedGridProperties
-              ? getGridIdentifier(selectedGridProperties)
-              : selectedDistrict === ALL_DISTRICTS && selectedGridResolution !== '100m'
-                ? '지역을 클릭하세요'
-                : '격자를 클릭하세요'}
-          </dd>
-        </dl>
-      </section>
-
-      <SimulationApiPanel
-        properties={selectedGridProperties}
-        selectedGridResolution={selectedGridResolution}
-      />
-      <GridDetailPanel properties={selectedGridProperties} selectionPrompt={selectionPrompt.title} />
     </aside>
   );
 }

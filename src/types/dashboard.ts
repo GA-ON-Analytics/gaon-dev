@@ -55,6 +55,13 @@ export interface SimulationResponse {
   [key: string]: unknown;
 }
 
+// POST /api/simulate/batch 응답 (여러 격자에 같은 정책 → 평균 저감)
+export interface BatchSimulationResponse {
+  count: number;
+  mean_delta_c: number | null;
+  results: SimulationResponse[];
+}
+
 export interface GridAnalysisProperties {
   grid_id?: string;
   display_grid_id?: string;
@@ -70,6 +77,8 @@ export interface GridAnalysisProperties {
   grid_size_m?: number;
   area_m2?: number;
   source_cell_count?: number;
+  // 250/500m 집계 격자를 구성하는 100m 격자 grid_id 목록 (배치 시뮬레이션 대상)
+  member_grid_ids?: string[];
   priority_score?: number;
   priority_rank?: number;
   mean_actual_anomaly?: number;
