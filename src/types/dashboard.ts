@@ -101,7 +101,15 @@ export interface GridAnalysisProperties {
   impervious_ratio?: number;
   built_surface_ratio?: number;
   avg_ground_floor_count?: number;
+  max_ground_floor_count?: number;
+  floor_area_ratio_proxy?: number;
+  road_ratio?: number;
+  zoning_residential_ratio?: number;
+  zoning_commercial_ratio?: number;
+  zoning_industrial_ratio?: number;
+  zoning_green_ratio?: number;
   elevation_m?: number;
+  slope_deg?: number;
   albedo?: number;
   nearest_park_distance_m?: number;
   park_area_within_500m?: number;

@@ -309,11 +309,17 @@ function formatAnyProperty(properties: GridAnalysisProperties | null, key: keyof
       key === 'building_ratio' ||
       key === 'impervious_ratio' ||
       key === 'built_surface_ratio' ||
+      key === 'road_ratio' ||
+      key === 'zoning_residential_ratio' ||
+      key === 'zoning_commercial_ratio' ||
+      key === 'zoning_industrial_ratio' ||
+      key === 'zoning_green_ratio' ||
       key === 'dong_elderly_ratio'
     ) {
       return `${formatNumber(value * 100, 1)}%`;
     }
     if (key === 'ndvi' || key === 'albedo') return formatNumber(value, 2);
+    if (key === 'slope_deg') return `${formatNumber(value, 1)}°`;
     if (
       key === 'mean_actual_lst' ||
       key === 'mean_actual_anomaly' ||
