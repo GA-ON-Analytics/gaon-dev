@@ -1765,10 +1765,10 @@ td {
 }
 .gridDetailSidePanel .infotip-bubble{
   position:absolute; bottom:calc(100% + 7px);
-  width:200px; padding:9px 11px; border-radius:9px;
+  width:185px; padding:9px 11px; border-radius:9px;
   background:var(--gdp-ink); color:#fff;
   font-size:11px; line-height:1.55; font-weight:500; font-style:normal;
-  text-align:left; white-space:normal; letter-spacing:0;
+  text-align:left; white-space:pre-line; letter-spacing:0;
   box-shadow:var(--gdp-shadow);
   opacity:0; visibility:hidden;
   transition:opacity .12s ease, transform .12s ease; z-index:20; pointer-events:none;
@@ -1806,13 +1806,23 @@ td {
 .gridDetailSidePanel .row:last-child{ border-bottom:none; }
 .gridDetailSidePanel .r-lab{ font-size:13px; color:var(--gdp-ink2); display:flex; align-items:center; }
 .gridDetailSidePanel .r-val{ font-size:14px; font-weight:700; text-align:right; white-space:nowrap; }
-/* 쉼터: 이름(위) + 거리·주소(아래), 길면 줄바꿈 허용 */
-.gridDetailSidePanel .shelter-val{
-  display:flex; flex-direction:column; align-items:flex-end; gap:2px;
-  max-width:64%; white-space:normal;
+/* 쉼터: 전체폭 2줄 블록. 라벨(1줄) + [이름 왼쪽 · 거리 오른쪽] */
+.gridDetailSidePanel .shelter{
+  display:flex; flex-direction:column; gap:6px;
+  padding:12px 0 2px; border-top:1px solid var(--gdp-line);
 }
-.gridDetailSidePanel .sv-name{ font-size:14px; font-weight:700; text-align:right; }
-.gridDetailSidePanel .sv-sub{ font-size:11px; font-weight:500; color:var(--gdp-ink3); text-align:right; line-height:1.45; }
+.gridDetailSidePanel .shelter-head{
+  display:flex; align-items:center; white-space:nowrap;
+  font-size:13px; color:var(--gdp-ink2);
+}
+.gridDetailSidePanel .shelter-main{
+  display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+}
+.gridDetailSidePanel .shelter-name{
+  font-size:14px; font-weight:700;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.gridDetailSidePanel .shelter-dist{ font-size:14px; font-weight:700; flex:none; }
 
 /* 온도 톤: 지도 색 기준과 동일 (< 0 시원=파랑 · 0~1.5 보통=회색 · 1.5~3 더움=주황(기본) · ≥3 위험=빨강) */
 .gridDetailSidePanel .ht-num.cool{ color:var(--gdp-cool); }

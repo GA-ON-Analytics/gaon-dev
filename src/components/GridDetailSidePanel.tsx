@@ -170,6 +170,9 @@ function GridDetailSidePanel({
   // 가장 가까운 무더위쉼터 이름·주소 (빈 문자열이면 없는 것으로 처리)
   const shelterName = properties?.nearest_shelter_name?.trim() || null;
   const shelterAddr = properties?.nearest_shelter_addr?.trim() || null;
+  const shelterTip =
+    (shelterAddr ? `주소: ${shelterAddr}\n\n` : '') +
+    '폭염 때 이용할 수 있는 냉방 대피 시설이에요. 가까울수록 취약계층 대응에 유리합니다.';
 
   // SHAP top1~3: 존재하는 것만 모으고, 막대 길이용 최대 절대기여도를 구한다.
   const shapItems = [
@@ -346,18 +349,15 @@ function GridDetailSidePanel({
                   <span className="r-lab">추정 고령인구 (65+)</span>
                   <span className="r-val">{popUnavailable ? '집계 제외' : elderlyText}</span>
                 </div>
-                <div className="row">
-                  <span className="r-lab">
+                <div className="shelter">
+                  <div className="shelter-head">
                     가장 가까운 무더위쉼터
-                    <InfoTip text="폭염 때 이용할 수 있는 냉방 대피 시설. 가까울수록 취약계층 대응에 유리합니다." />
-                  </span>
-                  <span className="r-val shelter-val">
-                    {shelterName && <span className="sv-name">{shelterName}</span>}
-                    <span className="sv-sub">
-                      {fmt('nearest_shelter_distance_m')}
-                      {shelterAddr ? ` · ${shelterAddr}` : ''}
-                    </span>
-                  </span>
+                    <InfoTip text={shelterTip} align="center" />
+                  </div>
+                  <div className="shelter-main">
+                    <span className="shelter-name">{shelterName ?? '정보 없음'}</span>
+                    <span className="shelter-dist">{fmt('nearest_shelter_distance_m')}</span>
+                  </div>
                 </div>
               </div>
               {popUnavailable && (
