@@ -1,4 +1,6 @@
-import type { GridAnalysisProperties, GridResolution } from '../types/dashboard';
+import { useState } from 'react';
+import { ApiRequestError, simulateBatchGridPolicy, simulateGridPolicy } from '../services/api';
+import type { GridAnalysisProperties, GridResolution, SimulationResponse } from '../types/dashboard';
 
 interface Props {
   properties: GridAnalysisProperties | null;
@@ -229,8 +231,9 @@ function GridDetailSidePanel({
       </button>
 
       <div className="sidePanelBody">
-        {properties ? (
-          <div className="gridReport">
+        <div className="gridReport">
+          {properties ? (
+            <>
             <div className="card">
               <div className="eyebrow">격자 상세</div>
               <div className="gu">{guLabel || '선택 격자'}</div>
@@ -426,15 +429,177 @@ function GridDetailSidePanel({
                 </p>
               )}
             </div>
-          </div>
-        ) : (
-          <div className="gridReportEmpty">
-            <h2>상세 페이지</h2>
-            <p>{selectionPrompt(selectedDistrict, selectedGridResolution)}</p>
-          </div>
-        )}
+
+            {/* 직접 시뮬레이션 (취약성 바로 아래) */}
+            <SimulationCard
+              properties={properties}
+              selectedGridResolution={selectedGridResolution}
+              incomplete={incomplete}
+            />
+            </>
+          ) : (
+            <div className="gridReportEmpty">
+              <h2>상세 페이지</h2>
+              <p>{selectionPrompt(selectedDistrict, selectedGridResolution)}</p>
+            </div>
+          )}
+        </div>
       </div>
     </aside>
+  );
+}
+
+// ── 직접 시뮬레이션 (목업 detail-panel-mockup.html의 '직접 시뮬레이션' 카드) ──────────
+// 슬라이더 5개(녹지·불투수·NDVI·알베도·공원면적)를 조절 → '시뮬레이션 적용' → 모델 재예측.
+// 슬라이더 값은 목업과 같은 정수 눈금, API에는 delta로 변환해 보낸다.
+// - 100m 격자: 그 격자를 그대로 재예측 → delta_c
+// - 250/500m 격자: 구성 100m 셀들(member_grid_ids)에 같은 정책을 적용해 batch 평균(mean_delta_c)
+const SIM_SLIDERS = [
+  { key: 'green', label: '녹지율 늘리기', min: 0, max: 20, step: 1, def: 5 },
+  { key: 'imp', label: '불투수면 줄이기', min: 0, max: 20, step: 1, def: 5 },
+  { key: 'ndvi', label: '식생지수(NDVI) 늘리기', min: 0, max: 30, step: 1, def: 5 },
+  { key: 'alb', label: '알베도(반사율) 늘리기', min: 0, max: 20, step: 1, def: 5 },
+  { key: 'park', label: '주변 공원 면적 확충', min: 0, max: 5000, step: 250, def: 1000 }
+] as const;
+type SimKey = (typeof SIM_SLIDERS)[number]['key'];
+
+function simDisplay(key: SimKey, v: number): string {
+  if (key === 'green') return `+${v}%p`;
+  if (key === 'imp') return `−${v}%p`;
+  if (key === 'ndvi' || key === 'alb') return `+${(v / 100).toFixed(2)}`;
+  return `+${v.toLocaleString()}㎡`;
+}
+
+// 슬라이더 원값(정수) → 모델 changes 델타
+function simChanges(v: Record<SimKey, number>): Record<string, number> {
+  const c: Record<string, number> = {};
+  if (v.green) c.green_ratio = v.green / 100;
+  if (v.imp) c.impervious_ratio = -v.imp / 100;
+  if (v.ndvi) c.ndvi = v.ndvi / 100;
+  if (v.alb) c.albedo = v.alb / 100;
+  if (v.park) c.park_area_within_500m = v.park;
+  return c;
+}
+
+function formatDelta(delta: number): string {
+  const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
+  return `${sign}${Math.abs(delta).toFixed(1)}℃`;
+}
+
+function SimulationCard({
+  properties,
+  selectedGridResolution,
+  incomplete
+}: {
+  properties: GridAnalysisProperties;
+  selectedGridResolution: GridResolution;
+  incomplete: boolean;
+}) {
+  const gridId = typeof properties.grid_id === 'string' ? properties.grid_id : '';
+  const memberIds = Array.isArray(properties.member_grid_ids)
+    ? (properties.member_grid_ids.filter((id): id is string => typeof id === 'string'))
+    : [];
+  // 재예측 대상 100m 격자들: 100m면 자기 자신, 250/500m면 구성 100m 셀들
+  const targetIds = selectedGridResolution === '100m' ? (gridId ? [gridId] : []) : memberIds;
+  const canSimulate = targetIds.length > 0 && !incomplete;
+
+  const [values, setValues] = useState<Record<SimKey, number>>(
+    () => Object.fromEntries(SIM_SLIDERS.map((s) => [s.key, s.def])) as Record<SimKey, number>
+  );
+  const [result, setResult] = useState<{ delta: number; sub?: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function apply() {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const changes = simChanges(values);
+      if (targetIds.length === 1) {
+        const res = await simulateGridPolicy({ grid_id: targetIds[0], changes });
+        if (typeof res.error === 'string') {
+          setError('선택한 격자를 시뮬레이션할 수 없어요.');
+          return;
+        }
+        const sub =
+          typeof res.uncertainty_std === 'number'
+            ? `${res.before_anomaly.toFixed(1)}℃ → ${res.after_anomaly.toFixed(1)}℃ · 불확실성 ±${res.uncertainty_std.toFixed(1)}℃`
+            : undefined;
+        setResult({ delta: res.delta_c, sub });
+      } else {
+        const res = await simulateBatchGridPolicy(targetIds, changes);
+        if (res.mean_delta_c == null) {
+          setError('시뮬레이션할 수 있는 구성 격자가 없어요.');
+          return;
+        }
+        setResult({ delta: res.mean_delta_c, sub: `구성 100m 셀 ${res.count.toLocaleString()}개 평균` });
+      }
+    } catch (e) {
+      if (e instanceof ApiRequestError && e.status === 501) {
+        setError('ML 모델이 아직 연결되지 않았어요.');
+      } else {
+        setError('시뮬레이션 요청 중 오류가 났어요. 백엔드 서버가 켜져 있는지 확인해 주세요.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!canSimulate) {
+    return (
+      <div className="card gdpSim">
+        <div className="sec-title">직접 시뮬레이션</div>
+        <p className="gdpNote">
+          {incomplete
+            ? '데이터가 불완전한 격자라 시뮬레이션을 제공하지 않아요.'
+            : '이 격자는 구성 데이터가 없어 시뮬레이션할 수 없어요.'}
+        </p>
+      </div>
+    );
+  }
+
+  const delta = result?.delta;
+
+  return (
+    <div className="card gdpSim">
+      <div className="sec-title">직접 시뮬레이션</div>
+      <div className="sim-ctrl">
+        {SIM_SLIDERS.map((s) => (
+          <div className="sim-row" key={s.key}>
+            <div className="sr-top">
+              <span className="sr-lab">{s.label}</span>
+              <span className="sr-val">{simDisplay(s.key, values[s.key])}</span>
+            </div>
+            <input
+              type="range"
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              value={values[s.key]}
+              onChange={(e) =>
+                setValues((cur) => ({ ...cur, [s.key]: Number(e.target.value) }))
+              }
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="sim-out">
+        <span className="so-lab">
+          {typeof delta === 'number' && delta < 0 ? '예상 온도 저감' : '예상 온도 변화'}
+        </span>
+        <span className="so-num">
+          {loading ? '계산 중…' : typeof delta === 'number' ? formatDelta(delta) : '—'}
+        </span>
+      </div>
+      {result?.sub && <p className="gdpNote">{result.sub}</p>}
+      {error && <p className="gdpNote gdpSimError">{error}</p>}
+
+      <button className="gdpSimBtn" type="button" onClick={apply} disabled={loading}>
+        {loading ? '계산 중…' : '시뮬레이션 적용'}
+      </button>
+    </div>
   );
 }
 

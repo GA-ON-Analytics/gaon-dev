@@ -1299,7 +1299,7 @@ td {
 
 .rightToolbar {
   position: absolute;
-  top: 62px;
+  top: 20px;
   right: 16px;
   z-index: 700;
   display: grid;
@@ -1853,3 +1853,25 @@ td {
 .gridDetailSidePanel .gdpIncomplete{ background:var(--gdp-danger-soft); }
 .gridDetailSidePanel .gdpIncomplete .sec-title{ color:var(--gdp-danger); margin-bottom:0; }
 .gridDetailSidePanel .gdpIncomplete .gdpNote{ margin-top:8px; background:transparent; }
+
+/* 선택 지역 요약 (왼쪽에서 이동) */
+.gridDetailSidePanel .gdpSummaryList{ display:flex; flex-direction:column; gap:10px; }
+.gridDetailSidePanel .gdpSummaryList > div{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+.gridDetailSidePanel .gdpSummaryList dt{ font-size:13px; color:var(--gdp-ink2); }
+.gridDetailSidePanel .gdpSummaryList dd{ font-size:14px; font-weight:700; text-align:right; }
+
+/* 직접 시뮬레이션 (목업 detail-panel-mockup.html 이식) */
+.gridDetailSidePanel .sim-ctrl{ display:flex; flex-direction:column; gap:16px; margin-bottom:16px; }
+.gridDetailSidePanel .sr-top{ display:flex; justify-content:space-between; font-size:13px; margin-bottom:9px; }
+.gridDetailSidePanel .sr-lab{ color:var(--gdp-ink2); }
+.gridDetailSidePanel .sr-val{ font-weight:700; color:var(--gdp-green); }
+.gridDetailSidePanel .gdpSim input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:3px; background:var(--gdp-sub2); outline:none; margin:0; }
+.gridDetailSidePanel .gdpSim input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); box-shadow:0 1px 4px rgba(13,87,67,.35); }
+.gridDetailSidePanel .gdpSim input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); }
+.gridDetailSidePanel .sim-out{ background:var(--gdp-green-soft); border-radius:14px; padding:15px 17px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.gridDetailSidePanel .so-lab{ font-size:13px; color:var(--gdp-green); font-weight:600; }
+.gridDetailSidePanel .so-num{ font-size:26px; font-weight:800; color:var(--gdp-green); letter-spacing:-.02em; }
+.gridDetailSidePanel .gdpSimBtn{ margin-top:12px; width:100%; border:none; border-radius:14px; background:var(--gdp-green); color:#fff; font-size:14px; font-weight:700; padding:14px; cursor:pointer; }
+.gridDetailSidePanel .gdpSimBtn:hover{ background:var(--gdp-green2); }
+.gridDetailSidePanel .gdpSimBtn:disabled{ opacity:.6; cursor:default; }
+.gridDetailSidePanel .gdpSimError{ color:var(--gdp-danger); }
