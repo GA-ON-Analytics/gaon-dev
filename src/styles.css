@@ -1869,3 +1869,45 @@ td {
 .gridDetailSidePanel .gdpSimBtn:hover{ background:var(--gdp-green2); }
 .gridDetailSidePanel .gdpSimBtn:disabled{ opacity:.6; cursor:default; }
 .gridDetailSidePanel .gdpSimError{ color:var(--gdp-danger); }
+
+/* ── 다른 격자와 비교 카드 (목업 이식) ── */
+.gridDetailSidePanel .gdpCmp .gdpNote{ margin:0; }
+.gridDetailSidePanel .gdpCmpPicking{ color:var(--gdp-green); font-weight:700; }
+.gridDetailSidePanel .gdpCmpBtn{
+  margin-top:12px; width:100%; border:none; border-radius:14px;
+  background:var(--gdp-green); color:#fff; font-size:14px; font-weight:700;
+  padding:13px; cursor:pointer;
+}
+.gridDetailSidePanel .gdpCmpBtn:hover{ background:var(--gdp-green2); }
+.gridDetailSidePanel .gdpCmpBtn.ghost{
+  background:var(--gdp-sub); color:var(--gdp-ink2);
+}
+.gridDetailSidePanel .gdpCmpBtn.ghost:hover{ background:var(--gdp-sub2); }
+.gridDetailSidePanel .cmp-sub{ display:flex; align-items:baseline; gap:8px; margin-bottom:14px; }
+.gridDetailSidePanel .cmp-name{ font-size:16px; font-weight:800; }
+.gridDetailSidePanel .cmp-id{ font-size:12px; color:var(--gdp-ink3); }
+.gridDetailSidePanel .cmp-hero{
+  background:var(--gdp-hot-soft); border-radius:14px; padding:15px 17px; margin-bottom:16px;
+}
+.gridDetailSidePanel .ch-lab{
+  font-size:11px; font-weight:700; color:var(--gdp-hot); margin-bottom:5px; letter-spacing:.02em;
+}
+.gridDetailSidePanel .ch-txt{ font-size:15px; font-weight:700; }
+.gridDetailSidePanel .cmp-hrow,
+.gridDetailSidePanel .cmp-row{
+  display:grid; grid-template-columns:1fr 74px 74px; gap:8px; align-items:center;
+}
+.gridDetailSidePanel .cmp-hrow{
+  font-size:11px; color:var(--gdp-ink3); padding-bottom:10px; border-bottom:1px solid var(--gdp-line);
+}
+.gridDetailSidePanel .cmp-hrow span+span{ text-align:right; }
+.gridDetailSidePanel .cmp-row{
+  padding:10px 0; border-bottom:1px solid var(--gdp-line); font-size:13px;
+}
+.gridDetailSidePanel .cmp-row:last-of-type{ border-bottom:none; }
+.gridDetailSidePanel .c-lab{ color:var(--gdp-ink2); }
+.gridDetailSidePanel .c-mine,
+.gridDetailSidePanel .c-theirs{ text-align:right; font-weight:700; }
+.gridDetailSidePanel .c-theirs{ color:var(--gdp-ink3); font-weight:600; }
+.gridDetailSidePanel .c-mine.hot{ color:var(--gdp-hot); }
+.gridDetailSidePanel .c-mine.cool{ color:var(--gdp-cool); }

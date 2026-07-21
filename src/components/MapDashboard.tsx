@@ -529,6 +529,16 @@ export function MapDashboard() {
   const seoul100mMapCacheRef = useRef<FeatureCollection | null>(null);
   const district100mCacheRef = useRef(new Map<string, FeatureCollection>());
 
+  // Phase 3 — 격자 비교(두 번째 격자). A(주 격자)는 그대로 두고 B에 담는다.
+  const [comparePropertiesB, setComparePropertiesB] =
+    useState<GridAnalysisProperties | null>(null);
+  const [isPickingCompare, setIsPickingCompare] = useState(false);   // 비교 격자 고르는 중?
+  const isPickingCompareRef = useRef(false);
+  isPickingCompareRef.current = isPickingCompare;
+  const compareGridIdRef = useRef<string | null>(null);      // 비교 격자 grid_id (hydrate 가드)
+  const compareGridLayerRef = useRef<L.Path | null>(null);   // 250/500m 비교 격자 레이어
+  const compareResetRef = useRef<(() => void) | null>(null); // 비교 테두리 원복 함수
+
   // 격자를 새로 누르면 사이드바가 자동으로 펴진다     
   useEffect(() => {
     if (selectedGridProperties) {
@@ -724,13 +734,60 @@ export function MapDashboard() {
     },
     [districtCodeByName]
   );
+  // 비교 격자 100m 상세 보충 (A의 hydrate와 같은 캐시 사용, guTotal은 불필요)
+  const hydrateCompareProperties = useCallback(
+    (previewProperties: GridAnalysisProperties) => {
+      const gridId = getGridIdentifier(previewProperties);
+      const districtName =
+        typeof previewProperties.gu_name === 'string' ? previewProperties.gu_name : '';
+      const sigCode = String(
+        previewProperties.gu_code ?? districtCodeByName.get(districtName) ?? ''
+      );
+      if (!gridId || !districtName || !/^\d{5}$/.test(sigCode)) return;
+
+      const cached = district100mCacheRef.current.get(sigCode);
+      const detailRequest = cached
+        ? Promise.resolve(cached)
+        : getDistrictResolutionGrid('100m', sigCode, districtName).then((collection) => {
+            district100mCacheRef.current.set(sigCode, collection);
+            return collection;
+          });
+
+      detailRequest
+        .then((collection) => {
+          if (compareGridIdRef.current !== gridId) return;
+          const fullFeature = collection.features.find(
+            (feature) =>
+              getGridIdentifier(getFeatureProperties(feature as Feature<Geometry>)) === gridId
+          );
+          if (fullFeature) {
+            setComparePropertiesB(getFeatureProperties(fullFeature as Feature<Geometry>));
+          }
+        })
+        .catch(() => {
+          // 경량 속성만으로도 비교표 대부분은 채워진다. 다음 선택 시 재시도.
+        });
+    },
+    [districtCodeByName]
+  );
   const selected100mGridId = selected100mFeature
     ? getGridIdentifier(getFeatureProperties(selected100mFeature))
     : null;
+  const compareGridId = comparePropertiesB ? getGridIdentifier(comparePropertiesB) : null;
   const handle100mFeatureClick = useCallback(
     (feature: Feature<Geometry>, latLng: L.LatLng) => {
       const properties = getFeatureProperties(feature);
       const gridId = getGridIdentifier(properties);
+
+      // 비교 픽 모드: B에 담고 A(주 격자)는 그대로 둔다
+      if (isPickingCompareRef.current) {
+        if (gridId === selectedGridIdRef.current) return;   // 같은 격자끼리 비교 불가
+        compareGridIdRef.current = gridId;
+        setComparePropertiesB(properties);
+        setIsPickingCompare(false);
+        hydrateCompareProperties(properties);
+        return;
+      }
 
       selectedResetRef.current?.();
       selectedGridIdRef.current = gridId;
@@ -741,7 +798,7 @@ export function MapDashboard() {
       setSelectedGridGuTotal(null);   // 새 구 상세가 로드되면 다시 채워진다
       hydrateSelectedGridProperties(properties);
     },
-    [hydrateSelectedGridProperties]
+    [hydrateSelectedGridProperties, hydrateCompareProperties]
   );
   const build100mTooltip = useCallback(
     (feature: Feature<Geometry>) => buildGridTooltip(feature, selectedLayer, 100),
@@ -771,6 +828,25 @@ export function MapDashboard() {
     const gridId = getGridIdentifier(props);
     const resolution = gridResolutionRef.current;
     const meters = getResolutionMeters(resolution);
+
+    // 비교 픽 모드: B에 담고 파란 테두리만 입힌다 (A의 선택/팝업은 건드리지 않음)
+    if (isPickingCompareRef.current) {
+      if (gridId === selectedGridIdRef.current) return;   // 같은 격자끼리 비교 불가
+      compareResetRef.current?.();
+      layer.setStyle({ color: '#1c7ed6', weight: 3, opacity: 1 });
+      compareGridLayerRef.current = layer;
+      compareGridIdRef.current = gridId;
+      setComparePropertiesB(props);
+      setIsPickingCompare(false);
+      compareResetRef.current = () => {
+        compareGridLayerRef.current = null;
+        compareResetRef.current = null;
+        layer.setStyle(
+          gridFeatureStyle(feature, selectedLayerKeyRef.current, isDistrictOverviewRef.current)
+        );
+      };
+      return;
+    }
 
     selectedResetRef.current?.();
     layer.setStyle({ color: '#111827', weight: 3, opacity: 1 });
@@ -839,6 +915,33 @@ export function MapDashboard() {
     if (!selectedGridIdRef.current || !selectedGridLayerRef.current) return;
     selectedGridLayerRef.current.setStyle({ color: '#111827', weight: 3, opacity: 1 });
   }, [gridStyle]);
+
+  // 250/500m 비교 격자의 파란 테두리도 스타일 갱신 후 다시 입힌다.
+  useEffect(() => {
+    if (!compareGridIdRef.current || !compareGridLayerRef.current) return;
+    compareGridLayerRef.current.setStyle({ color: '#1c7ed6', weight: 3, opacity: 1 });
+  }, [gridStyle]);
+
+  // A(주 격자) 선택이 사라지면 비교 격자도 함께 정리한다 (기준 없는 비교는 의미 없음).
+  useEffect(() => {
+    if (selectedGridProperties) return;
+    compareResetRef.current?.();
+    compareGridIdRef.current = null;
+    setComparePropertiesB(null);
+    setIsPickingCompare(false);
+  }, [selectedGridProperties]);
+
+  const handleStartCompare = useCallback(() => {
+    setIsPickingCompare(true);
+    setActiveTool('지도선택');   // 비교 격자를 클릭으로 고를 수 있게 선택 모드로
+  }, []);
+
+  const handleClearCompare = useCallback(() => {
+    compareResetRef.current?.();
+    compareGridIdRef.current = null;
+    setComparePropertiesB(null);
+    setIsPickingCompare(false);
+  }, []);
 
   return (
     <div className={isPanelOpen ? 'gisShell panelOpen' : 'gisShell'}>
@@ -921,6 +1024,7 @@ export function MapDashboard() {
               data={gridGeoJson}
               activeTool={activeTool}
               selectedGridId={selected100mGridId}
+              compareGridId={compareGridId}
               style={gridStyle}
               tooltip={build100mTooltip}
               onFeatureClick={handle100mFeatureClick}
@@ -948,10 +1052,11 @@ export function MapDashboard() {
                       sticky: true
                     })
                     .openTooltip();
-                  // 주황 테두리: 지도선택 모드 & 선택 격자가 아닐 때만
+                  // 주황 테두리: 지도선택 모드 & 선택(검정)/비교(파랑) 격자가 아닐 때만
                   if (
                     activeToolRef.current === '지도선택' &&
-                    selectedGridLayerRef.current !== layer
+                    selectedGridLayerRef.current !== layer &&
+                    compareGridLayerRef.current !== layer
                   ) {
                     (layer as L.Path).setStyle({ color: '#e8590c', weight: 2.5, opacity: 1 });
                   }
@@ -959,8 +1064,12 @@ export function MapDashboard() {
                 mouseout: (event) => {
                   const layer = event.sourceTarget;
                   layer?.unbindTooltip?.();
-                  // 선택 격자면 검은 테두리 유지, 아니면 원래 스타일로 복원
-                  if (layer && selectedGridLayerRef.current !== layer) {
+                  // 선택(검정)·비교(파랑) 격자면 테두리 유지, 아니면 원래 스타일로 복원
+                  if (
+                    layer &&
+                    selectedGridLayerRef.current !== layer &&
+                    compareGridLayerRef.current !== layer
+                  ) {
                     (layer as L.Path).setStyle(
                       gridFeatureStyle(layer.feature, selectedLayer, isDistrictOverview)
                     );
@@ -1038,6 +1147,10 @@ export function MapDashboard() {
         isOpen={isPanelOpen}
         onToggle={() => setIsPanelOpen((prev) => !prev)}
         formatValue={formatAnyProperty}
+        compareProperties={comparePropertiesB}
+        isPickingCompare={isPickingCompare}
+        onStartCompare={handleStartCompare}
+        onClearCompare={handleClearCompare}
       />
     </div>
   );
