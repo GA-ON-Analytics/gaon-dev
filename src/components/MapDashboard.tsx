@@ -379,6 +379,39 @@ function makeDistrictLabel(district: DistrictOption) {
   });
 }
 
+// geojson 좌표는 숫자/문자 어느 쪽으로도 올 수 있어 유한수만 통과시킨다
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+// 선택 격자의 '가장 가까운 무더위쉼터'를 지도 핀으로 찍기 위한 정보 (좌표 없으면 null)
+function getShelterPin(properties: GridAnalysisProperties | null) {
+  if (!properties) return null;
+  const lat = toFiniteNumber(properties.nearest_shelter_lat);
+  const lon = toFiniteNumber(properties.nearest_shelter_lon);
+  if (lat === null || lon === null) return null;
+  return {
+    position: [lat, lon] as [number, number],
+    name: properties.nearest_shelter_name ?? '무더위쉼터',
+    addr: properties.nearest_shelter_addr ?? '',
+    distance: toFiniteNumber(properties.nearest_shelter_distance_m)
+  };
+}
+
+// 쉼터 핀 아이콘 (divIcon — 자치구 라벨과 동일 패턴). 스타일은 styles.css .shelterPinIcon
+const SHELTER_PIN_ICON = L.divIcon({
+  className: 'shelterPinIcon',
+  html: '<span class="shelterPinDot"><i>🏠</i></span>',
+  iconSize: [28, 34],
+  iconAnchor: [14, 32],
+  popupAnchor: [0, -30]
+});
+
 function buildDistrictTooltip(feature: Feature<Geometry>, selectedLayer: LayerKey) {
   const properties = getFeatureProperties(feature);
   const district = getDistrictName(feature);
@@ -1113,6 +1146,22 @@ export function MapDashboard() {
               eventHandlers={{ click: () => setSelectedDistrict(district.district) }}
             />
           ))}
+          {(() => {
+            // 선택 격자의 가장 가까운 쉼터를 지도에 핀으로 표시 (100m는 hydrate 후 좌표가 채워짐)
+            const shelter = getShelterPin(selectedGridProperties);
+            if (!shelter) return null;
+            return (
+              <Marker position={shelter.position} icon={SHELTER_PIN_ICON}>
+                <Popup className="shelterPopup" autoPan={false}>
+                  <strong>{shelter.name}</strong>
+                  {shelter.addr && <span>{shelter.addr}</span>}
+                  {shelter.distance !== null && (
+                    <span>선택 격자에서 약 {Math.round(shelter.distance)}m</span>
+                  )}
+                </Popup>
+              </Marker>
+            );
+          })()}
           <ZoomControl position="bottomright" />
           <ScaleControl position="bottomright" metric imperial={false} />
         </MapContainer>

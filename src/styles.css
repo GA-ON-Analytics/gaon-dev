@@ -1358,6 +1358,47 @@ td {
     0 2px 4px rgba(255, 255, 255, 0.9);
 }
 
+/* 선택 격자의 가장 가까운 무더위쉼터 핀 */
+.shelterPinIcon {
+  background: transparent;
+  border: 0;
+}
+
+.shelterPinIcon .shelterPinDot {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px 999px 999px 2px;
+  transform: rotate(-45deg);
+  background: #0d5743;
+  box-shadow: 0 2px 6px rgba(20, 30, 45, 0.35);
+}
+
+.shelterPinIcon .shelterPinDot i {
+  transform: rotate(45deg);
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.shelterPopup .leaflet-popup-content {
+  display: grid;
+  gap: 2px;
+  margin: 10px 12px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.shelterPopup .leaflet-popup-content strong {
+  color: #0d5743;
+  font-size: 13px;
+}
+
+.shelterPopup .leaflet-popup-content span {
+  color: #4e5968;
+}
+
 .districtLabelIconWithValue {
   display: grid;
   place-items: center;
