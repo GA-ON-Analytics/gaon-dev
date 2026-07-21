@@ -85,6 +85,10 @@ export interface GridAnalysisProperties {
   dong_avg_age?: number;
   dong_pop_density?: number;
   nearest_shelter_distance_m?: number;
+  nearest_shelter_name?: string;
+  nearest_shelter_addr?: string;
+  nearest_shelter_lon?: number;
+  nearest_shelter_lat?: number;
   shelter_count_within_500m?: number;
   shelter_capacity_within_500m?: number;
   building_form_group?: string;

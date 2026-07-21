@@ -1797,6 +1797,23 @@ td {
 }
 .gridDetailSidePanel .d-lab{ font-size:12px; color:var(--gdp-ink2); }
 
+/* --- 취약성 행 --- */
+.gridDetailSidePanel .rows{ display:flex; flex-direction:column; }
+.gridDetailSidePanel .row{
+  display:flex; justify-content:space-between; align-items:center; gap:12px;
+  padding:12px 0; border-bottom:1px solid var(--gdp-line);
+}
+.gridDetailSidePanel .row:last-child{ border-bottom:none; }
+.gridDetailSidePanel .r-lab{ font-size:13px; color:var(--gdp-ink2); display:flex; align-items:center; }
+.gridDetailSidePanel .r-val{ font-size:14px; font-weight:700; text-align:right; white-space:nowrap; }
+/* 쉼터: 이름(위) + 거리·주소(아래), 길면 줄바꿈 허용 */
+.gridDetailSidePanel .shelter-val{
+  display:flex; flex-direction:column; align-items:flex-end; gap:2px;
+  max-width:64%; white-space:normal;
+}
+.gridDetailSidePanel .sv-name{ font-size:14px; font-weight:700; text-align:right; }
+.gridDetailSidePanel .sv-sub{ font-size:11px; font-weight:500; color:var(--gdp-ink3); text-align:right; line-height:1.45; }
+
 /* 온도 톤: 지도 색 기준과 동일 (< 0 시원=파랑 · 0~1.5 보통=회색 · 1.5~3 더움=주황(기본) · ≥3 위험=빨강) */
 .gridDetailSidePanel .ht-num.cool{ color:var(--gdp-cool); }
 .gridDetailSidePanel .ht-num.neutral{ color:var(--gdp-ink); }
@@ -1811,7 +1828,14 @@ td {
 .gridDetailSidePanel .heatbar .hb.neutral{ background:var(--gdp-ink3); }
 .gridDetailSidePanel .heatbar .hb.danger{ background:var(--gdp-danger); }
 
-/* 추정값 안내 캡션 */
+/* 추정값·특수지역 안내 (내부 callout 카드) */
 .gridDetailSidePanel .gdpNote{
-  margin:-6px 2px 0; font-size:11px; line-height:1.5; color:var(--gdp-hot);
+  margin-top:12px;
+  padding:9px 12px;
+  border-radius:10px;
+  background:var(--gdp-sub);
+  color:var(--gdp-ink2);
+  font-size:11px;
+  line-height:1.55;
+  font-weight:500;
 }

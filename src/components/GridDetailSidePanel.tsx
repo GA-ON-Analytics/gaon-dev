@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import type { GridAnalysisProperties, GridResolution } from '../types/dashboard';
 
 interface Props {
@@ -123,24 +122,6 @@ function Donut({
   );
 }
 
-function ReportSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="gridReportSection">
-      <h3>{title}</h3>
-      <dl>{children}</dl>
-    </section>
-  );
-}
-
-function ReportRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="gridReportRow">
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
-  );
-}
-
 function selectionPrompt(district: string, resolution: GridResolution) {
   if (district === '전체' && resolution === '100m') {
     return '서울 전체에서 분석할 격자를 클릭하세요.';
@@ -179,6 +160,16 @@ function GridDetailSidePanel({
   const pop = properties?.est_population;          // 추정 거주 인구
   // 건물 도형 누락 특수지역(군사·공공 등)은 인구 추정이 0/없음 → "집계 제외"로 안내
   const popUnavailable = buildingEstimated && (pop == null || pop === 0);
+  const elderly = properties?.est_elderly;         // 추정 고령인구(65+)
+  const elderlyText =
+    elderly != null
+      ? `${Math.round(elderly).toLocaleString()}명${
+          pop ? ` · ${Math.round((elderly / pop) * 100)}%` : ''
+        }`
+      : '—';
+  // 가장 가까운 무더위쉼터 이름·주소 (빈 문자열이면 없는 것으로 처리)
+  const shelterName = properties?.nearest_shelter_name?.trim() || null;
+  const shelterAddr = properties?.nearest_shelter_addr?.trim() || null;
 
   // SHAP top1~3: 존재하는 것만 모으고, 막대 길이용 최대 절대기여도를 구한다.
   const shapItems = [
@@ -257,12 +248,6 @@ function GridDetailSidePanel({
                 )}
               </div>
             </div>
-            {popUnavailable && (
-              <p className="gdpNote">
-                * 군사·공공 등 특수지역으로 추정 거주 인구가 집계되지 않았습니다.
-              </p>
-            )}
-
             {shapItems.length > 0 && (
               <div className="card">
                 <div className="sec-title">온도에 영향이 큰 요인 TOP {shapItems.length}</div>
@@ -339,22 +324,48 @@ function GridDetailSidePanel({
               </div>
               {buildingEstimated && (
                 <p className="gdpNote">
-                  * 건물 비율은 건물 도형(VWorld) 데이터가 없어 위성 지표면으로 추정한 값입니다.
+                  건물 비율은 건물 도형(VWorld) 데이터가 없어 위성 지표면(built-up)으로 추정한 값이에요.
                 </p>
               )}
             </div>
 
-            <ReportSection title="취약성">
-              <ReportRow
-                label="추정 인구 (명)"
-                value={popUnavailable ? '집계 제외 (특수지역)' : fmt('est_population')}
-              />
-              <ReportRow
-                label="추정 고령인구 (명, 65+)"
-                value={popUnavailable ? '집계 제외' : fmt('est_elderly')}
-              />
-              <ReportRow label="가장 가까운 쉼터" value={fmt('nearest_shelter_distance_m')} />
-            </ReportSection>
+            <div className="card">
+              <div className="sec-title">취약성</div>
+              <div className="rows">
+                <div className="row">
+                  <span className="r-lab">추정 거주 인구</span>
+                  <span className="r-val">
+                    {popUnavailable
+                      ? '집계 제외'
+                      : pop != null
+                      ? `${Math.round(pop).toLocaleString()}명`
+                      : '—'}
+                  </span>
+                </div>
+                <div className="row">
+                  <span className="r-lab">추정 고령인구 (65+)</span>
+                  <span className="r-val">{popUnavailable ? '집계 제외' : elderlyText}</span>
+                </div>
+                <div className="row">
+                  <span className="r-lab">
+                    가장 가까운 무더위쉼터
+                    <InfoTip text="폭염 때 이용할 수 있는 냉방 대피 시설. 가까울수록 취약계층 대응에 유리합니다." />
+                  </span>
+                  <span className="r-val shelter-val">
+                    {shelterName && <span className="sv-name">{shelterName}</span>}
+                    <span className="sv-sub">
+                      {fmt('nearest_shelter_distance_m')}
+                      {shelterAddr ? ` · ${shelterAddr}` : ''}
+                    </span>
+                  </span>
+                </div>
+              </div>
+              {popUnavailable && (
+                <p className="gdpNote">
+                  군사·공공 등 특수지역이라 추정 인구·고령인구가 집계되지 않았어요.
+                </p>
+              )}
+            </div>
           </div>
         ) : (
           <div className="gridReportEmpty">
