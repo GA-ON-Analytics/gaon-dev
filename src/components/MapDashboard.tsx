@@ -1382,7 +1382,10 @@ function SearchPanel({
         </div>
       </section>
 
-      <p className="panelFootNote">{noticeText(selectedDistrict, selectedGridResolution)}</p>
+      {/* 안내문(미선택)과 푸터(선택)는 상호 배타 → 패널 높이를 일정하게 유지(스크롤 방지) */}
+      {selectedGridProperties && (
+        <p className="panelFootNote">{noticeText(selectedDistrict, selectedGridResolution)}</p>
+      )}
 
       {tip && (
         <div className="indicatorTip" style={{ top: tip.top, left: tip.left }} role="tooltip">
