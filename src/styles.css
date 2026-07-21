@@ -1849,3 +1849,7 @@ td {
   line-height:1.55;
   font-weight:500;
 }
+/* 데이터 불완전 격자(핵심 피처 결측) 경고 배지 */
+.gridDetailSidePanel .gdpIncomplete{ background:var(--gdp-danger-soft); }
+.gridDetailSidePanel .gdpIncomplete .sec-title{ color:var(--gdp-danger); margin-bottom:0; }
+.gridDetailSidePanel .gdpIncomplete .gdpNote{ margin-top:8px; background:transparent; }
