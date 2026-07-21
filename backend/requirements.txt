@@ -1,7 +1,9 @@
+# 모델(seoul_grid_explain_model.joblib)은 scikit-learn 1.9.0으로 저장됨 → 버전 일치 필수.
+# scikit-learn 1.7+ 는 Python 3.10+ 필요(로컬 파이썬이 3.9면 이 버전 설치 불가 → 3.11/3.12 사용).
 fastapi
 uvicorn[standard]
 pydantic
-pandas
-numpy
+pandas<3
+numpy<2.5
 joblib
-scikit-learn
+scikit-learn==1.9.0
