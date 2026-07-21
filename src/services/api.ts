@@ -1,5 +1,10 @@
 import type { FeatureCollection } from 'geojson';
-import type { GridResolution, SimulationRequest, SimulationResponse } from '../types/dashboard';
+import type {
+  BatchSimulationResponse,
+  GridResolution,
+  SimulationRequest,
+  SimulationResponse
+} from '../types/dashboard';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -114,4 +119,15 @@ export function getOverviewGrid(): Promise<FeatureCollection> {
 
 export function simulateGridPolicy(payload: SimulationRequest): Promise<SimulationResponse> {
   return postJson<SimulationResponse, SimulationRequest>('/api/simulate', payload);
+}
+
+// 여러 100m 격자에 같은 정책을 적용해 평균 저감을 구한다 (250/500m 집계 격자 시뮬레이션용).
+export function simulateBatchGridPolicy(
+  gridIds: string[],
+  changes: Record<string, number>
+): Promise<BatchSimulationResponse> {
+  return postJson<BatchSimulationResponse, { grid_ids: string[]; changes: Record<string, number> }>(
+    '/api/simulate/batch',
+    { grid_ids: gridIds, changes }
+  );
 }
