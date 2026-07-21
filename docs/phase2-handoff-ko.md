@@ -15,10 +15,14 @@
 
 ## 0. 한눈 요약
 
-- **Phase 1(정적 상세 패널)** ✅ · **Phase 2(직접 시뮬레이션)** ✅ · 패널 재구성·데이터 보정 ✅ · **Phase 3(격자 비교)** ⏳
+- **Phase 1(정적 상세 패널)** ✅ · **Phase 2(직접 시뮬레이션)** ✅ · 패널 재구성·데이터 보정 ✅ ·
+  **Phase 3(격자 비교)** ✅ · **Stage 4(왼쪽 패널 gdp 재스타일)** ✅ · **쉼터 지도 핀** ✅
 - 상세 패널(오른쪽)에 **목업 슬라이더 5개**(녹지·불투수·NDVI·알베도·공원면적) → "시뮬레이션 적용" →
   모델 재예측 → `delta_c`. **100m·250m·500m 전부 동작.**
-- 왼쪽 대시보드 = **지도/지표 선택 전용**. 죽은 코드 정리까지 완료.
+- 상세 패널에 **다른 격자와 비교** 카드: "비교할 격자 선택" 버튼 → 지도에서 두 번째 격자 클릭 →
+  지표 나란히 비교 + "가장 큰 차이" 콜아웃. 비교 격자는 지도에 **파란 테두리**로 표시.
+- 선택 격자의 가장 가까운 **무더위쉼터를 지도 핀(🏠)**으로 표시(좌표 있을 때만).
+- 왼쪽 대시보드 = **지도/지표 선택 전용**. 죽은 코드 정리 완료. 좌우 톤을 **gdp 카드 풍**으로 통일.
 
 ---
 
@@ -91,7 +95,9 @@ npm run dev                                              # 프론트 5173 (vite�
 ## 6. 커밋 이력 (이번 세션, 최신 위)
 
 ```
-(미커밋 예정) refactor: 미사용 시뮬/상세 코드 정리 + docs 인수인계/정리
+(미커밋 예정) feat: 격자 비교(Phase 3)·왼쪽 패널 gdp 재스타일(Stage 4)·쉼터 지도 핀
+cfe1de5 docs: 인수인계 문서 단일화
+fef503f refactor: 좌측 이동 후 남은 미사용 시뮬레이션·상세 코드 정리 (552줄)
 3b8e006 docs: 데이터 로컬 보정의 ML 파이프라인 반영 지침 문서 추가
 1d35140 fix: 250/500m 최근접 쉼터를 블록 중심 기준으로 계산
 edc4b1a feat: 250/500m 쉼터 이름·주소·좌표 추가            (1d35140이 정정)
@@ -115,12 +121,30 @@ aef4c59 fix: SHAP '데이터 준비중' 처리·불완전 격자 방어
 
 ## 8. 남은 작업 / 다음 단계
 
-- **Stage 4 — 왼쪽 패널**: 스크롤 없이 한 화면 + 오른쪽(gdp) 풍 디자인 재스타일.
-- **아코디언(보류)**: 패널 길면 시뮬/상세 접기(지금은 목업대로 인라인).
-- **Phase 3 — 격자 비교**: 두 번째 격자 선택 → 가장 큰 차이 콜아웃(목업 "다른 격자와 비교" 카드).
-  두 번째 격자 state를 `MapDashboard`에 추가, 선택 로직 확장.
-- **ML 파이프라인 반영**: `ml-data-pipeline-sync-ko.md`의 3건을 Windows 스크립트에 반영.
-- (개선) 쉼터 지도 핀(좌표 이미 있음), `seoul_grid_100m_map.geojson` 재생성 경로 불명.
+- **ML 파이프라인 반영**(남음): `ml-data-pipeline-sync-ko.md`의 3건을 Windows conda 스크립트에 반영.
+  (이 macOS 개발 머신에서는 불가 — Windows 테스트 머신 작업.)
+- **아코디언(보류)**: 패널 길면 시뮬/상세/비교 카드 접기(지금은 목업대로 인라인).
+- (개선) `seoul_grid_100m_map.geojson` 재생성 경로 불명.
+
+### 이번 세션 완료분 (구현 위치)
+
+- **Stage 4 — 왼쪽 패널 gdp 재스타일** ✅: `styles.css` `.gisLeftPanel`~`.indicatorList`.
+  각진 GIS 콘솔 → 둥근(18px) 흰 카드·부드러운 그림자·gdp 초록(#0d5743)·tabular-nums. JSX(className) 변경 없음.
+- **Phase 3 — 격자 비교** ✅:
+  - `MapDashboard.tsx`: 비교 state `comparePropertiesB`·`isPickingCompare`·refs(`compareGridIdRef`/`compareGridLayerRef`/`compareResetRef`),
+    `hydrateCompareProperties`(100m 상세 보충), 두 클릭 핸들러(`handle100mFeatureClick`·`handleGridClick`)에 **픽 모드 분기**,
+    `handleStartCompare`/`handleClearCompare`, A가 사라지면 B 정리하는 effect.
+  - `CanvasGridLayer.tsx`: `compareGridId` prop 추가 → 100m 비교 격자 **파란 테두리**(#1c7ed6). 250/500m은 레이어 직접 스타일.
+  - `GridDetailSidePanel.tsx`: `ComparisonCard`(목업 "다른 격자와 비교" 이식) + props 4개(`compareProperties`·`isPickingCompare`·`onStartCompare`·`onClearCompare`).
+    비교 지표 7종(`CMP_METRICS`), "가장 큰 차이" 콜아웃(salience 가중), hot/cool 톤. `styles.css` `.gdpCmp`~`.c-mine.cool`.
+- **쉼터 지도 핀** ✅: `MapDashboard.tsx` `getShelterPin`/`SHELTER_PIN_ICON`/`toFiniteNumber` + `MapContainer` 내 조건부 `<Marker><Popup>`.
+  `nearest_shelter_lat/lon/name/addr/distance_m` 사용. 100m은 hydrate 후 좌표가 채워지면 핀 등장. `styles.css` `.shelterPinIcon`/`.shelterPopup`.
+- **좌측 UI 마감**(사용자 피드백 반영) ✅:
+  - 분석 기준 값에서 중복 접두어 제거 → **한 줄**(`.fixedGridSize` nowrap).
+  - 지표 9종에 친화적 `help`(짧은 설명)·`desc`(툴팁) 추가. 라벨 옆 **ⓘ** + `position:fixed` 커스텀 툴팁(`.indicatorTip`, 스크롤 패널 잘림 회피). 현재값은 흰 알약 칩.
+  - 격자 선택 안내문(`selectionGuide`) **한 줄**(📍 + 짧은 문구). 옛 지도 위 안내바(MapNotice) 제거 → **왼쪽 패널 맨 아래 푸터**(`noticeText`/`.panelFootNote`)로 이동.
+  - `RightToolbar`(지도선택/이동) gdp 톤 재스타일(둥근 카드·초록 활성).
+  - 오른쪽 상세 패널 **빈 상태**(`.gridReportEmpty`) 카드형(🗺️ 아이콘+안내)로 개선.
 
 ---
 
