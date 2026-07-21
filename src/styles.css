@@ -615,104 +615,132 @@ td {
   }
 }
 
+/* 왼쪽 패널: 오른쪽 상세 패널(gdp)과 같은 톤 — 흰 카드·둥근 모서리·부드러운 그림자 */
 .gisLeftPanel {
+  /* gdp와 동일 팔레트 (스코프 안에서만 살아있게) */
+  --gdp-page: #eef1f4;
+  --gdp-card: #ffffff;
+  --gdp-sub: #f5f7f9;
+  --gdp-ink: #191f28;
+  --gdp-ink2: #4e5968;
+  --gdp-ink3: #8b95a1;
+  --gdp-line: #eceef1;
+  --gdp-green: #0d5743;
+  --gdp-green-soft: #e5f1ec;
   position: absolute;
   top: 18px;
   left: 16px;
   z-index: 700;
-  width: 300px;
-  border: 1px solid rgba(0, 0, 0, 0.28);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
-  font-size: 12px;
+  width: 320px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--gdp-card);
+  box-shadow: 0 1px 2px rgba(20, 30, 45, 0.05), 0 10px 28px rgba(20, 30, 45, 0.1);
+  color: var(--gdp-ink);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .heatIslandPanel {
-  width: 352px;
+  width: 320px;
   max-height: calc(100vh - 36px);
   overflow-y: auto;
-  border-color: rgba(13, 87, 67, 0.44);
 }
 
 .heatPanelHeader {
-  padding: 14px 14px 12px;
-  border-bottom: 1px solid #d7dfdc;
-  background: linear-gradient(180deg, #f7fbf8, #eef6f2);
+  padding: 18px 20px 14px;
 }
 
 .heatPanelHeader p {
-  margin: 0 0 5px;
-  color: #0a7a3d;
+  margin: 0 0 6px;
+  color: var(--gdp-green);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .heatPanelHeader h1 {
   margin: 0;
-  color: #172033;
-  font-size: 18px;
-  line-height: 1.22;
-  letter-spacing: 0;
+  color: var(--gdp-ink);
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.24;
+  letter-spacing: -0.02em;
 }
 
 .heatControlBlock {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
-  padding: 12px;
-  border-bottom: 1px solid #dde4e1;
+  gap: 10px;
+  padding: 4px 20px 16px;
 }
 
 .heatControlBlock label {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
 }
 
 .heatControlBlock label span {
-  color: #51606c;
-  font-weight: 900;
+  color: var(--gdp-ink2);
+  font-weight: 700;
 }
 
 .fixedGridSize {
   display: flex;
   align-items: center;
-  min-height: 31px;
-  border: 1px solid #cfd9d5;
-  border-radius: 2px;
-  background: #f5f8f6;
-  color: #0a7a3d;
-  padding: 0 9px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--gdp-green-soft);
+  color: var(--gdp-green);
+  padding: 0 12px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   line-height: 1.3;
-  white-space: normal;
-  word-break: keep-all;
+  white-space: nowrap;      /* 한 줄 유지 */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .selectionGuide {
-  display: grid;
-  gap: 4px;
-  margin: 10px 12px 0;
-  padding: 10px 11px;
-  border: 1px solid rgba(10, 122, 61, 0.24);
-  border-radius: 4px;
-  background: #f1f8f4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 20px 0;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--gdp-green-soft);
 }
 
-.selectionGuide strong {
-  color: #0a7a3d;
-  font-size: 12px;
+.selectionGuide .sgIcon {
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
 }
 
-.selectionGuide span {
-  color: #5f6e68;
+.selectionGuide .sgText {
+  min-width: 0;
+  color: var(--gdp-green);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 왼쪽 패널 맨 아래 안내 푸터 (예전 지도 위 안내바 대체) */
+.panelFootNote {
+  margin: 14px 20px 18px;
+  padding-top: 13px;
+  border-top: 1px solid var(--gdp-line);
+  color: var(--gdp-ink3);
   font-size: 11px;
-  font-weight: 800;
-  line-height: 1.4;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .gisTabs {
@@ -749,17 +777,19 @@ td {
 .gisLeftPanel select,
 .gisLeftPanel button {
   min-width: 0;
-  border-radius: 2px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .gisLeftPanel select {
   width: 100%;
-  min-height: 31px;
-  border: 1px solid #d7d7d7;
-  background: #fff;
-  color: #222;
-  padding: 0 9px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--gdp-sub);
+  color: var(--gdp-ink);
+  font-weight: 700;
+  padding: 0 12px;
+  cursor: pointer;
 }
 
 .wideSelect {
@@ -769,9 +799,9 @@ td {
 }
 
 .indicatorPanel {
-  margin: 12px;
-  border: 1px solid #cfd9d5;
-  background: #fff;
+  margin: 14px 20px 18px;
+  border: 0;
+  background: transparent;
 }
 
 .indicatorHeader {
@@ -779,23 +809,24 @@ td {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 11px;
-  border-bottom: 2px solid #172033;
+  padding: 0 2px 10px;
 }
 
 .indicatorHeader strong {
-  color: #172033;
+  color: var(--gdp-ink);
   font-size: 13px;
+  font-weight: 700;
 }
 
 .indicatorHeader span {
-  color: #0a7a3d;
+  color: var(--gdp-green);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .indicatorList {
   display: grid;
+  gap: 6px;
 }
 
 .indicatorList button {
@@ -803,27 +834,33 @@ td {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 52px;
-  padding: 8px 10px;
+  min-height: 50px;
+  padding: 9px 12px;
   border: 0;
-  border-bottom: 1px solid #e6ece9;
-  background: #fff;
-  color: #27313b;
+  border-radius: 12px;
+  background: var(--gdp-sub);
+  color: var(--gdp-ink);
   text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
 }
 
-.indicatorList button:last-child {
-  border-bottom: 0;
+.indicatorList button:hover {
+  background: #eaedf0;
 }
 
 .indicatorList button.active {
-  background: #0a7a3d;
+  background: var(--gdp-green);
   color: #fff;
+  box-shadow: 0 4px 12px rgba(13, 87, 67, 0.28);
 }
 
-.indicatorList button.active small,
-.indicatorList button.active b {
-  color: rgba(255, 255, 255, 0.86);
+.indicatorList button.active:hover {
+  background: var(--gdp-green);
+}
+
+.indicatorList button.active small {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .indicatorList button span {
@@ -833,22 +870,79 @@ td {
 }
 
 .indicatorList strong {
+  display: inline-flex;
+  align-items: center;
   font-size: 13px;
+  font-weight: 700;
+}
+
+/* 라벨 옆 정보 아이콘 (마우스 올리면 툴팁) */
+.indicatorInfo {
+  margin-left: 5px;
+  color: var(--gdp-ink3);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.indicatorList button.active .indicatorInfo {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .indicatorList small {
   overflow: hidden;
-  color: #6a7783;
+  color: var(--gdp-ink3);
   font-size: 11px;
+  font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 현재값: 흰 알약으로 데이터 읽기값임을 또렷하게 */
 .indicatorList b {
-  color: #cf3f3f;
+  color: var(--gdp-ink);
   font-size: 13px;
+  font-weight: 800;
   white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: var(--gdp-card);
+  box-shadow: 0 1px 2px rgba(20, 30, 45, 0.06);
+}
+
+.indicatorList button.active b {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+}
+
+/* 지표 설명 툴팁 — position:fixed라 스크롤 패널에 잘리지 않는다 */
+.indicatorTip {
+  position: fixed;
+  z-index: 1200;
+  transform: translateY(-50%);
+  max-width: 230px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #191f28;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 8px 24px rgba(20, 30, 45, 0.28);
+  pointer-events: none;
+}
+
+.indicatorTip::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 6px solid transparent;
+  border-left: 0;
+  border-right-color: #191f28;
 }
 
 .searchActions {
@@ -1299,37 +1393,40 @@ td {
 
 .rightToolbar {
   position: absolute;
-  top: 62px;
+  top: 18px;
   right: 16px;
   z-index: 700;
   display: grid;
-  width: 58px;
-  overflow: hidden;
-  border: 1px solid #cfcfcf;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+  gap: 6px;
+  width: 62px;
+  padding: 6px;
+  border: 0;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(20, 30, 45, 0.05), 0 10px 28px rgba(20, 30, 45, 0.1);
 }
 
 .rightToolbar button {
   display: grid;
   gap: 3px;
-  min-height: 53px;
+  min-height: 48px;
   place-items: center;
   border: 0;
-  border-bottom: 1px solid #e5e5e5;
-  background: #fff;
-  color: #e92f55;
+  border-radius: 11px;
+  background: #f5f7f9;
+  color: #4e5968;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s ease;
 }
 
-.rightToolbar button:first-child {
-  color: #444;
+.rightToolbar button:hover {
+  background: #eaedf0;
 }
 
 .rightToolbar span {
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1;
 }
 
@@ -1356,6 +1453,47 @@ td {
     -1px 1px 0 #fff,
     1px 1px 0 #fff,
     0 2px 4px rgba(255, 255, 255, 0.9);
+}
+
+/* 선택 격자의 가장 가까운 무더위쉼터 핀 */
+.shelterPinIcon {
+  background: transparent;
+  border: 0;
+}
+
+.shelterPinIcon .shelterPinDot {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px 999px 999px 2px;
+  transform: rotate(-45deg);
+  background: #0d5743;
+  box-shadow: 0 2px 6px rgba(20, 30, 45, 0.35);
+}
+
+.shelterPinIcon .shelterPinDot i {
+  transform: rotate(45deg);
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.shelterPopup .leaflet-popup-content {
+  display: grid;
+  gap: 2px;
+  margin: 10px 12px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.shelterPopup .leaflet-popup-content strong {
+  color: #0d5743;
+  font-size: 13px;
+}
+
+.shelterPopup .leaflet-popup-content span {
+  color: #4e5968;
 }
 
 .districtLabelIconWithValue {
@@ -1430,22 +1568,6 @@ td {
   font-size: 11px;
 }
 
-.gisNotice {
-  position: absolute;
-  left: 386px;
-  bottom: 18px;
-  z-index: 690;
-  max-width: min(720px, calc(100vw - 520px));
-  margin: 0;
-  padding: 9px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.18);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.88);
-  color: #404a54;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .gisShell .leaflet-bottom.leaflet-right {
   right: 16px;
   bottom: 14px;
@@ -1470,8 +1592,7 @@ td {
   }
 
   .datasetRail,
-  .topMenu,
-  .gisNotice {
+  .topMenu {
     display: none;
   }
 
@@ -1501,6 +1622,7 @@ td {
   height: 100%;
   padding: 20px;
   overflow-y: auto;
+  overflow-x: hidden;   /* 툴팁 등이 삐져나가도 가로 스크롤 안 생기게 */
   box-sizing: border-box;
 }
 
@@ -1544,8 +1666,13 @@ td {
 }
 
 .rightToolbar button.active {
-  background: #0d5743;   /* 앱 초록색 */
+  background: #0d5743;   /* 앱 초록색 (gdp green) */
   color: #ffffff;
+  box-shadow: 0 4px 12px rgba(13, 87, 67, 0.28);
+}
+
+.rightToolbar button.active:hover {
+  background: #0d5743;
 }
 
 /* 격자 선택 팝업 — 예전 툴팁 색감 그대로 */
@@ -1665,3 +1792,293 @@ td {
   font-size: 13px;
   color: #6b7280;
 }
+
+/* 오른쪽 상세 패널: 격자 미선택 시 빈 상태 카드 */
+.gridDetailSidePanel .gridReportEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 7px;
+  margin-top: 44px;
+  padding: 34px 26px;
+  background: var(--gdp-card);
+  border-radius: var(--gdp-r);
+  box-shadow: var(--gdp-shadow);
+}
+
+.gridDetailSidePanel .emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  margin-bottom: 6px;
+  border-radius: 20px;
+  background: var(--gdp-green-soft);
+  font-size: 30px;
+}
+
+.gridDetailSidePanel .gridReportEmpty h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--gdp-ink);
+}
+
+.gridDetailSidePanel .gridReportEmpty p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gdp-green);
+  line-height: 1.5;
+}
+
+.gridDetailSidePanel .gridReportEmpty .emptyHint {
+  color: var(--gdp-ink3);
+  font-weight: 500;
+}
+
+/* ===================== 격자 상세 패널 (목업 이식) ===================== */
+/* 색·모양 변수: :root 대신 패널 '안에서만' 살아있게 스코프 → 앱 전역 색과 충돌 방지 */
+.gridDetailSidePanel {
+  --gdp-page:#eef1f4; --gdp-card:#ffffff; --gdp-sub:#f5f7f9; --gdp-sub2:#eaedf0;
+  --gdp-ink:#191f28; --gdp-ink2:#4e5968; --gdp-ink3:#8b95a1; --gdp-line:#eceef1;
+  --gdp-green:#0d5743; --gdp-green2:#12876a; --gdp-green-soft:#e5f1ec;
+  --gdp-hot:#e8590c; --gdp-hot-soft:#fceadd; --gdp-cool:#1c7ed6; --gdp-cool-soft:#e2effb;
+  --gdp-danger:#e03131; --gdp-danger-soft:#fbe3e3;   /* 지도 빨강(≥3℃) 티어 */
+  --gdp-shadow:0 1px 2px rgba(20,30,45,.04), 0 8px 24px rgba(20,30,45,.05);
+  --gdp-r:18px;
+  background:var(--gdp-page);   /* 패널 배경 흰색 → 연회색 (흰 카드가 떠 보이게) */
+}
+.gridDetailSidePanel .gridReport{
+  gap:12px; color:var(--gdp-ink); font-variant-numeric:tabular-nums;
+}
+
+/* 카드 껍데기 & 공통 글자 (패널 안에서만 적용) */
+.gridDetailSidePanel .card{
+  background:var(--gdp-card); border-radius:var(--gdp-r);
+  padding:22px; box-shadow:var(--gdp-shadow);
+}
+.gridDetailSidePanel .eyebrow{
+  font-size:11px; font-weight:700; letter-spacing:.06em;
+  color:var(--gdp-green); text-transform:uppercase;
+}
+.gridDetailSidePanel .sec-title{ font-size:14px; font-weight:700; margin-bottom:16px; }
+.gridDetailSidePanel .muted{ color:var(--gdp-ink3); }
+
+/* --- 히어로 카드 --- */
+.gridDetailSidePanel .gu{ font-size:21px; font-weight:800; letter-spacing:-.02em; margin-top:8px; }
+.gridDetailSidePanel .id{ font-size:12px; color:var(--gdp-ink3); margin-top:4px; }
+.gridDetailSidePanel .hero-main{
+  display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-top:20px;
+}
+.gridDetailSidePanel .ht-num{
+  font-size:42px; font-weight:800; letter-spacing:-.03em; line-height:.95; color:var(--gdp-hot);
+}
+.gridDetailSidePanel .ht-num span{ font-size:22px; font-weight:700; margin-left:2px; }
+.gridDetailSidePanel .ht-sub{ font-size:12px; color:var(--gdp-ink2); margin-top:9px; }
+.gridDetailSidePanel .ht-sub b{ color:var(--gdp-hot); font-weight:700; }
+.gridDetailSidePanel .risk{
+  flex:none; font-size:12px; font-weight:700; padding:7px 13px; border-radius:20px;
+  background:var(--gdp-hot-soft); color:var(--gdp-hot);
+}
+.gridDetailSidePanel .heatbar{
+  position:relative; height:8px; border-radius:4px; background:var(--gdp-sub2);
+  margin-top:18px; overflow:hidden;
+}
+.gridDetailSidePanel .heatbar .hb{ height:100%; background:var(--gdp-hot); border-radius:4px; }
+.gridDetailSidePanel .hb-lab{
+  display:flex; justify-content:space-between; font-size:11px; color:var(--gdp-ink3); margin-top:7px;
+}
+.gridDetailSidePanel .chips{ display:flex; gap:8px; margin-top:18px; }
+.gridDetailSidePanel .chip{
+  font-size:12px; font-weight:600; padding:6px 12px; border-radius:9px;
+  background:var(--gdp-green-soft); color:var(--gdp-green);
+}
+.gridDetailSidePanel .chip.ghost{ background:var(--gdp-sub); color:var(--gdp-ink2); }
+
+/* --- 핵심 타일 2개 --- */
+.gridDetailSidePanel .tiles{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.gridDetailSidePanel .tile{ background:var(--gdp-sub); border-radius:14px; padding:15px 16px; }
+.gridDetailSidePanel .tile .t-lab{ font-size:12px; color:var(--gdp-ink3); margin-bottom:7px; }
+.gridDetailSidePanel .tile .t-num{ font-size:22px; font-weight:800; letter-spacing:-.02em; }
+.gridDetailSidePanel .t-num.hot{ color:var(--gdp-hot); }
+.gridDetailSidePanel .t-num.cool{ color:var(--gdp-cool); }
+.gridDetailSidePanel .t-num.t-na{ font-size:15px; color:var(--gdp-ink3); }
+
+/* --- SHAP 다이버징 막대 --- */
+.gridDetailSidePanel .shap{ display:flex; flex-direction:column; gap:15px; }
+.gridDetailSidePanel .shap-item{ display:flex; flex-direction:column; gap:8px; }
+.gridDetailSidePanel .si-top{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.gridDetailSidePanel .si-name{ font-size:13px; font-weight:600; }
+.gridDetailSidePanel .si-actual{ font-size:12px; color:var(--gdp-ink3); white-space:nowrap; }
+.gridDetailSidePanel .si-actual b{ color:var(--gdp-ink2); font-weight:700; }
+.gridDetailSidePanel .si-bot{ display:flex; align-items:center; gap:10px; }
+.gridDetailSidePanel .track{ position:relative; height:9px; background:var(--gdp-sub2); border-radius:5px; flex:1; }
+.gridDetailSidePanel .track:before{ content:""; position:absolute; left:50%; top:-2px; bottom:-2px; width:1px; background:var(--gdp-line); }
+.gridDetailSidePanel .bar{ position:absolute; top:0; height:100%; }
+.gridDetailSidePanel .bar.pos{ left:50%; background:var(--gdp-hot); border-radius:0 5px 5px 0; }
+.gridDetailSidePanel .bar.neg{ right:50%; background:var(--gdp-cool); border-radius:5px 0 0 5px; }
+.gridDetailSidePanel .shap-val{ font-size:12px; font-weight:700; min-width:54px; text-align:right; }
+.gridDetailSidePanel .shap-val.hot{ color:var(--gdp-hot); }
+.gridDetailSidePanel .shap-val.cool{ color:var(--gdp-cool); }
+.gridDetailSidePanel .legend{ margin-top:16px; display:flex; gap:14px; font-size:11px; color:var(--gdp-ink3); flex-wrap:wrap; }
+.gridDetailSidePanel .legend b{ font-weight:600; color:var(--gdp-ink2); }
+.gridDetailSidePanel .dot{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:5px; vertical-align:1px; }
+
+/* --- 지표 설명 커스텀 툴팁 (ⓘ) --- */
+.gridDetailSidePanel .infotip{
+  position:relative; display:inline-flex; align-items:center; justify-content:center;
+  width:14px; height:14px; margin-left:4px; border-radius:50%;
+  background:var(--gdp-sub2); color:var(--gdp-ink3);
+  font-size:9px; font-weight:700; font-style:italic; cursor:help; vertical-align:middle;
+  user-select:none;
+}
+.gridDetailSidePanel .infotip-bubble{
+  position:absolute; bottom:calc(100% + 7px);
+  width:185px; padding:9px 11px; border-radius:9px;
+  background:var(--gdp-ink); color:#fff;
+  font-size:11px; line-height:1.55; font-weight:500; font-style:normal;
+  text-align:left; white-space:pre-line; letter-spacing:0;
+  box-shadow:var(--gdp-shadow);
+  opacity:0; visibility:hidden;
+  transition:opacity .12s ease, transform .12s ease; z-index:20; pointer-events:none;
+}
+/* 아이콘 위치에 따라 펼치는 방향 (패널 밖으로 안 나가게) */
+.gridDetailSidePanel .infotip-left .infotip-bubble{ left:0; transform:translateY(3px); }
+.gridDetailSidePanel .infotip-right .infotip-bubble{ right:0; transform:translateY(3px); }
+.gridDetailSidePanel .infotip-center .infotip-bubble{ left:50%; transform:translate(-50%,3px); }
+.gridDetailSidePanel .infotip:hover .infotip-bubble,
+.gridDetailSidePanel .infotip:focus-visible .infotip-bubble{ opacity:1; visibility:visible; }
+.gridDetailSidePanel .infotip-left:hover .infotip-bubble,
+.gridDetailSidePanel .infotip-left:focus-visible .infotip-bubble{ transform:translateY(0); }
+.gridDetailSidePanel .infotip-right:hover .infotip-bubble,
+.gridDetailSidePanel .infotip-right:focus-visible .infotip-bubble{ transform:translateY(0); }
+.gridDetailSidePanel .infotip-center:hover .infotip-bubble,
+.gridDetailSidePanel .infotip-center:focus-visible .infotip-bubble{ transform:translate(-50%,0); }
+
+/* --- 환경 도넛 3개 --- */
+.gridDetailSidePanel .donuts{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.gridDetailSidePanel .donut{ display:flex; flex-direction:column; align-items:center; gap:9px; }
+.gridDetailSidePanel .d-wrap{ position:relative; width:80px; height:80px; }
+.gridDetailSidePanel .donut svg{ transform:rotate(-90deg); }
+.gridDetailSidePanel .d-num{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:16px; font-weight:800;
+}
+.gridDetailSidePanel .d-lab{ font-size:12px; color:var(--gdp-ink2); }
+
+/* --- 취약성 행 --- */
+.gridDetailSidePanel .rows{ display:flex; flex-direction:column; }
+.gridDetailSidePanel .row{
+  display:flex; justify-content:space-between; align-items:center; gap:12px;
+  padding:12px 0; border-bottom:1px solid var(--gdp-line);
+}
+.gridDetailSidePanel .row:last-child{ border-bottom:none; }
+.gridDetailSidePanel .r-lab{ font-size:13px; color:var(--gdp-ink2); display:flex; align-items:center; }
+.gridDetailSidePanel .r-val{ font-size:14px; font-weight:700; text-align:right; white-space:nowrap; }
+/* 쉼터: 전체폭 2줄 블록. 라벨(1줄) + [이름 왼쪽 · 거리 오른쪽] */
+.gridDetailSidePanel .shelter{
+  display:flex; flex-direction:column; gap:6px;
+  padding:12px 0 2px; border-top:1px solid var(--gdp-line);
+}
+.gridDetailSidePanel .shelter-head{
+  display:flex; align-items:center; white-space:nowrap;
+  font-size:13px; color:var(--gdp-ink2);
+}
+.gridDetailSidePanel .shelter-main{
+  display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+}
+.gridDetailSidePanel .shelter-name{
+  font-size:14px; font-weight:700;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.gridDetailSidePanel .shelter-dist{ font-size:14px; font-weight:700; flex:none; }
+
+/* 온도 톤: 지도 색 기준과 동일 (< 0 시원=파랑 · 0~1.5 보통=회색 · 1.5~3 더움=주황(기본) · ≥3 위험=빨강) */
+.gridDetailSidePanel .ht-num.cool{ color:var(--gdp-cool); }
+.gridDetailSidePanel .ht-num.neutral{ color:var(--gdp-ink); }
+.gridDetailSidePanel .ht-num.danger{ color:var(--gdp-danger); }
+.gridDetailSidePanel .ht-sub b.cool{ color:var(--gdp-cool); }
+.gridDetailSidePanel .ht-sub b.neutral{ color:var(--gdp-ink2); }
+.gridDetailSidePanel .ht-sub b.danger{ color:var(--gdp-danger); }
+.gridDetailSidePanel .risk.cool{ background:var(--gdp-cool-soft); color:var(--gdp-cool); }
+.gridDetailSidePanel .risk.neutral{ background:var(--gdp-sub); color:var(--gdp-ink2); }
+.gridDetailSidePanel .risk.danger{ background:var(--gdp-danger-soft); color:var(--gdp-danger); }
+.gridDetailSidePanel .heatbar .hb.cool{ background:var(--gdp-cool); }
+.gridDetailSidePanel .heatbar .hb.neutral{ background:var(--gdp-ink3); }
+.gridDetailSidePanel .heatbar .hb.danger{ background:var(--gdp-danger); }
+
+/* 추정값·특수지역 안내 (내부 callout 카드) */
+.gridDetailSidePanel .gdpNote{
+  margin-top:12px;
+  padding:9px 12px;
+  border-radius:10px;
+  background:var(--gdp-sub);
+  color:var(--gdp-ink2);
+  font-size:11px;
+  line-height:1.55;
+  font-weight:500;
+}
+/* 데이터 불완전 격자(핵심 피처 결측) 경고 배지 */
+.gridDetailSidePanel .gdpIncomplete{ background:var(--gdp-danger-soft); }
+.gridDetailSidePanel .gdpIncomplete .sec-title{ color:var(--gdp-danger); margin-bottom:0; }
+.gridDetailSidePanel .gdpIncomplete .gdpNote{ margin-top:8px; background:transparent; }
+
+/* 직접 시뮬레이션 (목업 detail-panel-mockup.html 이식) */
+.gridDetailSidePanel .sim-ctrl{ display:flex; flex-direction:column; gap:16px; margin-bottom:16px; }
+.gridDetailSidePanel .sr-top{ display:flex; justify-content:space-between; font-size:13px; margin-bottom:9px; }
+.gridDetailSidePanel .sr-lab{ color:var(--gdp-ink2); }
+.gridDetailSidePanel .sr-val{ font-weight:700; color:var(--gdp-green); }
+.gridDetailSidePanel .gdpSim input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:3px; background:var(--gdp-sub2); outline:none; margin:0; }
+.gridDetailSidePanel .gdpSim input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); box-shadow:0 1px 4px rgba(13,87,67,.35); }
+.gridDetailSidePanel .gdpSim input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); }
+.gridDetailSidePanel .sim-out{ background:var(--gdp-green-soft); border-radius:14px; padding:15px 17px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.gridDetailSidePanel .so-lab{ font-size:13px; color:var(--gdp-green); font-weight:600; }
+.gridDetailSidePanel .so-num{ font-size:26px; font-weight:800; color:var(--gdp-green); letter-spacing:-.02em; }
+.gridDetailSidePanel .gdpSimBtn{ margin-top:12px; width:100%; border:none; border-radius:14px; background:var(--gdp-green); color:#fff; font-size:14px; font-weight:700; padding:14px; cursor:pointer; }
+.gridDetailSidePanel .gdpSimBtn:hover{ background:var(--gdp-green2); }
+.gridDetailSidePanel .gdpSimBtn:disabled{ opacity:.6; cursor:default; }
+.gridDetailSidePanel .gdpSimError{ color:var(--gdp-danger); }
+
+/* ── 다른 격자와 비교 카드 (목업 이식) ── */
+.gridDetailSidePanel .gdpCmp .gdpNote{ margin:0; }
+.gridDetailSidePanel .gdpCmpPicking{ color:var(--gdp-green); font-weight:700; }
+.gridDetailSidePanel .gdpCmpBtn{
+  margin-top:12px; width:100%; border:none; border-radius:14px;
+  background:var(--gdp-green); color:#fff; font-size:14px; font-weight:700;
+  padding:13px; cursor:pointer;
+}
+.gridDetailSidePanel .gdpCmpBtn:hover{ background:var(--gdp-green2); }
+.gridDetailSidePanel .gdpCmpBtn.ghost{
+  background:var(--gdp-sub); color:var(--gdp-ink2);
+}
+.gridDetailSidePanel .gdpCmpBtn.ghost:hover{ background:var(--gdp-sub2); }
+.gridDetailSidePanel .cmp-sub{ display:flex; align-items:baseline; gap:8px; margin-bottom:14px; }
+.gridDetailSidePanel .cmp-name{ font-size:16px; font-weight:800; }
+.gridDetailSidePanel .cmp-id{ font-size:12px; color:var(--gdp-ink3); }
+.gridDetailSidePanel .cmp-hero{
+  background:var(--gdp-hot-soft); border-radius:14px; padding:15px 17px; margin-bottom:16px;
+}
+.gridDetailSidePanel .ch-lab{
+  font-size:11px; font-weight:700; color:var(--gdp-hot); margin-bottom:5px; letter-spacing:.02em;
+}
+.gridDetailSidePanel .ch-txt{ font-size:15px; font-weight:700; }
+.gridDetailSidePanel .cmp-hrow,
+.gridDetailSidePanel .cmp-row{
+  display:grid; grid-template-columns:1fr 74px 74px; gap:8px; align-items:center;
+}
+.gridDetailSidePanel .cmp-hrow{
+  font-size:11px; color:var(--gdp-ink3); padding-bottom:10px; border-bottom:1px solid var(--gdp-line);
+}
+.gridDetailSidePanel .cmp-hrow span+span{ text-align:right; }
+.gridDetailSidePanel .cmp-row{
+  padding:10px 0; border-bottom:1px solid var(--gdp-line); font-size:13px;
+}
+.gridDetailSidePanel .cmp-row:last-of-type{ border-bottom:none; }
+.gridDetailSidePanel .c-lab{ color:var(--gdp-ink2); }
+.gridDetailSidePanel .c-mine,
+.gridDetailSidePanel .c-theirs{ text-align:right; font-weight:700; }
+.gridDetailSidePanel .c-theirs{ color:var(--gdp-ink3); font-weight:600; }
+.gridDetailSidePanel .c-mine.hot{ color:var(--gdp-hot); }
+.gridDetailSidePanel .c-mine.cool{ color:var(--gdp-cool); }

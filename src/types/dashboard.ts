@@ -55,6 +55,13 @@ export interface SimulationResponse {
   [key: string]: unknown;
 }
 
+// POST /api/simulate/batch 응답 (여러 격자에 같은 정책 → 평균 저감)
+export interface BatchSimulationResponse {
+  count: number;
+  mean_delta_c: number | null;
+  results: SimulationResponse[];
+}
+
 export interface GridAnalysisProperties {
   grid_id?: string;
   display_grid_id?: string;
@@ -70,6 +77,8 @@ export interface GridAnalysisProperties {
   grid_size_m?: number;
   area_m2?: number;
   source_cell_count?: number;
+  // 250/500m 집계 격자를 구성하는 100m 격자 grid_id 목록 (배치 시뮬레이션 대상)
+  member_grid_ids?: string[];
   priority_score?: number;
   priority_rank?: number;
   mean_actual_anomaly?: number;
@@ -85,16 +94,31 @@ export interface GridAnalysisProperties {
   dong_avg_age?: number;
   dong_pop_density?: number;
   nearest_shelter_distance_m?: number;
+  nearest_shelter_name?: string;
+  nearest_shelter_addr?: string;
+  nearest_shelter_lon?: number;
+  nearest_shelter_lat?: number;
   shelter_count_within_500m?: number;
   shelter_capacity_within_500m?: number;
   building_form_group?: string;
   mean_actual_lst?: number;
   building_ratio?: number;
+  // building_ratio가 위성 지표면 기반 추정값이면 true (VWorld 건물 도형 누락 보정)
+  building_ratio_estimated?: boolean;
   green_ratio?: number;
   ndvi?: number;
+  impervious_ratio?: number;
   built_surface_ratio?: number;
   avg_ground_floor_count?: number;
+  max_ground_floor_count?: number;
+  floor_area_ratio_proxy?: number;
+  road_ratio?: number;
+  zoning_residential_ratio?: number;
+  zoning_commercial_ratio?: number;
+  zoning_industrial_ratio?: number;
+  zoning_green_ratio?: number;
   elevation_m?: number;
+  slope_deg?: number;
   albedo?: number;
   nearest_park_distance_m?: number;
   park_area_within_500m?: number;

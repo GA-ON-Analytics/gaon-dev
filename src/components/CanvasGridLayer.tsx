@@ -19,6 +19,7 @@ interface CanvasGridLayerProps {
   data: FeatureCollection;
   activeTool: string;
   selectedGridId: string | null;
+  compareGridId?: string | null;
   style: (feature: Feature<Geometry>) => PathOptions;
   tooltip: (feature: Feature<Geometry>) => string;
   onFeatureClick: (feature: Feature<Geometry>, latLng: LatLng) => void;
@@ -160,23 +161,28 @@ class FeatureSpatialIndex {
 class GeoJsonCanvasTiles extends L.GridLayer {
   private renderStyle: (feature: Feature<Geometry>) => PathOptions;
   private selectedGridId: string | null;
+  private compareGridId: string | null;
 
   constructor(
     private readonly index: FeatureSpatialIndex,
     renderStyle: (feature: Feature<Geometry>) => PathOptions,
-    selectedGridId: string | null
+    selectedGridId: string | null,
+    compareGridId: string | null
   ) {
     super({ pane: 'gridCanvasPane', tileSize: 256, updateWhenIdle: true, keepBuffer: 2 });
     this.renderStyle = renderStyle;
     this.selectedGridId = selectedGridId;
+    this.compareGridId = compareGridId;
   }
 
   updatePresentation(
     renderStyle: (feature: Feature<Geometry>) => PathOptions,
-    selectedGridId: string | null
+    selectedGridId: string | null,
+    compareGridId: string | null
   ) {
     this.renderStyle = renderStyle;
     this.selectedGridId = selectedGridId;
+    this.compareGridId = compareGridId;
     this.redraw();
   }
 
@@ -207,10 +213,14 @@ class GeoJsonCanvasTiles extends L.GridLayer {
 
     for (const indexed of candidates) {
       const feature = indexed.feature;
-      const isSelected = getGridId(feature) === this.selectedGridId;
+      const gid = getGridId(feature);
+      const isSelected = gid === this.selectedGridId;
+      const isCompare = this.compareGridId != null && gid === this.compareGridId;
       const baseStyle = this.renderStyle(feature);
       const style: PathOptions = isSelected
         ? { ...baseStyle, color: '#111827', weight: 3, opacity: 1 }
+        : isCompare
+        ? { ...baseStyle, color: '#1c7ed6', weight: 3, opacity: 1 }   // 비교 격자 = 파랑
         : baseStyle;
 
       context.beginPath();
@@ -247,6 +257,7 @@ export default function CanvasGridLayer({
   data,
   activeTool,
   selectedGridId,
+  compareGridId = null,
   style,
   tooltip,
   onFeatureClick
@@ -261,7 +272,7 @@ export default function CanvasGridLayer({
     pane.style.zIndex = '350';
     pane.style.pointerEvents = 'none';
 
-    const layer = new GeoJsonCanvasTiles(index, style, selectedGridId);
+    const layer = new GeoJsonCanvasTiles(index, style, selectedGridId, compareGridId);
     layerRef.current = layer;
     layer.addTo(map);
 
@@ -272,8 +283,8 @@ export default function CanvasGridLayer({
   }, [index, map]);
 
   useEffect(() => {
-    layerRef.current?.updatePresentation(style, selectedGridId);
-  }, [selectedGridId, style]);
+    layerRef.current?.updatePresentation(style, selectedGridId, compareGridId);
+  }, [selectedGridId, compareGridId, style]);
 
   useEffect(() => {
     const handleClick = (event: LeafletMouseEvent) => {
@@ -283,6 +294,7 @@ export default function CanvasGridLayer({
     };
 
     let hoverTooltip: L.Tooltip | null = null;
+    let hoverRect: L.Rectangle | null = null;   // 호버 중인 격자 주황 테두리
     let hoveredGridId = '';
     let frame = 0;
     const handleMouseMove = (event: LeafletMouseEvent) => {
@@ -293,7 +305,9 @@ export default function CanvasGridLayer({
 
         if (!feature) {
           if (hoverTooltip) map.removeLayer(hoverTooltip);
+          if (hoverRect) map.removeLayer(hoverRect);
           hoverTooltip = null;
+          hoverRect = null;
           hoveredGridId = '';
           return;
         }
@@ -308,6 +322,19 @@ export default function CanvasGridLayer({
             .setContent(tooltip(feature))
             .setLatLng(event.latlng);
           hoverTooltip.addTo(map);
+
+          // 주황 테두리: '지도선택' 모드에서만, 호버한 격자 경계 위에 그린다
+          if (activeTool === '지도선택') {
+            const bounds = L.geoJSON(feature).getBounds();
+            if (hoverRect) hoverRect.setBounds(bounds);
+            else
+              hoverRect = L.rectangle(bounds, {
+                color: '#e8590c',
+                weight: 2,
+                fill: false,
+                interactive: false
+              }).addTo(map);
+          }
           hoveredGridId = gridId;
         }
 
@@ -317,7 +344,9 @@ export default function CanvasGridLayer({
     const clearTooltip = () => {
       cancelAnimationFrame(frame);
       if (hoverTooltip) map.removeLayer(hoverTooltip);
+      if (hoverRect) map.removeLayer(hoverRect);
       hoverTooltip = null;
+      hoverRect = null;
       hoveredGridId = '';
     };
 
@@ -331,6 +360,7 @@ export default function CanvasGridLayer({
       map.off('mousemove', handleMouseMove);
       map.off('mouseout', clearTooltip);
       if (hoverTooltip) map.removeLayer(hoverTooltip);
+      if (hoverRect) map.removeLayer(hoverRect);
     };
   }, [activeTool, index, map, onFeatureClick, tooltip]);
 
