@@ -1854,12 +1854,6 @@ td {
 .gridDetailSidePanel .gdpIncomplete .sec-title{ color:var(--gdp-danger); margin-bottom:0; }
 .gridDetailSidePanel .gdpIncomplete .gdpNote{ margin-top:8px; background:transparent; }
 
-/* 선택 지역 요약 (왼쪽에서 이동) */
-.gridDetailSidePanel .gdpSummaryList{ display:flex; flex-direction:column; gap:10px; }
-.gridDetailSidePanel .gdpSummaryList > div{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
-.gridDetailSidePanel .gdpSummaryList dt{ font-size:13px; color:var(--gdp-ink2); }
-.gridDetailSidePanel .gdpSummaryList dd{ font-size:14px; font-weight:700; text-align:right; }
-
 /* 직접 시뮬레이션 (목업 detail-panel-mockup.html 이식) */
 .gridDetailSidePanel .sim-ctrl{ display:flex; flex-direction:column; gap:16px; margin-bottom:16px; }
 .gridDetailSidePanel .sr-top{ display:flex; justify-content:space-between; font-size:13px; margin-bottom:9px; }

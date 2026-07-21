@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import L, { type PathOptions } from 'leaflet';
 import {
@@ -13,18 +13,14 @@ import {
   ZoomControl
 } from 'react-leaflet';
 import {
-  ApiRequestError,
   getDistrictResolutionGrid,
   getGeoJson,
-  getResolutionGrid,
-  simulateGridPolicy
+  getResolutionGrid
 } from '../services/api';
 import type {
   GridAnalysisProperties,
   GridResolution,
-  LayerKey,
-  PolicyOptionKey,
-  SimulationResponse
+  LayerKey
 } from '../types/dashboard';
 import GridDetailSidePanel from './GridDetailSidePanel';
 import CanvasGridLayer from './CanvasGridLayer';
@@ -40,8 +36,6 @@ const DISTRICT_OVERVIEW_ZOOM = 12;
 const ANALYSIS_PERIOD_LABEL = '분석 기준: 2023~2025년 여름철 평균';
 const DATA_PENDING = '데이터 준비중';
 const NEUTRAL_COLOR = '#d7dce3';
-const SIMULATION_GRID_NOTICE =
-  '시뮬레이션은 100m 격자 선택 시 가능합니다. 250m/500m 격자는 분석 결과 조회용입니다.';
 
 interface DistrictOption {
   district: string;
@@ -56,31 +50,9 @@ interface LayerOption {
   help: string;
 }
 
-interface DetailField {
-  key: keyof GridAnalysisProperties;
-  label: string;
-}
-
-interface PolicyOption {
-  key: PolicyOptionKey;
-  label: string;
-}
-
 interface GridResolutionOption {
   key: GridResolution;
   label: string;
-}
-
-interface SimulationInputValues {
-  greenRatioPercent: number;
-  imperviousReductionPercent: number;
-  parkAreaM2: number;
-}
-
-interface SimulationPolicyChange {
-  key: PolicyOptionKey;
-  label: string;
-  value: string;
 }
 
 const HEAT_ISLAND_INDICATORS: LayerOption[] = [
@@ -95,55 +67,6 @@ const HEAT_ISLAND_INDICATORS: LayerOption[] = [
   { key: 'nearest_shelter_distance_m', label: '쉼터 접근성', help: 'nearest_shelter_distance_m' }
 ];
 
-const GRID_DETAIL_FIELDS: DetailField[] = [
-  { key: 'grid_id', label: 'grid_id' },
-  { key: 'display_grid_id', label: 'display_grid_id' },
-  { key: 'gu_name', label: 'gu_name' },
-  { key: 'priority_score', label: 'priority_score' },
-  { key: 'priority_rank', label: 'priority_rank' },
-  { key: 'mean_actual_lst', label: 'mean_actual_lst' },
-  { key: 'mean_actual_anomaly', label: 'mean_actual_anomaly' },
-  { key: 'seoul_anomaly', label: 'seoul_anomaly' },
-  { key: 'pred_anomaly', label: 'pred_anomaly' },
-  { key: 'pred_anomaly_std', label: 'pred_anomaly_std' },
-  { key: 'green_delta_c', label: 'green_delta_c' },
-  { key: 'building_form_group', label: 'building_form_group' },
-  { key: 'est_population', label: 'est_population' },
-  { key: 'est_elderly', label: 'est_elderly' },
-  { key: 'nearest_shelter_distance_m', label: 'nearest_shelter_distance_m' },
-  { key: 'shelter_count_within_500m', label: 'shelter_count_within_500m' },
-  { key: 'shelter_capacity_within_500m', label: 'shelter_capacity_within_500m' },
-  { key: 'green_ratio', label: 'green_ratio' },
-  { key: 'ndvi', label: 'ndvi' },
-  { key: 'building_ratio', label: 'building_ratio' },
-  { key: 'impervious_ratio', label: 'impervious_ratio' },
-  { key: 'built_surface_ratio', label: 'built_surface_ratio' },
-  { key: 'avg_ground_floor_count', label: 'avg_ground_floor_count' },
-  { key: 'elevation_m', label: 'elevation_m' },
-  { key: 'albedo', label: 'albedo' },
-  { key: 'nearest_park_distance_m', label: 'nearest_park_distance_m' },
-  { key: 'park_area_within_500m', label: 'park_area_within_500m' },
-  { key: 'nearest_stream_distance_m', label: 'nearest_stream_distance_m' },
-  { key: 'top1_feature', label: 'top1_feature' },
-  { key: 'top1_shap', label: 'top1_shap' },
-  { key: 'top2_feature', label: 'top2_feature' },
-  { key: 'top2_shap', label: 'top2_shap' },
-  { key: 'top3_feature', label: 'top3_feature' },
-  { key: 'top3_shap', label: 'top3_shap' }
-];
-
-const POLICY_OPTIONS: PolicyOption[] = [
-  { key: 'green_ratio_increase', label: '녹지율 증가' },
-  { key: 'impervious_ratio_reduction', label: '불투수면 저감' },
-  { key: 'park_area_expansion', label: '공원 면적 확충' }
-];
-
-const DEFAULT_POLICY_OPTIONS: PolicyOptionKey[] = [
-  'green_ratio_increase',
-  'impervious_ratio_reduction',
-  'park_area_expansion'
-];
-
 const GRID_RESOLUTION_OPTIONS: GridResolutionOption[] = [
   { key: '100m', label: '100M' },
   { key: '250m', label: '250M' },
@@ -152,12 +75,6 @@ const GRID_RESOLUTION_OPTIONS: GridResolutionOption[] = [
 
 const DISTRICT_LABEL_CENTER_OVERRIDES: Record<string, [number, number]> = {
   종로구: [37.576, 126.982]
-};
-
-const DEFAULT_SIMULATION_INPUTS: SimulationInputValues = {
-  greenRatioPercent: 5,
-  imperviousReductionPercent: 5,
-  parkAreaM2: 1000
 };
 
 function getFeatureProperties(feature?: Feature<Geometry>): GridAnalysisProperties {
@@ -1245,420 +1162,6 @@ function SearchPanel({
       </section>
 
     </aside>
-  );
-}
-
-function GridDetailPanel({
-  properties,
-  selectionPrompt
-}: {
-  properties: GridAnalysisProperties | null;
-  selectionPrompt: string;
-}) {
-  return (
-    <section className="resultPanel heatResultPanel gridDetailPanel">
-      <div className="resultHeader">
-        <strong>선택 격자 상세</strong>
-        <span className="mlStatusBadge">properties</span>
-      </div>
-      {properties ? (
-        <dl>
-          {GRID_DETAIL_FIELDS.map((field) => (
-            <Fragment key={String(field.key)}>
-              <dt>{field.label}</dt>
-              <dd>{formatAnyProperty(properties, field.key)}</dd>
-            </Fragment>
-          ))}
-        </dl>
-      ) : (
-        <p className="emptyDetailGuide">{selectionPrompt}</p>
-      )}
-    </section>
-  );
-}
-
-function formatSimulationValue(value: unknown, suffix = '') {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return DATA_PENDING;
-  }
-
-  return `${value.toFixed(3)}${suffix}`;
-}
-
-function getSimulationFeatureLabel(feature: string) {
-  const labels: Record<string, string> = {
-    green_ratio: '녹지율',
-    impervious_ratio: '불투수면',
-    built_surface_ratio: '시가화면 비율',
-    building_ratio: '건물 비율',
-    park_area_within_500m: '공원 영향 면적',
-    nearest_park_distance_m: '공원 접근 거리',
-    nearest_stream_distance_m: '하천 접근 거리',
-    ndvi: '식생지수'
-  };
-
-  return labels[feature] ?? feature;
-}
-
-function formatSimulationFeatureValue(feature: string, value: number) {
-  if (!Number.isFinite(value)) {
-    return DATA_PENDING;
-  }
-
-  if (
-    feature === 'green_ratio' ||
-    feature === 'impervious_ratio' ||
-    feature === 'built_surface_ratio' ||
-    feature === 'building_ratio'
-  ) {
-    return `${formatNumber(value * 100, 2)}%`;
-  }
-
-  if (feature === 'park_area_within_500m') {
-    return `${Math.round(value).toLocaleString()}㎡`;
-  }
-
-  if (feature.endsWith('_distance_m')) {
-    return `${formatNumber(value, 0)}m`;
-  }
-
-  return formatSimulationValue(value);
-}
-
-function getDeltaDescription(delta: unknown) {
-  if (typeof delta !== 'number' || !Number.isFinite(delta)) {
-    return DATA_PENDING;
-  }
-
-  if (delta < 0) return '모델 기준 예상 저감';
-  if (delta > 0) return '모델 기준 예상 증가';
-  return '변화 없음';
-}
-
-function SimulationResultSummary({
-  result,
-  policyChanges
-}: {
-  result: SimulationResponse;
-  policyChanges: SimulationPolicyChange[];
-}) {
-  const changedFeatures = result.changed_features ?? {};
-  const changedFeatureEntries = Object.entries(changedFeatures);
-  const deltaDescription = getDeltaDescription(result.delta_c);
-
-  return (
-    <div className="simulationResultSummary">
-      <div className="simulationResultTitle">
-        <strong>시뮬레이션 결과</strong>
-        <span className={typeof result.delta_c === 'number' && result.delta_c < 0 ? 'cooling' : 'warming'}>
-          {deltaDescription}: {formatSimulationValue(result.delta_c, '℃')}
-        </span>
-      </div>
-
-      <dl>
-        <dt>기존 예측값</dt>
-        <dd>{formatSimulationValue(result.before_anomaly, '℃')}</dd>
-        <dt>시나리오 후 예측값</dt>
-        <dd>{formatSimulationValue(result.after_anomaly, '℃')}</dd>
-        <dt>모델 기준 예상 변화</dt>
-        <dd>
-          <strong className={typeof result.delta_c === 'number' && result.delta_c < 0 ? 'cooling' : 'warming'}>
-            {formatSimulationValue(result.delta_c, '℃')}
-          </strong>
-          <span>{deltaDescription}</span>
-        </dd>
-        {typeof result.uncertainty_std === 'number' && Number.isFinite(result.uncertainty_std) && (
-          <>
-            <dt>불확실성</dt>
-            <dd>{formatSimulationValue(result.uncertainty_std)}</dd>
-          </>
-        )}
-      </dl>
-
-      <div className="policyChangeList">
-        <strong>입력한 정책 변화</strong>
-        {policyChanges.length > 0 ? (
-          <ul>
-            {policyChanges.map((change) => (
-              <li key={change.key}>
-                <span>{change.label}</span>
-                <b>{change.value}</b>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>입력한 정책 변화가 없습니다.</p>
-        )}
-      </div>
-
-      <div className="changedFeatureList">
-        <strong>모델에 반영된 변수 변화</strong>
-        {changedFeatureEntries.length > 0 ? (
-          <ul>
-            {changedFeatureEntries.map(([feature, values]) => (
-              <li key={feature}>
-                <span>{getSimulationFeatureLabel(feature)}</span>
-                <b>
-                  {formatSimulationFeatureValue(feature, values.before)} →{' '}
-                  {formatSimulationFeatureValue(feature, values.after)}
-                </b>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>변경된 변수가 없습니다.</p>
-        )}
-      </div>
-
-      {Array.isArray(result.warnings) && result.warnings.length > 0 && (
-        <div className="simulationWarnings">
-          <strong>경고</strong>
-          <ul>
-            {result.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <p className="simulationResultNotice">
-        이 결과는 선택한 100m 격자에 대한 임시 예측값입니다. 원본 지도 데이터와 전체 지도 색상은
-        변경되지 않습니다.
-      </p>
-    </div>
-  );
-}
-
-function getSimulationErrorMessage(error: unknown) {
-  if (error instanceof ApiRequestError) {
-    if (error.status === 501) return 'ML 모델이 아직 연결되지 않았습니다.';
-    if (error.status === 404) return '선택한 격자를 데이터셋에서 찾을 수 없습니다.';
-    if (error.status === 500) return '시뮬레이션 처리 중 서버 오류가 발생했습니다.';
-  }
-
-  return '시뮬레이션 요청 중 오류가 발생했습니다.';
-}
-
-function SimulationApiPanel({
-  properties,
-  selectedGridResolution
-}: {
-  properties: GridAnalysisProperties | null;
-  selectedGridResolution: GridResolution;
-}) {
-  const gridId = typeof properties?.grid_id === 'string' ? properties.grid_id : '';
-  const guName = properties ? formatAnyProperty(properties, 'gu_name') : '격자 선택 후 표시';
-  const canSimulate = selectedGridResolution === '100m' && Boolean(gridId);
-  const [policyOptions, setPolicyOptions] = useState<PolicyOptionKey[]>(DEFAULT_POLICY_OPTIONS);
-  const [inputValues, setInputValues] = useState<SimulationInputValues>(DEFAULT_SIMULATION_INPUTS);
-  const [simulationResult, setSimulationResult] = useState<SimulationResponse | null>(null);
-  const [simulationError, setSimulationError] = useState<string | null>(null);
-  const [simulationLoading, setSimulationLoading] = useState(false);
-  const [submittedPolicyChanges, setSubmittedPolicyChanges] = useState<SimulationPolicyChange[]>([]);
-  const simulationResultRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setSimulationResult(null);
-    setSimulationError(null);
-    setSubmittedPolicyChanges([]);
-  }, [gridId, selectedGridResolution]);
-
-  useEffect(() => {
-    if (simulationResult) {
-      simulationResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [simulationResult]);
-
-  function updateInputValue(key: keyof SimulationInputValues, value: number) {
-    setInputValues((current) => ({
-      ...current,
-      [key]: Number.isFinite(value) ? value : 0
-    }));
-  }
-
-  function getSimulationParameters() {
-    return {
-      green_ratio_delta: policyOptions.includes('green_ratio_increase')
-        ? inputValues.greenRatioPercent / 100
-        : 0,
-      impervious_ratio_delta: policyOptions.includes('impervious_ratio_reduction')
-        ? -Math.abs(inputValues.imperviousReductionPercent) / 100
-        : 0,
-      park_area_m2: policyOptions.includes('park_area_expansion') ? inputValues.parkAreaM2 : 0
-    };
-  }
-
-  function getSubmittedPolicyChanges(): SimulationPolicyChange[] {
-    const changes: SimulationPolicyChange[] = [];
-
-    if (policyOptions.includes('green_ratio_increase')) {
-      changes.push({
-        key: 'green_ratio_increase',
-        label: '녹지율 증가',
-        value: `+${formatNumber(inputValues.greenRatioPercent, 1)}%p`
-      });
-    }
-
-    if (policyOptions.includes('impervious_ratio_reduction')) {
-      changes.push({
-        key: 'impervious_ratio_reduction',
-        label: '불투수면 감소',
-        value: `-${formatNumber(Math.abs(inputValues.imperviousReductionPercent), 1)}%p`
-      });
-    }
-
-    if (policyOptions.includes('park_area_expansion')) {
-      changes.push({
-        key: 'park_area_expansion',
-        label: '공원 영향 면적 증가',
-        value: `+${Math.round(inputValues.parkAreaM2).toLocaleString()}㎡`
-      });
-    }
-
-    return changes;
-  }
-
-  function togglePolicyOption(option: PolicyOptionKey) {
-    setPolicyOptions((current) =>
-      current.includes(option)
-        ? current.filter((item) => item !== option)
-        : [...current, option]
-    );
-  }
-
-  async function handleSimulation() {
-    if (!canSimulate) {
-      setSimulationError(SIMULATION_GRID_NOTICE);
-      return;
-    }
-
-    setSimulationLoading(true);
-    setSimulationError(null);
-    setSimulationResult(null);
-    setSubmittedPolicyChanges([]);
-
-    try {
-      const submittedChanges = getSubmittedPolicyChanges();
-      const response = await simulateGridPolicy({
-        grid_id: gridId,
-        policy_options: policyOptions,
-        parameters: getSimulationParameters()
-      });
-      console.log('simulation result', response);
-
-      if (typeof response.error === 'string') {
-        setSimulationError(
-          response.error.includes('grid_id')
-            ? '선택한 격자를 데이터셋에서 찾을 수 없습니다.'
-            : response.error
-        );
-        return;
-      }
-
-      setSimulationResult(response);
-      setSubmittedPolicyChanges(submittedChanges);
-      setSimulationError(null);
-    } catch (error) {
-      setSimulationError(getSimulationErrorMessage(error));
-    } finally {
-      setSimulationLoading(false);
-    }
-  }
-
-  return (
-    <section className="resultPanel heatResultPanel simulationPanel">
-      <div className="resultHeader">
-        <strong>시뮬레이션 API</strong>
-        <span className="mlStatusBadge">POST</span>
-      </div>
-      <div className="simulationForm">
-        <div className="simulationGridInfo">
-          <dl>
-            <dt>선택 격자</dt>
-            <dd>{gridId || '지도에서 격자를 선택하세요'}</dd>
-            <dt>자치구</dt>
-            <dd>{guName}</dd>
-            <dt>해상도</dt>
-            <dd>{selectedGridResolution}</dd>
-          </dl>
-        </div>
-        {!canSimulate && <p className="simulationStatus warning">{SIMULATION_GRID_NOTICE}</p>}
-
-        <div className="fieldGroup">
-          <span>정책 옵션</span>
-          <div className="policyOptionList">
-            {POLICY_OPTIONS.map((option) => (
-              <label className="policyOption" key={option.key}>
-                <input
-                  type="checkbox"
-                  checked={policyOptions.includes(option.key)}
-                  onChange={() => togglePolicyOption(option.key)}
-                />
-                <span>{option.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <label className="fieldGroup">
-          <span>녹지율 증가폭(%)</span>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={inputValues.greenRatioPercent}
-            disabled={!policyOptions.includes('green_ratio_increase')}
-            onChange={(event) => updateInputValue('greenRatioPercent', Number(event.target.value))}
-          />
-        </label>
-
-        <label className="fieldGroup">
-          <span>불투수면 감소폭(%)</span>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={inputValues.imperviousReductionPercent}
-            disabled={!policyOptions.includes('impervious_ratio_reduction')}
-            onChange={(event) =>
-              updateInputValue('imperviousReductionPercent', Number(event.target.value))
-            }
-          />
-        </label>
-
-        <label className="fieldGroup">
-          <span>공원 영향 면적 증가(㎡)</span>
-          <input
-            type="number"
-            min="0"
-            step="100"
-            value={inputValues.parkAreaM2}
-            disabled={!policyOptions.includes('park_area_expansion')}
-            onChange={(event) => updateInputValue('parkAreaM2', Number(event.target.value))}
-          />
-        </label>
-
-        <button
-          className="primaryButton"
-          type="button"
-          onClick={handleSimulation}
-          disabled={simulationLoading || !canSimulate}
-        >
-          {simulationLoading ? '시뮬레이션 계산 중...' : '시뮬레이션 요청'}
-        </button>
-
-        {simulationLoading && <p className="simulationStatus">시뮬레이션 계산 중...</p>}
-        {simulationError && <p className="simulationStatus error">{simulationError}</p>}
-        {simulationResult && (
-          <div ref={simulationResultRef}>
-            <SimulationResultSummary
-              result={simulationResult}
-              policyChanges={submittedPolicyChanges}
-            />
-          </div>
-        )}
-      </div>
-    </section>
   );
 }
 
