@@ -615,104 +615,132 @@ td {
   }
 }
 
+/* 왼쪽 패널: 오른쪽 상세 패널(gdp)과 같은 톤 — 흰 카드·둥근 모서리·부드러운 그림자 */
 .gisLeftPanel {
+  /* gdp와 동일 팔레트 (스코프 안에서만 살아있게) */
+  --gdp-page: #eef1f4;
+  --gdp-card: #ffffff;
+  --gdp-sub: #f5f7f9;
+  --gdp-ink: #191f28;
+  --gdp-ink2: #4e5968;
+  --gdp-ink3: #8b95a1;
+  --gdp-line: #eceef1;
+  --gdp-green: #0d5743;
+  --gdp-green-soft: #e5f1ec;
   position: absolute;
   top: 18px;
   left: 16px;
   z-index: 700;
-  width: 300px;
-  border: 1px solid rgba(0, 0, 0, 0.28);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
-  font-size: 12px;
+  width: 320px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--gdp-card);
+  box-shadow: 0 1px 2px rgba(20, 30, 45, 0.05), 0 10px 28px rgba(20, 30, 45, 0.1);
+  color: var(--gdp-ink);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .heatIslandPanel {
-  width: 352px;
+  width: 320px;
   max-height: calc(100vh - 36px);
   overflow-y: auto;
-  border-color: rgba(13, 87, 67, 0.44);
 }
 
 .heatPanelHeader {
-  padding: 14px 14px 12px;
-  border-bottom: 1px solid #d7dfdc;
-  background: linear-gradient(180deg, #f7fbf8, #eef6f2);
+  padding: 18px 20px 14px;
 }
 
 .heatPanelHeader p {
-  margin: 0 0 5px;
-  color: #0a7a3d;
+  margin: 0 0 6px;
+  color: var(--gdp-green);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .heatPanelHeader h1 {
   margin: 0;
-  color: #172033;
-  font-size: 18px;
-  line-height: 1.22;
-  letter-spacing: 0;
+  color: var(--gdp-ink);
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.24;
+  letter-spacing: -0.02em;
 }
 
 .heatControlBlock {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
-  padding: 12px;
-  border-bottom: 1px solid #dde4e1;
+  gap: 10px;
+  padding: 4px 20px 16px;
 }
 
 .heatControlBlock label {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
 }
 
 .heatControlBlock label span {
-  color: #51606c;
-  font-weight: 900;
+  color: var(--gdp-ink2);
+  font-weight: 700;
 }
 
 .fixedGridSize {
   display: flex;
   align-items: center;
-  min-height: 31px;
-  border: 1px solid #cfd9d5;
-  border-radius: 2px;
-  background: #f5f8f6;
-  color: #0a7a3d;
-  padding: 0 9px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--gdp-green-soft);
+  color: var(--gdp-green);
+  padding: 0 12px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   line-height: 1.3;
-  white-space: normal;
-  word-break: keep-all;
+  white-space: nowrap;      /* 한 줄 유지 */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .selectionGuide {
-  display: grid;
-  gap: 4px;
-  margin: 10px 12px 0;
-  padding: 10px 11px;
-  border: 1px solid rgba(10, 122, 61, 0.24);
-  border-radius: 4px;
-  background: #f1f8f4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 20px 0;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--gdp-green-soft);
 }
 
-.selectionGuide strong {
-  color: #0a7a3d;
-  font-size: 12px;
+.selectionGuide .sgIcon {
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
 }
 
-.selectionGuide span {
-  color: #5f6e68;
+.selectionGuide .sgText {
+  min-width: 0;
+  color: var(--gdp-green);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 왼쪽 패널 맨 아래 안내 푸터 (예전 지도 위 안내바 대체) */
+.panelFootNote {
+  margin: 14px 20px 18px;
+  padding-top: 13px;
+  border-top: 1px solid var(--gdp-line);
+  color: var(--gdp-ink3);
   font-size: 11px;
-  font-weight: 800;
-  line-height: 1.4;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .gisTabs {
@@ -749,17 +777,19 @@ td {
 .gisLeftPanel select,
 .gisLeftPanel button {
   min-width: 0;
-  border-radius: 2px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .gisLeftPanel select {
   width: 100%;
-  min-height: 31px;
-  border: 1px solid #d7d7d7;
-  background: #fff;
-  color: #222;
-  padding: 0 9px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--gdp-sub);
+  color: var(--gdp-ink);
+  font-weight: 700;
+  padding: 0 12px;
+  cursor: pointer;
 }
 
 .wideSelect {
@@ -769,9 +799,9 @@ td {
 }
 
 .indicatorPanel {
-  margin: 12px;
-  border: 1px solid #cfd9d5;
-  background: #fff;
+  margin: 14px 20px 18px;
+  border: 0;
+  background: transparent;
 }
 
 .indicatorHeader {
@@ -779,23 +809,24 @@ td {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 11px;
-  border-bottom: 2px solid #172033;
+  padding: 0 2px 10px;
 }
 
 .indicatorHeader strong {
-  color: #172033;
+  color: var(--gdp-ink);
   font-size: 13px;
+  font-weight: 700;
 }
 
 .indicatorHeader span {
-  color: #0a7a3d;
+  color: var(--gdp-green);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .indicatorList {
   display: grid;
+  gap: 6px;
 }
 
 .indicatorList button {
@@ -803,27 +834,33 @@ td {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 52px;
-  padding: 8px 10px;
+  min-height: 50px;
+  padding: 9px 12px;
   border: 0;
-  border-bottom: 1px solid #e6ece9;
-  background: #fff;
-  color: #27313b;
+  border-radius: 12px;
+  background: var(--gdp-sub);
+  color: var(--gdp-ink);
   text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
 }
 
-.indicatorList button:last-child {
-  border-bottom: 0;
+.indicatorList button:hover {
+  background: #eaedf0;
 }
 
 .indicatorList button.active {
-  background: #0a7a3d;
+  background: var(--gdp-green);
   color: #fff;
+  box-shadow: 0 4px 12px rgba(13, 87, 67, 0.28);
 }
 
-.indicatorList button.active small,
-.indicatorList button.active b {
-  color: rgba(255, 255, 255, 0.86);
+.indicatorList button.active:hover {
+  background: var(--gdp-green);
+}
+
+.indicatorList button.active small {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .indicatorList button span {
@@ -833,22 +870,79 @@ td {
 }
 
 .indicatorList strong {
+  display: inline-flex;
+  align-items: center;
   font-size: 13px;
+  font-weight: 700;
+}
+
+/* 라벨 옆 정보 아이콘 (마우스 올리면 툴팁) */
+.indicatorInfo {
+  margin-left: 5px;
+  color: var(--gdp-ink3);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.indicatorList button.active .indicatorInfo {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .indicatorList small {
   overflow: hidden;
-  color: #6a7783;
+  color: var(--gdp-ink3);
   font-size: 11px;
+  font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 현재값: 흰 알약으로 데이터 읽기값임을 또렷하게 */
 .indicatorList b {
-  color: #cf3f3f;
+  color: var(--gdp-ink);
   font-size: 13px;
+  font-weight: 800;
   white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: var(--gdp-card);
+  box-shadow: 0 1px 2px rgba(20, 30, 45, 0.06);
+}
+
+.indicatorList button.active b {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+}
+
+/* 지표 설명 툴팁 — position:fixed라 스크롤 패널에 잘리지 않는다 */
+.indicatorTip {
+  position: fixed;
+  z-index: 1200;
+  transform: translateY(-50%);
+  max-width: 230px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #191f28;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 8px 24px rgba(20, 30, 45, 0.28);
+  pointer-events: none;
+}
+
+.indicatorTip::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 6px solid transparent;
+  border-left: 0;
+  border-right-color: #191f28;
 }
 
 .searchActions {
@@ -1299,37 +1393,40 @@ td {
 
 .rightToolbar {
   position: absolute;
-  top: 20px;
+  top: 18px;
   right: 16px;
   z-index: 700;
   display: grid;
-  width: 58px;
-  overflow: hidden;
-  border: 1px solid #cfcfcf;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+  gap: 6px;
+  width: 62px;
+  padding: 6px;
+  border: 0;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(20, 30, 45, 0.05), 0 10px 28px rgba(20, 30, 45, 0.1);
 }
 
 .rightToolbar button {
   display: grid;
   gap: 3px;
-  min-height: 53px;
+  min-height: 48px;
   place-items: center;
   border: 0;
-  border-bottom: 1px solid #e5e5e5;
-  background: #fff;
-  color: #e92f55;
+  border-radius: 11px;
+  background: #f5f7f9;
+  color: #4e5968;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s ease;
 }
 
-.rightToolbar button:first-child {
-  color: #444;
+.rightToolbar button:hover {
+  background: #eaedf0;
 }
 
 .rightToolbar span {
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1;
 }
 
@@ -1471,22 +1568,6 @@ td {
   font-size: 11px;
 }
 
-.gisNotice {
-  position: absolute;
-  left: 386px;
-  bottom: 18px;
-  z-index: 690;
-  max-width: min(720px, calc(100vw - 520px));
-  margin: 0;
-  padding: 9px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.18);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.88);
-  color: #404a54;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .gisShell .leaflet-bottom.leaflet-right {
   right: 16px;
   bottom: 14px;
@@ -1511,8 +1592,7 @@ td {
   }
 
   .datasetRail,
-  .topMenu,
-  .gisNotice {
+  .topMenu {
     display: none;
   }
 
@@ -1586,8 +1666,13 @@ td {
 }
 
 .rightToolbar button.active {
-  background: #0d5743;   /* 앱 초록색 */
+  background: #0d5743;   /* 앱 초록색 (gdp green) */
   color: #ffffff;
+  box-shadow: 0 4px 12px rgba(13, 87, 67, 0.28);
+}
+
+.rightToolbar button.active:hover {
+  background: #0d5743;
 }
 
 /* 격자 선택 팝업 — 예전 툴팁 색감 그대로 */
@@ -1706,6 +1791,51 @@ td {
 .gridReportEmpty p {
   font-size: 13px;
   color: #6b7280;
+}
+
+/* 오른쪽 상세 패널: 격자 미선택 시 빈 상태 카드 */
+.gridDetailSidePanel .gridReportEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 7px;
+  margin-top: 44px;
+  padding: 34px 26px;
+  background: var(--gdp-card);
+  border-radius: var(--gdp-r);
+  box-shadow: var(--gdp-shadow);
+}
+
+.gridDetailSidePanel .emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  margin-bottom: 6px;
+  border-radius: 20px;
+  background: var(--gdp-green-soft);
+  font-size: 30px;
+}
+
+.gridDetailSidePanel .gridReportEmpty h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--gdp-ink);
+}
+
+.gridDetailSidePanel .gridReportEmpty p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gdp-green);
+  line-height: 1.5;
+}
+
+.gridDetailSidePanel .gridReportEmpty .emptyHint {
+  color: var(--gdp-ink3);
+  font-weight: 500;
 }
 
 /* ===================== 격자 상세 패널 (목업 이식) ===================== */

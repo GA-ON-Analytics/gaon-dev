@@ -458,8 +458,12 @@ function GridDetailSidePanel({
             </>
           ) : (
             <div className="gridReportEmpty">
-              <h2>상세 페이지</h2>
+              <div className="emptyIcon" aria-hidden="true">🗺️</div>
+              <h2>격자를 선택해 주세요</h2>
               <p>{selectionPrompt(selectedDistrict, selectedGridResolution)}</p>
+              <p className="emptyHint">
+                격자를 클릭하면 온도·녹지·취약성과 개선 시뮬레이션을 볼 수 있어요.
+              </p>
             </div>
           )}
         </div>

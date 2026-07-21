@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent as ReactFocusEvent,
+  type MouseEvent as ReactMouseEvent
+} from 'react';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import L, { type PathOptions } from 'leaflet';
 import {
@@ -33,7 +41,8 @@ const DEFAULT_CENTER: [number, number] = [37.5665, 126.978];
 const SEOUL_OVERVIEW_ZOOM = 11;
 const DISTRICT_DETAIL_ZOOM = 13;
 const DISTRICT_OVERVIEW_ZOOM = 12;
-const ANALYSIS_PERIOD_LABEL = '분석 기준: 2023~2025년 여름철 평균';
+// 라벨 칸이 이미 '분석 기준'이므로 값에는 기간만 (중복 접두어 제거 → 한 줄)
+const ANALYSIS_PERIOD_LABEL = '2023~2025년 여름철 평균';
 const DATA_PENDING = '데이터 준비중';
 const NEUTRAL_COLOR = '#d7dce3';
 
@@ -47,7 +56,8 @@ interface DistrictOption {
 interface LayerOption {
   key: LayerKey;
   label: string;
-  help: string;
+  help: string;   // 버튼 안에 보이는 짧은 설명
+  desc: string;   // 마우스 올리면 뜨는 상세 툴팁
 }
 
 interface GridResolutionOption {
@@ -56,15 +66,60 @@ interface GridResolutionOption {
 }
 
 const HEAT_ISLAND_INDICATORS: LayerOption[] = [
-  { key: 'priority_score', label: '개선 우선순위', help: 'priority_score 0~100' },
-  { key: 'mean_actual_anomaly', label: '현재 열 위험', help: '구 평균 대비 온도 편차' },
-  { key: 'mean_actual_lst', label: '실제 지표면온도', help: 'mean_actual_lst' },
-  { key: 'green_delta_c', label: '시나리오 저감효과', help: 'green_delta_c, 음수는 냉각' },
-  { key: 'green_ratio', label: '녹지율', help: 'green_ratio' },
-  { key: 'ndvi', label: '식생지수', help: 'ndvi' },
-  { key: 'building_ratio', label: '건물 비율', help: 'building_ratio' },
-  { key: 'impervious_ratio', label: '불투수면 비율', help: 'impervious_ratio' },
-  { key: 'nearest_shelter_distance_m', label: '쉼터 접근성', help: 'nearest_shelter_distance_m' }
+  {
+    key: 'priority_score',
+    label: '개선 우선순위',
+    help: '종합 점수 0~100',
+    desc: '녹지·불투수면·온도 등을 종합해 개선이 시급한 정도를 0~100으로 매긴 점수예요. 높을수록 우선 대상.'
+  },
+  {
+    key: 'mean_actual_anomaly',
+    label: '현재 열 위험',
+    help: '구 평균 대비 온도차',
+    desc: '같은 자치구 평균보다 이 격자가 얼마나 더 뜨거운지(℃)를 보여줘요. 양수일수록 더 더운 지역.'
+  },
+  {
+    key: 'mean_actual_lst',
+    label: '실제 지표면온도',
+    help: '위성 관측 지표온도',
+    desc: '위성으로 관측한 지표면 온도(℃)예요. 2023~2025년 여름철 평균 기준.'
+  },
+  {
+    key: 'green_delta_c',
+    label: '시나리오 저감효과',
+    help: '녹지 확대 시 냉각량',
+    desc: '녹지를 늘렸을 때 예상되는 온도 저감량(℃)이에요. 음수(파랑)일수록 냉각 효과가 큽니다.'
+  },
+  {
+    key: 'green_ratio',
+    label: '녹지율',
+    help: '식생이 덮은 비율',
+    desc: '격자 면적 중 식생(풀·나무 등)이 덮은 비율이에요. 높을수록 시원한 편.'
+  },
+  {
+    key: 'ndvi',
+    label: '식생지수(NDVI)',
+    help: '식생 활력 지수',
+    desc: '위성 기반 식생 활력도(−1~1)예요. 값이 클수록 초록이 무성합니다.'
+  },
+  {
+    key: 'building_ratio',
+    label: '건물 비율',
+    help: '건물이 덮은 비율',
+    desc: '격자 면적 중 건물이 차지하는 비율이에요. 높을수록 열이 쌓이기 쉬움.'
+  },
+  {
+    key: 'impervious_ratio',
+    label: '불투수면 비율',
+    help: '아스팔트·콘크리트 비율',
+    desc: '물이 스며들지 못하는 포장면(아스팔트·콘크리트) 비율이에요. 높을수록 더 뜨거움.'
+  },
+  {
+    key: 'nearest_shelter_distance_m',
+    label: '쉼터 접근성',
+    help: '가장 가까운 쉼터 거리',
+    desc: '가장 가까운 무더위쉼터까지의 거리(m)예요. 가까울수록 폭염 대응에 유리합니다.'
+  }
 ];
 
 const GRID_RESOLUTION_OPTIONS: GridResolutionOption[] = [
@@ -1184,10 +1239,6 @@ export function MapDashboard() {
         onLayerChange={setSelectedLayer}
       />
       <RightToolbar activeTool={activeTool} onSelectTool={setActiveTool} />
-      <MapNotice
-        selectedDistrict={selectedDistrict}
-        selectedGridResolution={selectedGridResolution}
-      />
       <GridDetailSidePanel
         properties={selectedGridProperties}
         guGridTotal={selectedGridGuTotal}
@@ -1230,21 +1281,22 @@ function SearchPanel({
   onGridResolutionChange,
   onLayerChange
 }: SearchPanelProps) {
+  // 지표 버튼 위 커스텀 툴팁 (스크롤 패널에 잘리지 않게 position:fixed로 화면 기준 표시)
+  const [tip, setTip] = useState<{ text: string; top: number; left: number } | null>(null);
+  const showTip = (event: ReactMouseEvent | ReactFocusEvent, text: string) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTip({
+      text,
+      top: rect.top + rect.height / 2,
+      left: rect.right + 12
+    });
+  };
+  const hideTip = () => setTip(null);
+
   const selectionPrompt =
-    selectedDistrict === ALL_DISTRICTS && selectedGridResolution === '100m'
-      ? {
-          title: '서울 전체에서 분석할 격자를 클릭하세요',
-          description: '모든 자치구의 100m 격자를 바로 선택할 수 있습니다.'
-        }
-      : selectedDistrict === ALL_DISTRICTS
-      ? {
-          title: '지도에서 분석할 지역을 클릭하세요',
-          description: '자치구 이름이나 지역 내부를 클릭하면 해당 지역의 격자를 확인할 수 있습니다.'
-        }
-      : {
-          title: `${selectedDistrict}에서 분석할 격자를 클릭하세요`,
-          description: '격자를 선택하면 지표값과 상세 분석 데이터가 표시됩니다.'
-        };
+    selectedDistrict === ALL_DISTRICTS && selectedGridResolution !== '100m'
+      ? '지도에서 분석할 지역을 클릭하세요'
+      : `${selectedDistrict === ALL_DISTRICTS ? '지도' : selectedDistrict}에서 격자를 클릭하세요`;
 
   return (
     <aside className="gisLeftPanel heatIslandPanel">
@@ -1291,8 +1343,8 @@ function SearchPanel({
 
       {!selectedGridProperties && (
         <div className="selectionGuide" role="status">
-          <strong>{selectionPrompt.title}</strong>
-          <span>{selectionPrompt.description}</span>
+          <span className="sgIcon" aria-hidden="true">📍</span>
+          <span className="sgText">{selectionPrompt}</span>
         </div>
       )}
 
@@ -1308,9 +1360,16 @@ function SearchPanel({
               type="button"
               className={selectedLayer === indicator.key ? 'active' : ''}
               onClick={() => onLayerChange(indicator.key)}
+              onMouseEnter={(event) => showTip(event, indicator.desc)}
+              onMouseLeave={hideTip}
+              onFocus={(event) => showTip(event, indicator.desc)}
+              onBlur={hideTip}
             >
               <span>
-                <strong>{indicator.label}</strong>
+                <strong>
+                  {indicator.label}
+                  <i className="indicatorInfo" aria-hidden="true">ⓘ</i>
+                </strong>
                 <small>{indicator.help}</small>
               </span>
               <b>
@@ -1323,6 +1382,13 @@ function SearchPanel({
         </div>
       </section>
 
+      <p className="panelFootNote">{noticeText(selectedDistrict, selectedGridResolution)}</p>
+
+      {tip && (
+        <div className="indicatorTip" style={{ top: tip.top, left: tip.left }} role="tooltip">
+          {tip.text}
+        </div>
+      )}
     </aside>
   );
 }
@@ -1353,28 +1419,12 @@ function RightToolbar({
   );
 }
 
-function MapNotice({
-  selectedDistrict,
-  selectedGridResolution
-}: {
-  selectedDistrict: string;
-  selectedGridResolution: GridResolution;
-}) {
+// 왼쪽 패널 맨 아래 푸터 문구 (지도 위 별도 바 대신 패널 안에 둔다)
+function noticeText(selectedDistrict: string, selectedGridResolution: GridResolution) {
   if (selectedGridResolution === '100m') {
-    return (
-      <p className="gisNotice">
-        {selectedDistrict === ALL_DISTRICTS
-          ? '서울 전체 100m 격자를 표시합니다.'
-          : `${selectedDistrict}의 100m 격자만 표시합니다.`}{' '}
-        지도 이동·확대 후에도 선택한 격자와 상세 정보가 유지됩니다.
-      </p>
-    );
+    const scope =
+      selectedDistrict === ALL_DISTRICTS ? '서울 전체' : selectedDistrict;
+    return `${scope} 100m 격자예요. 지도를 움직여도 선택한 격자는 유지됩니다.`;
   }
-
-  return (
-    <p className="gisNotice">
-      서울 전체 격자를 표시합니다. ML 분석 속성이 없는 격자는 값을 만들지 않고 데이터 준비중으로
-      표시합니다.
-    </p>
-  );
+  return '분석값이 없는 격자는 "데이터 준비중"으로 표시됩니다.';
 }
