@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiRequestError, simulateBatchGridPolicy, simulateGridPolicy } from '../services/api';
 import type { GridAnalysisProperties, GridResolution, SimulationResponse } from '../types/dashboard';
 
@@ -15,6 +15,11 @@ interface Props {
     properties: GridAnalysisProperties | null,
     key: keyof GridAnalysisProperties
   ) => string;
+  // Phase 3 — 격자 비교. 두 번째(비교) 격자와 그 선택 흐름.
+  compareProperties: GridAnalysisProperties | null;
+  isPickingCompare: boolean;
+  onStartCompare: () => void;
+  onClearCompare: () => void;
 }
 
 // anomaly(구 평균 대비 ℃)로 라벨·색톤·막대 채움(%)을 정한다.
@@ -177,7 +182,11 @@ function GridDetailSidePanel({
   selectedGridResolution,
   isOpen,
   onToggle,
-  formatValue
+  formatValue,
+  compareProperties,
+  isPickingCompare,
+  onStartCompare,
+  onClearCompare
 }: Props) {
   const fmt = (key: keyof GridAnalysisProperties) => formatValue(properties, key);
   const guLabel = properties
@@ -436,6 +445,16 @@ function GridDetailSidePanel({
               selectedGridResolution={selectedGridResolution}
               incomplete={incomplete}
             />
+
+            {/* 다른 격자와 비교 (Phase 3) */}
+            <ComparisonCard
+              properties={properties}
+              compareProperties={compareProperties}
+              isPickingCompare={isPickingCompare}
+              onStartCompare={onStartCompare}
+              onClearCompare={onClearCompare}
+              formatValue={formatValue}
+            />
             </>
           ) : (
             <div className="gridReportEmpty">
@@ -598,6 +617,174 @@ function SimulationCard({
 
       <button className="gdpSimBtn" type="button" onClick={apply} disabled={loading}>
         {loading ? '계산 중…' : '시뮬레이션 적용'}
+      </button>
+    </div>
+  );
+}
+
+// ── 다른 격자와 비교 (목업 '다른 격자와 비교' 카드) ──────────────────────────────
+// 지도에서 두 번째 격자를 클릭해 고르면, 주 격자(A)와 지표를 나란히 보여주고
+// '가장 큰 차이'를 콜아웃한다. 두 번째 격자 선택 흐름은 MapDashboard가 관리.
+type CmpDir = 'hotHigh' | 'coolHigh' | 'neutral';
+// dir=hotHigh: 값이 높을수록 더움/불리 · coolHigh: 높을수록 시원/유리 · neutral: 색 없음
+// salience: '가장 큰 차이' 후보 가중치(단위 스케일 보정용). 0이면 콜아웃 후보에서 제외.
+const CMP_METRICS: {
+  key: keyof GridAnalysisProperties;
+  label: string;
+  dir: CmpDir;
+  salience: number;
+}[] = [
+  { key: 'impervious_ratio', label: '불투수면 비율', dir: 'hotHigh', salience: 100 },
+  { key: 'mean_actual_lst', label: '지표면온도', dir: 'hotHigh', salience: 10 },
+  { key: 'green_ratio', label: '녹지율', dir: 'coolHigh', salience: 100 },
+  { key: 'building_ratio', label: '건물 비율', dir: 'hotHigh', salience: 100 },
+  { key: 'ndvi', label: '식생지수(NDVI)', dir: 'coolHigh', salience: 100 },
+  { key: 'est_population', label: '추정 인구', dir: 'neutral', salience: 0 },
+  { key: 'nearest_shelter_distance_m', label: '쉼터 거리', dir: 'hotHigh', salience: 0 }
+];
+
+function cmpNum(properties: GridAnalysisProperties | null, key: keyof GridAnalysisProperties) {
+  const v: unknown = properties?.[key];
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+// A가 B보다 '더 나쁜(더움)' 쪽이면 'hot', '더 나은(시원)' 쪽이면 'cool', 무채색이면 ''
+function cmpTone(dir: CmpDir, a: number, b: number): '' | 'hot' | 'cool' {
+  if (dir === 'neutral' || a === b) return '';
+  const aWorse = dir === 'hotHigh' ? a > b : a < b;
+  return aWorse ? 'hot' : 'cool';
+}
+
+// 콜아웃용 차이 텍스트 (지표 단위에 맞춰 %p·℃·소수)
+function cmpDiffText(key: keyof GridAnalysisProperties, diffAbs: number) {
+  if (key === 'mean_actual_lst') return `${diffAbs.toFixed(1)}℃`;
+  if (key === 'ndvi') return diffAbs.toFixed(2);
+  // 나머지 비율 지표는 0~1 저장 → %p
+  return `${Math.round(diffAbs * 100)}%p`;
+}
+
+function ComparisonCard({
+  properties,
+  compareProperties,
+  isPickingCompare,
+  onStartCompare,
+  onClearCompare,
+  formatValue
+}: {
+  properties: GridAnalysisProperties;
+  compareProperties: GridAnalysisProperties | null;
+  isPickingCompare: boolean;
+  onStartCompare: () => void;
+  onClearCompare: () => void;
+  formatValue: (
+    p: GridAnalysisProperties | null,
+    key: keyof GridAnalysisProperties
+  ) => string;
+}) {
+  // 비교 격자가 새로 정해지면 그 카드로 자동 스크롤 (비교값이 화면에 바로 보이게)
+  const cardRef = useRef<HTMLDivElement>(null);
+  const compareKey =
+    compareProperties?.grid_id ?? compareProperties?.display_grid_id ?? null;
+  useEffect(() => {
+    if (compareKey) {
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [compareKey]);
+
+  // 아직 비교 격자 없음 → 안내 + 선택 버튼(또는 '선택 중' 상태)
+  if (!compareProperties) {
+    return (
+      <div className="card gdpCmp">
+        <div className="sec-title" style={{ marginBottom: 12 }}>다른 격자와 비교</div>
+        {isPickingCompare ? (
+          <>
+            <p className="gdpNote gdpCmpPicking">지도에서 비교할 격자를 클릭하세요.</p>
+            <button className="gdpCmpBtn ghost" type="button" onClick={onClearCompare}>
+              취소
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="gdpNote">다른 격자를 골라 지표를 나란히 비교해요.</p>
+            <button className="gdpCmpBtn" type="button" onClick={onStartCompare}>
+              + 비교할 격자 선택
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  const bName =
+    [compareProperties.gu_name, compareProperties.dong_name].filter(Boolean).join(' ') ||
+    '비교 격자';
+  const bId = compareProperties.display_grid_id ?? compareProperties.grid_id ?? '';
+
+  // 각 지표의 원값을 뽑고, 콜아웃(가장 큰 차이) 후보를 계산
+  const rows = CMP_METRICS.map((m) => {
+    const a = cmpNum(properties, m.key);
+    const b = cmpNum(compareProperties, m.key);
+    const both = a !== null && b !== null;
+    const score = both && m.salience > 0 ? Math.abs(a - b) * m.salience : -1;
+    return { ...m, a, b, both, score };
+  });
+
+  const top = rows.reduce((best, r) => (r.score > best.score ? r : best), {
+    score: -1
+  } as (typeof rows)[number]);
+
+  let callout: string | null = null;
+  if (top.score > 0 && top.a !== null && top.b !== null) {
+    const diff = top.a - top.b;
+    const higher = diff > 0;
+    callout = `${top.label}: 이 격자가 ${cmpDiffText(top.key, Math.abs(diff))} 더 ${
+      higher ? '높아요' : '낮아요'
+    }`;
+  }
+
+  return (
+    <div className="card gdpCmp" ref={cardRef}>
+      <div className="sec-title" style={{ marginBottom: 12 }}>다른 격자와 비교</div>
+
+      <div className="cmp-sub">
+        <span className="cmp-name">{bName}</span>
+        {bId && <span className="cmp-id">{bId}</span>}
+      </div>
+
+      {callout && (
+        <div className="cmp-hero">
+          <div className="ch-lab">가장 큰 차이</div>
+          <div className="ch-txt">{callout}</div>
+        </div>
+      )}
+
+      <div className="cmp-hrow">
+        <span>지표</span>
+        <span>이 격자</span>
+        <span>비교 격자</span>
+      </div>
+      {rows.map((r) => {
+        const tone = r.both ? cmpTone(r.dir, r.a as number, r.b as number) : '';
+        return (
+          <div className="cmp-row" key={r.key}>
+            <span className="c-lab">{r.label}</span>
+            <span className={`c-mine ${tone}`}>
+              {r.a !== null ? formatValue(properties, r.key) : '—'}
+            </span>
+            <span className="c-theirs">
+              {r.b !== null ? formatValue(compareProperties, r.key) : '—'}
+            </span>
+          </div>
+        );
+      })}
+
+      <button className="gdpCmpBtn ghost" type="button" onClick={onClearCompare}>
+        비교 해제
       </button>
     </div>
   );

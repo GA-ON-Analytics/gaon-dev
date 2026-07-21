@@ -19,6 +19,7 @@ interface CanvasGridLayerProps {
   data: FeatureCollection;
   activeTool: string;
   selectedGridId: string | null;
+  compareGridId?: string | null;
   style: (feature: Feature<Geometry>) => PathOptions;
   tooltip: (feature: Feature<Geometry>) => string;
   onFeatureClick: (feature: Feature<Geometry>, latLng: LatLng) => void;
@@ -160,23 +161,28 @@ class FeatureSpatialIndex {
 class GeoJsonCanvasTiles extends L.GridLayer {
   private renderStyle: (feature: Feature<Geometry>) => PathOptions;
   private selectedGridId: string | null;
+  private compareGridId: string | null;
 
   constructor(
     private readonly index: FeatureSpatialIndex,
     renderStyle: (feature: Feature<Geometry>) => PathOptions,
-    selectedGridId: string | null
+    selectedGridId: string | null,
+    compareGridId: string | null
   ) {
     super({ pane: 'gridCanvasPane', tileSize: 256, updateWhenIdle: true, keepBuffer: 2 });
     this.renderStyle = renderStyle;
     this.selectedGridId = selectedGridId;
+    this.compareGridId = compareGridId;
   }
 
   updatePresentation(
     renderStyle: (feature: Feature<Geometry>) => PathOptions,
-    selectedGridId: string | null
+    selectedGridId: string | null,
+    compareGridId: string | null
   ) {
     this.renderStyle = renderStyle;
     this.selectedGridId = selectedGridId;
+    this.compareGridId = compareGridId;
     this.redraw();
   }
 
@@ -207,10 +213,14 @@ class GeoJsonCanvasTiles extends L.GridLayer {
 
     for (const indexed of candidates) {
       const feature = indexed.feature;
-      const isSelected = getGridId(feature) === this.selectedGridId;
+      const gid = getGridId(feature);
+      const isSelected = gid === this.selectedGridId;
+      const isCompare = this.compareGridId != null && gid === this.compareGridId;
       const baseStyle = this.renderStyle(feature);
       const style: PathOptions = isSelected
         ? { ...baseStyle, color: '#111827', weight: 3, opacity: 1 }
+        : isCompare
+        ? { ...baseStyle, color: '#1c7ed6', weight: 3, opacity: 1 }   // 비교 격자 = 파랑
         : baseStyle;
 
       context.beginPath();
@@ -247,6 +257,7 @@ export default function CanvasGridLayer({
   data,
   activeTool,
   selectedGridId,
+  compareGridId = null,
   style,
   tooltip,
   onFeatureClick
@@ -261,7 +272,7 @@ export default function CanvasGridLayer({
     pane.style.zIndex = '350';
     pane.style.pointerEvents = 'none';
 
-    const layer = new GeoJsonCanvasTiles(index, style, selectedGridId);
+    const layer = new GeoJsonCanvasTiles(index, style, selectedGridId, compareGridId);
     layerRef.current = layer;
     layer.addTo(map);
 
@@ -272,8 +283,8 @@ export default function CanvasGridLayer({
   }, [index, map]);
 
   useEffect(() => {
-    layerRef.current?.updatePresentation(style, selectedGridId);
-  }, [selectedGridId, style]);
+    layerRef.current?.updatePresentation(style, selectedGridId, compareGridId);
+  }, [selectedGridId, compareGridId, style]);
 
   useEffect(() => {
     const handleClick = (event: LeafletMouseEvent) => {
