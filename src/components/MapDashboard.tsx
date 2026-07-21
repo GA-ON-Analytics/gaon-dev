@@ -1108,8 +1108,6 @@ export function MapDashboard() {
         onGridResolutionChange={setSelectedGridResolution}
         onLayerChange={setSelectedLayer}
       />
-      <DatasetRail />
-      <TopMenu />
       <RightToolbar activeTool={activeTool} onSelectTool={setActiveTool} />
       <MapNotice
         selectedDistrict={selectedDistrict}
@@ -1692,31 +1690,6 @@ function SimulationApiPanel({
   );
 }
 
-function DatasetRail() {
-  const items = ['범례', '지도 분할', '지도 출력', '차트 보기', '속성 조회', '범위 색상', '보고서 출력', '투명도 제기'];
-
-  return (
-    <nav className="datasetRail" aria-label="지도 자료 도구">
-      {items.map((item, index) => (
-        <button className={index === 0 ? 'active' : ''} key={item} type="button">
-          {item}
-        </button>
-      ))}
-    </nav>
-  );
-}
-
-function TopMenu() {
-  return (
-    <nav className="topMenu" aria-label="상단 메뉴">
-      <button type="button">홈</button>
-      <button type="button">로그인</button>
-      <button type="button">사이트맵</button>
-      <button type="button">이용가이드</button>
-    </nav>
-  );
-}
-
 function RightToolbar({
   activeTool,
   onSelectTool
@@ -1724,7 +1697,7 @@ function RightToolbar({
   activeTool: string;
   onSelectTool: (tool: string) => void;
 }) {
-  const tools = ['지도선택', '이동', '분할', '거리', '면적', '지우개'];
+  const tools = ['지도선택', '이동'];
 
   return (
     <nav className="rightToolbar" aria-label="지도 조작 도구">
