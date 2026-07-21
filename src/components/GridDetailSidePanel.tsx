@@ -38,15 +38,43 @@ const FEATURE_LABELS: Record<string, string> = {
   albedo: '알베도(반사율)',
   road_ratio: '도로 비율',
   avg_ground_floor_count: '평균 지상층수',
+  max_ground_floor_count: '최대 지상층수',
+  floor_area_ratio_proxy: '용적률(연면적비)',
   elevation_m: '고도',
+  slope_deg: '경사',
   nearest_park_distance_m: '공원까지 거리',
   park_area_within_500m: '주변 공원 면적',
+  nearest_stream_distance_m: '하천까지 거리',
+  zoning_residential_ratio: '주거지역 비율',
+  zoning_commercial_ratio: '상업지역 비율',
+  zoning_industrial_ratio: '공업지역 비율',
+  zoning_green_ratio: '용도지역 녹지 비율',
   building_shadow_proxy: '건물 그림자',
   hardscape_exposure_proxy: '포장면 노출',
   built_heat_proxy: '지표 발열'
 };
 function featureLabel(key?: string) {
   return key ? FEATURE_LABELS[key] ?? key : '';
+}
+
+// 모델이 예측에 쓰는 핵심 피처. 이 중 하나라도 값이 없으면(위성·지형 데이터 결측) 모델이
+// 그 격자를 온전히 예측할 수 없어 SHAP·시뮬레이션 결과를 신뢰할 수 없다. 지도에 뜨는 격자
+// 중 약 33개(대부분 한강 수면·경계). 백엔드 데이터셋에서 NaN인 격자에 해당.
+const CORE_MODEL_FEATURES: (keyof GridAnalysisProperties)[] = [
+  'green_ratio',
+  'ndvi',
+  'impervious_ratio',
+  'built_surface_ratio',
+  'albedo',
+  'elevation_m',
+  'building_ratio'
+];
+function isIncompleteGrid(properties: GridAnalysisProperties | null): boolean {
+  if (!properties) return false;
+  return CORE_MODEL_FEATURES.some((key) => {
+    const v = properties[key];
+    return v == null || (typeof v === 'number' && !Number.isFinite(v));
+  });
 }
 
 // 일반인이 이해하기 어려운 지표 설명 (툴팁용)
@@ -59,9 +87,17 @@ const METRIC_DESC: Record<string, string> = {
   albedo: '지표면이 햇빛을 반사하는 정도(0~1). 높을수록 덜 데워집니다.',
   road_ratio: '도로가 덮은 면적 비율. 아스팔트는 열을 잘 머금습니다.',
   avg_ground_floor_count: '건물들의 평균 층수. 높으면 밀집·복사열이 커질 수 있습니다.',
+  max_ground_floor_count: '격자에서 가장 높은 건물의 층수. 고층은 그늘을 드리워 지표를 식히기도 합니다.',
+  floor_area_ratio_proxy: '건물 총량(연면적) 추정치로 용적률과 유사합니다. 높을수록 개발밀도가 큽니다.',
   elevation_m: '해발 고도(m). 보통 높을수록 기온이 낮습니다.',
+  slope_deg: '지형의 경사(도). 보통 가파를수록 기온이 낮은 경향이 있습니다.',
   nearest_park_distance_m: '가장 가까운 공원까지의 거리(m). 가까울수록 냉각 혜택을 받습니다.',
   park_area_within_500m: '반경 500m 안의 공원 면적(㎡).',
+  nearest_stream_distance_m: '가장 가까운 하천까지 거리(m). 가까울수록 물가 냉각 효과를 받습니다.',
+  zoning_residential_ratio: '주거 용도지역으로 지정된 비율.',
+  zoning_commercial_ratio: '상업 용도지역으로 지정된 비율. 상업지는 열이 높은 경향이 있습니다.',
+  zoning_industrial_ratio: '공업 용도지역으로 지정된 비율.',
+  zoning_green_ratio: '용도지역상 녹지로 지정된 비율.',
   building_shadow_proxy: '건물비율×평균층수로 추정한 그늘/복사 지표.',
   hardscape_exposure_proxy: '포장면이 녹지 없이 노출된 정도.',
   built_heat_proxy: '인공 지표면이 식생 없이 열을 내뿜는 정도.'
@@ -149,6 +185,8 @@ function GridDetailSidePanel({
   const lst = properties?.mean_actual_lst;
   const anomaly = properties?.mean_actual_anomaly;
   const level = heatLevel(anomaly);
+  // 핵심 피처 결측 격자면 모델 기반 분석(SHAP·시뮬레이션)을 신뢰불가로 처리한다.
+  const incomplete = isIncompleteGrid(properties);
   // 우선순위: 구 내부 순위(rank) + 분모(total)로 백분위(pct)를 낸다.
   // rank 1 = 가장 시급 → 상위 1%. rank가 클수록(=뒤쪽) 개선 급하지 않은 격자.
   const rank = properties?.priority_rank;
@@ -230,6 +268,17 @@ function GridDetailSidePanel({
               )}
             </div>
 
+            {incomplete && (
+              <div className="card gdpIncomplete">
+                <div className="sec-title">⚠ 데이터 불완전 격자</div>
+                <p className="gdpNote">
+                  이 격자는 위성·지형 데이터 일부가 없어 모델이 온전히 분석할 수 없어요.
+                  온도 영향 요인(TOP)과 시뮬레이션은 신뢰도가 낮아 제공하지 않습니다.
+                  (서울 전체의 약 0.05% · 대부분 한강 수면·경계 격자)
+                </p>
+              </div>
+            )}
+
             <div className="tiles">
               <div className="tile">
                 <div className="t-lab">
@@ -251,13 +300,22 @@ function GridDetailSidePanel({
                 )}
               </div>
             </div>
-            {shapItems.length > 0 && (
+            {shapItems.length > 0 && !incomplete && (
               <div className="card">
                 <div className="sec-title">온도에 영향이 큰 요인 TOP {shapItems.length}</div>
                 <div className="shap">
                   {shapItems.map((it) => {
                     const pos = it.v >= 0;
                     const width = Math.round((Math.abs(it.v) / maxShap) * 46);
+                    // 이 피처의 현재값이 격자 데이터에 있는지 확인. SHAP는 19개 모델 피처 중
+                    // 아무거나 top으로 뽑지만 대시보드 geojson엔 일부만 저장돼 있어, 값이 없으면
+                    // fmt()가 '데이터 준비중'을 반환한다. 값이 없을 땐 '현재 …' 표기를 생략해
+                    // 이름·기여도(℃, 항상 유효)만 보여준다.
+                    const rawValue = properties?.[it.f as keyof GridAnalysisProperties];
+                    const hasValue =
+                      typeof rawValue === 'number'
+                        ? Number.isFinite(rawValue)
+                        : rawValue != null && rawValue !== '';
                     return (
                       <div className="shap-item" key={it.f}>
                         <div className="si-top">
@@ -265,9 +323,11 @@ function GridDetailSidePanel({
                             {featureLabel(it.f)}
                             {METRIC_DESC[it.f] && <InfoTip text={METRIC_DESC[it.f]} />}
                           </span>
-                          <span className="si-actual">
-                            현재 <b>{fmt(it.f as keyof GridAnalysisProperties)}</b>
-                          </span>
+                          {hasValue && (
+                            <span className="si-actual">
+                              현재 <b>{fmt(it.f as keyof GridAnalysisProperties)}</b>
+                            </span>
+                          )}
                         </div>
                         <div className="si-bot">
                           <div className="track">
