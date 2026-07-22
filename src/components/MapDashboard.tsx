@@ -616,6 +616,8 @@ export function MapDashboard() {
   const selectedResetRef = useRef<(() => void) | null>(null);   // 선택 격자 테두리 원복 함수
   const seoul100mMapCacheRef = useRef<FeatureCollection | null>(null);
   const district100mCacheRef = useRef(new Map<string, FeatureCollection>());
+  // 같은 구의 상세 파일을 중복 요청하지 않도록 진행 중인 Promise도 공유한다.
+  const district100mRequestRef = useRef(new Map<string, Promise<FeatureCollection>>());
 
   // Phase 3 — 격자 비교(두 번째 격자). A(주 격자)는 그대로 두고 B에 담는다.
   const [comparePropertiesB, setComparePropertiesB] =
@@ -655,6 +657,44 @@ export function MapDashboard() {
     () => new Map(districts.map((district) => [district.district, district.sigCode])),
     [districts]
   );
+  const loadDistrict100mDetails = useCallback((sigCode: string, districtName: string) => {
+    const cached = district100mCacheRef.current.get(sigCode);
+    if (cached) return Promise.resolve(cached);
+
+    const pending = district100mRequestRef.current.get(sigCode);
+    if (pending) return pending;
+
+    const request = getDistrictResolutionGrid('100m', sigCode, districtName)
+      .then((collection) => {
+        district100mCacheRef.current.set(sigCode, collection);
+        return collection;
+      })
+      .finally(() => {
+        district100mRequestRef.current.delete(sigCode);
+      });
+
+    district100mRequestRef.current.set(sigCode, request);
+    return request;
+  }, []);
+
+  // 구 선택 직후 상세 속성을 선로딩해 100m 격자 클릭 시 경량→상세 전환 깜빡임을 줄인다.
+  useEffect(() => {
+    if (selectedGridResolution !== '100m' || isAllDistricts) return;
+
+    const sigCode = districtCodeByName.get(selectedDistrict);
+    if (!sigCode) return;
+
+    void loadDistrict100mDetails(sigCode, selectedDistrict).catch(() => {
+      // 선로딩 실패 시 격자 클릭 때 다시 요청한다.
+    });
+  }, [
+    districtCodeByName,
+    isAllDistricts,
+    loadDistrict100mDetails,
+    selectedDistrict,
+    selectedGridResolution
+  ]);
+
   useEffect(() => {
     if (selectedGridResolution !== '100m') return;
 
@@ -794,15 +834,7 @@ export function MapDashboard() {
 
       if (!gridId || !districtName || !/^\d{5}$/.test(sigCode)) return;
 
-      const cached = district100mCacheRef.current.get(sigCode);
-      const detailRequest = cached
-        ? Promise.resolve(cached)
-        : getDistrictResolutionGrid('100m', sigCode, districtName).then((collection) => {
-            district100mCacheRef.current.set(sigCode, collection);
-            return collection;
-          });
-
-      detailRequest
+      loadDistrict100mDetails(sigCode, districtName)
         .then((collection) => {
           if (selectedGridIdRef.current !== gridId) return;
           // 이 구별 상세 파일의 격자 수 = 구 내부 순위(priority_rank)의 분모
@@ -820,7 +852,7 @@ export function MapDashboard() {
           // 지도용 속성만으로도 선택과 팝업은 유지한다. 상세 요청은 다음 선택 시 재시도한다.
         });
     },
-    [districtCodeByName]
+    [districtCodeByName, loadDistrict100mDetails]
   );
   // 비교 격자 100m 상세 보충 (A의 hydrate와 같은 캐시 사용, guTotal은 불필요)
   const hydrateCompareProperties = useCallback(
@@ -833,15 +865,7 @@ export function MapDashboard() {
       );
       if (!gridId || !districtName || !/^\d{5}$/.test(sigCode)) return;
 
-      const cached = district100mCacheRef.current.get(sigCode);
-      const detailRequest = cached
-        ? Promise.resolve(cached)
-        : getDistrictResolutionGrid('100m', sigCode, districtName).then((collection) => {
-            district100mCacheRef.current.set(sigCode, collection);
-            return collection;
-          });
-
-      detailRequest
+      loadDistrict100mDetails(sigCode, districtName)
         .then((collection) => {
           if (compareGridIdRef.current !== gridId) return;
           const fullFeature = collection.features.find(
@@ -856,7 +880,7 @@ export function MapDashboard() {
           // 경량 속성만으로도 비교표 대부분은 채워진다. 다음 선택 시 재시도.
         });
     },
-    [districtCodeByName]
+    [districtCodeByName, loadDistrict100mDetails]
   );
   const selected100mGridId = selected100mFeature
     ? getGridIdentifier(getFeatureProperties(selected100mFeature))
@@ -866,14 +890,26 @@ export function MapDashboard() {
     (feature: Feature<Geometry>, latLng: L.LatLng) => {
       const properties = getFeatureProperties(feature);
       const gridId = getGridIdentifier(properties);
+      const districtName = typeof properties.gu_name === 'string' ? properties.gu_name : '';
+      const sigCode = String(properties.gu_code ?? districtCodeByName.get(districtName) ?? '');
+      const cached = /^\d{5}$/.test(sigCode)
+        ? district100mCacheRef.current.get(sigCode)
+        : undefined;
+      const fullFeature = cached?.features.find(
+        (candidate) =>
+          getGridIdentifier(getFeatureProperties(candidate as Feature<Geometry>)) === gridId
+      );
+      const fullProperties = fullFeature
+        ? getFeatureProperties(fullFeature as Feature<Geometry>)
+        : null;
 
       // 비교 픽 모드: B에 담고 A(주 격자)는 그대로 둔다
       if (isPickingCompareRef.current) {
         if (gridId === selectedGridIdRef.current) return;   // 같은 격자끼리 비교 불가
         compareGridIdRef.current = gridId;
-        setComparePropertiesB(properties);
+        setComparePropertiesB(fullProperties ?? properties);
         setIsPickingCompare(false);
-        hydrateCompareProperties(properties);
+        if (!fullProperties) hydrateCompareProperties(properties);
         return;
       }
 
@@ -882,11 +918,12 @@ export function MapDashboard() {
       selectedGridLayerRef.current = null;
       setSelected100mFeature(feature);
       setSelected100mPopupPosition(latLng);
-      setSelectedGridProperties(properties);
-      setSelectedGridGuTotal(null);   // 새 구 상세가 로드되면 다시 채워진다
-      hydrateSelectedGridProperties(properties);
+      // 상세 캐시가 있으면 경량 속성을 거치지 않고 완성된 속성을 한 번에 반영한다.
+      setSelectedGridProperties(fullProperties ?? properties);
+      setSelectedGridGuTotal(cached?.features.length ?? null);
+      if (!fullProperties) hydrateSelectedGridProperties(properties);
     },
-    [hydrateSelectedGridProperties, hydrateCompareProperties]
+    [districtCodeByName, hydrateSelectedGridProperties, hydrateCompareProperties]
   );
   const build100mTooltip = useCallback(
     (feature: Feature<Geometry>) => buildGridTooltip(feature, selectedLayer, 100),
