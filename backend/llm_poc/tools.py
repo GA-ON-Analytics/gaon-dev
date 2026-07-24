@@ -20,13 +20,223 @@ LIMITATIONS = [
     "비용, 토지, 공사기간, 행정 가능성은 반영하지 않았습니다.",
 ]
 
+# backend/models/feature_meta.json의 현재 19개 모델 입력 필드를 조회용으로
+# 정리한 중앙 메타데이터다. feature_meta에 단위가 명시되지 않은 지표는
+# 임의로 추정하지 않고 빈 문자열로 둔다.
+GRID_FIELD_SPECS: dict[str, dict[str, Any]] = {
+    "building_ratio": {
+        "label": "건물 바닥면적 비율",
+        "description": "격자에서 건물이 땅을 덮은 비율",
+        "unit": "%",
+        "aliases": ("건물", "건물 비율", "건물밀도", "건폐율", "건물 줄이기"),
+        "is_ratio": True,
+    },
+    "avg_ground_floor_count": {
+        "label": "평균 지상층수",
+        "description": "건물들의 평균 층수",
+        "unit": "층",
+        "aliases": ("층수", "고층", "저층"),
+        "is_ratio": False,
+    },
+    "max_ground_floor_count": {
+        "label": "최대 지상층수",
+        "description": "가장 높은 건물의 층수",
+        "unit": "층",
+        "aliases": ("최고층", "최대높이"),
+        "is_ratio": False,
+    },
+    "floor_area_ratio_proxy": {
+        "label": "연면적비 proxy",
+        "description": "건물 총량 추정(용적률 유사)",
+        "unit": "",
+        "aliases": ("용적률", "연면적", "개발밀도"),
+        "is_ratio": False,
+    },
+    "road_ratio": {
+        "label": "도로율",
+        "description": "격자에서 도로가 차지하는 비율",
+        "unit": "%",
+        "aliases": ("도로", "포장도로"),
+        "is_ratio": True,
+    },
+    "zoning_residential_ratio": {
+        "label": "주거지역 비율",
+        "description": "주거 용도지역 비율",
+        "unit": "%",
+        "aliases": ("주거지역", "주거"),
+        "is_ratio": True,
+    },
+    "zoning_commercial_ratio": {
+        "label": "상업지역 비율",
+        "description": "상업 용도지역 비율",
+        "unit": "%",
+        "aliases": ("상업지역", "상업"),
+        "is_ratio": True,
+    },
+    "zoning_industrial_ratio": {
+        "label": "공업지역 비율",
+        "description": "공업 용도지역 비율",
+        "unit": "%",
+        "aliases": ("공업지역", "공장"),
+        "is_ratio": True,
+    },
+    "zoning_green_ratio": {
+        "label": "녹지지역 비율",
+        "description": "용도지역상 녹지 비율",
+        "unit": "%",
+        "aliases": ("녹지지역", "그린벨트"),
+        "is_ratio": True,
+    },
+    "ndvi": {
+        "label": "식생지수",
+        "description": "위성이 본 식물의 푸르름(나무·풀의 양/건강)",
+        "unit": "",
+        "aliases": (
+            "NDVI",
+            "식생지수",
+            "나무",
+            "식생",
+            "수목",
+            "가로수",
+            "나무 심기",
+            "녹화",
+        ),
+        "is_ratio": False,
+    },
+    "green_ratio": {
+        "label": "녹지율",
+        "description": "녹지성 토지피복 비율(공원·잔디 등)",
+        "unit": "%",
+        "aliases": ("녹지", "공원", "잔디", "녹지 확대"),
+        "is_ratio": True,
+    },
+    "impervious_ratio": {
+        "label": "불투수면 비율",
+        "description": "물이 스미지 않는 포장면 비율",
+        "unit": "%",
+        "aliases": (
+            "불투수율",
+            "불투수면",
+            "포장면",
+            "아스팔트",
+            "콘크리트",
+            "투수포장",
+        ),
+        "is_ratio": True,
+    },
+    "built_surface_ratio": {
+        "label": "시가화면 비율",
+        "description": "건조물·인공표면 비율(불투수와 동반)",
+        "unit": "%",
+        "aliases": ("시가화", "인공표면"),
+        "is_ratio": True,
+    },
+    "nearest_park_distance_m": {
+        "label": "최근접 공원거리(m)",
+        "description": "가장 가까운 공원까지 거리",
+        "unit": "m",
+        "aliases": ("공원까지 거리", "공원 거리", "공원 접근성"),
+        "is_ratio": False,
+    },
+    "park_area_within_500m": {
+        "label": "500m내 공원면적(㎡)",
+        "description": "반경 500m 안 공원 총면적",
+        "unit": "㎡",
+        "aliases": ("500m 내 공원 면적", "주변 공원", "공원 면적"),
+        "is_ratio": False,
+    },
+    "nearest_stream_distance_m": {
+        "label": "최근접 하천거리(m)",
+        "description": "가장 가까운 하천까지 거리",
+        "unit": "m",
+        "aliases": ("하천까지 거리", "하천 거리", "물가"),
+        "is_ratio": False,
+    },
+    "elevation_m": {
+        "label": "표고(m)",
+        "description": "해발 고도",
+        "unit": "m",
+        "aliases": ("고도", "표고", "산"),
+        "is_ratio": False,
+    },
+    "slope_deg": {
+        "label": "경사(도)",
+        "description": "지형 경사",
+        "unit": "°",
+        "aliases": ("경사도", "경사", "비탈"),
+        "is_ratio": False,
+    },
+    "albedo": {
+        "label": "표면 반사율",
+        "description": "표면이 빛을 반사하는 정도(밝을수록 덜 뜨거움)",
+        "unit": "",
+        "aliases": (
+            "알베도",
+            "반사율",
+            "밝은 지붕",
+            "차열도장",
+            "쿨루프",
+            "밝은 표면",
+        ),
+        "is_ratio": False,
+    },
+}
+ALLOWED_GRID_FIELDS = tuple(GRID_FIELD_SPECS)
+DEFAULT_GRID_FIELDS = ("green_ratio", "impervious_ratio")
+GRID_FIELD_DISPLAY_DECIMALS = {
+    "building_ratio": 2,
+    "avg_ground_floor_count": 2,
+    "max_ground_floor_count": 0,
+    "floor_area_ratio_proxy": 4,
+    "road_ratio": 2,
+    "zoning_residential_ratio": 2,
+    "zoning_commercial_ratio": 2,
+    "zoning_industrial_ratio": 2,
+    "zoning_green_ratio": 2,
+    "ndvi": 4,
+    "green_ratio": 2,
+    "impervious_ratio": 2,
+    "built_surface_ratio": 2,
+    "nearest_park_distance_m": 2,
+    "park_area_within_500m": 2,
+    "nearest_stream_distance_m": 2,
+    "elevation_m": 2,
+    "slope_deg": 2,
+    "albedo": 4,
+}
+for _field, _decimals in GRID_FIELD_DISPLAY_DECIMALS.items():
+    GRID_FIELD_SPECS[_field]["display_decimals"] = _decimals
+
+
+def format_grid_field_value(field: str, value: float) -> str:
+    """중앙 표시 규칙에 따라 원본 격자 값을 사용자용 문자열로 변환한다."""
+
+    spec = GRID_FIELD_SPECS[field]
+    number = float(value)
+    decimals = int(spec["display_decimals"])
+    if spec["is_ratio"]:
+        return f"{number * 100:.{decimals}f}%"
+
+    if math.isclose(number, 0.0, rel_tol=0, abs_tol=0.5 * (10 ** -decimals)):
+        number = 0.0
+    use_grouping = field == "park_area_within_500m"
+    formatted = (
+        f"{number:,.{decimals}f}"
+        if use_grouping
+        else f"{number:.{decimals}f}"
+    )
+    if "." in formatted:
+        formatted = formatted.rstrip("0").rstrip(".")
+    return f"{formatted}{spec['unit']}"
+
 GET_GRID_DATA_TOOL = {
     "type": "function",
     "function": {
         "name": "get_grid_data",
         "description": (
-            "GA:ON 데이터셋에서 grid_id에 해당하는 자치구명, 녹지율, "
-            "불투수율을 조회한다. 비율은 0~1 원본값으로 반환한다. "
+            "GA:ON 데이터셋에서 grid_id에 해당하는 자치구명과 요청한 도시환경 "
+            "필드를 조회한다. fields를 생략하면 녹지율과 불투수율을 조회하며, "
+            "비율 필드는 0~1 원본값으로 반환한다. "
             "정책 변경 후 모델 결과가 아니라 단순 현재 데이터 조회에만 사용한다."
         ),
         "parameters": {
@@ -35,7 +245,21 @@ GET_GRID_DATA_TOOL = {
                 "grid_id": {
                     "type": "string",
                     "description": "조회할 서울 격자 ID. 예: 11230_00001",
-                }
+                },
+                "fields": {
+                    "type": "array",
+                    "description": (
+                        "조회할 도시환경 필드 목록. 생략하면 green_ratio와 "
+                        "impervious_ratio를 조회한다."
+                    ),
+                    "items": {
+                        "type": "string",
+                        "enum": list(ALLOWED_GRID_FIELDS),
+                    },
+                    "minItems": 1,
+                    "uniqueItems": True,
+                    "default": list(DEFAULT_GRID_FIELDS),
+                },
             },
             "required": ["grid_id"],
             "additionalProperties": False,
@@ -52,7 +276,7 @@ RUN_SIMULATION_TOOL = {
             "특정 100m 격자에 녹지율, 불투수율 또는 반경 500m 내 공원 면적의 "
             "변경 시나리오를 적용하고 기존 머신러닝 모델을 다시 실행한다. "
             "정책 변경 후 모델 예측 anomaly와 모델 기준 예상 변화량을 묻는 경우에만 "
-            "사용한다. 단순 현재 녹지율·불투수율 조회에는 get_grid_data를 사용한다. "
+            "사용한다. 단순 현재 격자 데이터 조회에는 get_grid_data를 사용한다. "
             "비율 변화량은 0~1 단위의 부호 있는 delta이므로 5%p 증가는 0.05, "
             "5%p 감소는 -0.05이다. 공원 면적 변화량은 ㎡ 단위이며 음수는 허용하지 않는다."
         ),
@@ -96,13 +320,20 @@ RUN_SIMULATION_TOOL = {
 }
 
 
-def _empty_result(grid_id: str | None) -> dict[str, Any]:
+def _empty_result(
+    grid_id: str | None,
+    requested_fields: list[str] | None = None,
+) -> dict[str, Any]:
     return {
         "success": False,
         "grid_id": grid_id,
         "gu_name": None,
-        "green_ratio": None,
-        "impervious_ratio": None,
+        "requested_fields": list(requested_fields or []),
+        "values": {},
+        "field_metadata": {},
+        "answer_prefix": None,
+        "answer_template": None,
+        "error": None,
     }
 
 
@@ -151,19 +382,66 @@ def _validated_delta(name: str, value: Any) -> tuple[float | None, str | None]:
     return float(value), None
 
 
-def get_grid_data(grid_id: str) -> dict[str, Any]:
-    """기존 ML 조회 함수를 이용해 격자의 필수 환경 데이터를 반환한다.
+def _normalize_grid_fields(
+    fields: list[str] | None,
+) -> tuple[list[str], list[str], str | None]:
+    if fields is None:
+        return list(DEFAULT_GRID_FIELDS), [], None
+    if not isinstance(fields, list):
+        return [], [], "fields는 필드명 문자열 배열이어야 합니다."
+    if not fields:
+        return [], [], "fields는 하나 이상의 필드명을 포함해야 합니다."
+
+    requested_fields: list[str] = []
+    unsupported_fields: list[str] = []
+    seen: set[str] = set()
+    for field in fields:
+        if not isinstance(field, str):
+            unsupported_fields.append(str(field))
+            continue
+        if field in seen:
+            continue
+        seen.add(field)
+        requested_fields.append(field)
+        if field not in GRID_FIELD_SPECS:
+            unsupported_fields.append(field)
+
+    if unsupported_fields:
+        return (
+            requested_fields,
+            unsupported_fields,
+            "지원하지 않는 조회 필드가 포함되어 있습니다.",
+        )
+    return requested_fields, [], None
+
+
+def get_grid_data(
+    grid_id: str,
+    fields: list[str] | None = None,
+) -> dict[str, Any]:
+    """기존 ML 조회 함수로 요청한 도시환경 필드들을 반환한다.
 
     Args:
         grid_id: 조회할 서울 격자 ID.
+        fields: 조회할 모델 입력 필드 목록. 생략하면 녹지율·불투수율.
 
     Returns:
-        성공 여부, 격자 ID, 자치구명, 0~1 원본 녹지율과 불투수율.
-        실패 시 같은 필드들과 명확한 ``error``를 반환한다.
+        성공 여부, 격자 ID, 자치구명, 요청 필드와 원본 값 매핑.
+        실패 시에도 같은 기본 필드들과 명확한 ``error``를 반환한다.
     """
 
     normalized_grid_id = grid_id.strip() if isinstance(grid_id, str) else None
-    result = _empty_result(normalized_grid_id)
+    requested_fields, unsupported_fields, fields_error = _normalize_grid_fields(
+        fields
+    )
+    result = _empty_result(normalized_grid_id, requested_fields)
+
+    if fields_error is not None:
+        result["error"] = fields_error
+        result["available_fields"] = list(ALLOWED_GRID_FIELDS)
+        if unsupported_fields:
+            result["unsupported_fields"] = unsupported_fields
+        return result
 
     if not normalized_grid_id:
         result["error"] = "grid_id가 필요합니다."
@@ -185,23 +463,41 @@ def get_grid_data(grid_id: str) -> dict[str, Any]:
         result["error"] = "필수 격자 데이터가 누락되었습니다."
         return result
 
-    result.update(
-        {
-            "gu_name": features.get("_gu_name"),
-            "green_ratio": features.get("green_ratio"),
-            "impervious_ratio": features.get("impervious_ratio"),
-        }
-    )
+    result["gu_name"] = features.get("_gu_name")
+    values = {field: features.get(field) for field in requested_fields}
     missing_fields = [
         field
-        for field in ("gu_name", "green_ratio", "impervious_ratio")
-        if _is_missing(result[field])
+        for field, value in values.items()
+        if _is_missing(value) or not _is_finite_number(value)
     ]
+    if _is_missing(result["gu_name"]):
+        missing_fields.insert(0, "gu_name")
     if missing_fields:
         result["missing_fields"] = missing_fields
         result["error"] = "필수 격자 데이터가 누락되었습니다."
         return result
 
+    result["values"] = {field: float(values[field]) for field in requested_fields}
+    result["field_metadata"] = {
+        field: {
+            "label": GRID_FIELD_SPECS[field]["label"],
+            "unit": GRID_FIELD_SPECS[field]["unit"],
+            "is_ratio": GRID_FIELD_SPECS[field]["is_ratio"],
+            "display_value": format_grid_field_value(field, float(values[field])),
+        }
+        for field in requested_fields
+    }
+    result["answer_prefix"] = (
+        f"{normalized_grid_id} 격자({result['gu_name']})의"
+    )
+    result["answer_template"] = (
+        f"{result['answer_prefix']} 현재 데이터입니다.\n"
+        + "\n".join(
+            f"- {result['field_metadata'][field]['label']}: "
+            f"{result['field_metadata'][field]['display_value']}"
+            for field in requested_fields
+        )
+    )
     result["success"] = True
     return result
 

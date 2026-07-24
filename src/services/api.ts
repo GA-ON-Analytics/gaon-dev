@@ -5,6 +5,7 @@ import type {
   SimulationRequest,
   SimulationResponse
 } from '../types/dashboard';
+import type { AiChatRequest, AiChatResponse } from '../types/aiChat';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -52,13 +53,18 @@ async function fetchJsonWithFallback<T>(path: string, fallbackPath: string): Pro
   }
 }
 
-async function postJson<TResponse, TBody>(path: string, body: TBody): Promise<TResponse> {
+async function postJson<TResponse, TBody>(
+  path: string,
+  body: TBody,
+  signal?: AbortSignal
+): Promise<TResponse> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal
   });
 
   if (!response.ok) {
@@ -119,6 +125,13 @@ export function getOverviewGrid(): Promise<FeatureCollection> {
 
 export function simulateGridPolicy(payload: SimulationRequest): Promise<SimulationResponse> {
   return postJson<SimulationResponse, SimulationRequest>('/api/simulate', payload);
+}
+
+export function sendChatMessage(
+  payload: AiChatRequest,
+  signal?: AbortSignal
+): Promise<AiChatResponse> {
+  return postJson<AiChatResponse, AiChatRequest>('/api/chat', payload, signal);
 }
 
 // 여러 100m 격자에 같은 정책을 적용해 평균 저감을 구한다 (250/500m 집계 격자 시뮬레이션용).

@@ -1620,10 +1620,29 @@ td {
 
 .sidePanelBody {
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.rightPanelDashboard {
+  height: 100%;
   padding: 20px;
   overflow-y: auto;
   overflow-x: hidden;   /* 툴팁 등이 삐져나가도 가로 스크롤 안 생기게 */
+  overscroll-behavior: contain;
   box-sizing: border-box;
+}
+
+.rightPanelChat {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rightPanelDashboard[hidden],
+.rightPanelChat[hidden] {
+  display: none;
 }
 
 .sidePanelToggle {
@@ -2082,3 +2101,347 @@ td {
 .gridDetailSidePanel .c-theirs{ color:var(--gdp-ink3); font-weight:600; }
 .gridDetailSidePanel .c-mine.hot{ color:var(--gdp-hot); }
 .gridDetailSidePanel .c-mine.cool{ color:var(--gdp-cool); }
+
+/* ── GA:ON AI 진입 버튼 및 채팅 화면 ── */
+.gridDetailSidePanel .gaonAiEntry {
+  width:100%;
+  margin:0 0 14px;
+  padding:14px 15px;
+  border:1px solid rgba(13,87,67,.14);
+  border-radius:16px;
+  background:linear-gradient(135deg, var(--gdp-green-soft), #f7fbf9);
+  color:var(--gdp-ink);
+  display:flex;
+  align-items:center;
+  gap:11px;
+  text-align:left;
+  cursor:pointer;
+  box-shadow:var(--gdp-shadow);
+}
+.gridDetailSidePanel .gaonAiEntry:hover{ border-color:rgba(13,87,67,.32); }
+.gridDetailSidePanel .gaonAiEntryIcon{
+  width:38px;
+  height:38px;
+  flex:none;
+  border-radius:12px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:var(--gdp-green);
+  color:#fff;
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.04em;
+}
+.gridDetailSidePanel .gaonAiEntryText{
+  min-width:0;
+  display:flex;
+  flex:1;
+  flex-direction:column;
+  gap:3px;
+}
+.gridDetailSidePanel .gaonAiEntryText strong{
+  color:var(--gdp-green);
+  font-size:14px;
+  font-weight:800;
+}
+.gridDetailSidePanel .gaonAiEntryText small{
+  color:var(--gdp-ink2);
+  font-size:11px;
+  line-height:1.45;
+}
+.gridDetailSidePanel .gaonAiEntryArrow{
+  flex:none;
+  color:var(--gdp-green);
+  font-size:24px;
+  line-height:1;
+}
+
+.gridDetailSidePanel .gdpChat{
+  height:100%;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  color:var(--gdp-ink);
+  font-variant-numeric:tabular-nums;
+}
+.gridDetailSidePanel .gdpChatHeader{
+  flex:none;
+  min-height:72px;
+  padding:13px 14px;
+  border-bottom:1px solid var(--gdp-line);
+  background:var(--gdp-card);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  box-sizing:border-box;
+}
+.gridDetailSidePanel .gdpChatBack,
+.gridDetailSidePanel .gdpChatReset{
+  flex:none;
+  border:1px solid var(--gdp-line);
+  background:var(--gdp-card);
+  color:var(--gdp-ink2);
+  cursor:pointer;
+}
+.gridDetailSidePanel .gdpChatBack{
+  min-width:0;
+  height:36px;
+  padding:0 9px;
+  border-radius:11px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.gridDetailSidePanel .gdpChatReset{
+  min-height:34px;
+  padding:7px 10px;
+  border-radius:10px;
+  font-size:11px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.gridDetailSidePanel .gdpChatBack:hover,
+.gridDetailSidePanel .gdpChatReset:hover{ background:var(--gdp-sub); }
+.gridDetailSidePanel .gdpChatHeader > div{
+  min-width:0;
+  flex:1;
+}
+.gridDetailSidePanel .gdpChatTitle{
+  margin:0;
+  color:var(--gdp-green);
+  font-size:15px;
+  line-height:1.35;
+  font-weight:800;
+}
+.gridDetailSidePanel .gdpChatContext{
+  margin:2px 0 0;
+  color:var(--gdp-ink3);
+  font-size:11px;
+  line-height:1.35;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.gridDetailSidePanel .gdpChatBody{
+  min-height:0;
+  flex:1;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  padding:16px;
+  box-sizing:border-box;
+  scroll-behavior:smooth;
+}
+.gridDetailSidePanel .gdpChatIntro{
+  margin-bottom:14px;
+  padding:14px 15px;
+  border:1px solid rgba(13,87,67,.12);
+  border-radius:15px;
+  background:var(--gdp-green-soft);
+  color:var(--gdp-ink2);
+  font-size:12px;
+  line-height:1.6;
+  overflow-wrap:anywhere;
+}
+.gridDetailSidePanel .gdpChatIntro strong{ color:var(--gdp-green); }
+.gridDetailSidePanel .gdpChatIntro > p{
+  margin:0 0 8px;
+}
+.gridDetailSidePanel .gdpQuickQuestions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin:12px 0 0;
+}
+.gridDetailSidePanel .gdpQuickButton{
+  min-height:34px;
+  padding:8px 10px;
+  border:1px solid rgba(13,87,67,.18);
+  border-radius:11px;
+  background:var(--gdp-card);
+  color:var(--gdp-green);
+  font-size:11px;
+  font-weight:700;
+  line-height:1.35;
+  text-align:left;
+  cursor:pointer;
+}
+.gridDetailSidePanel .gdpQuickButton:hover:not(:disabled){
+  background:var(--gdp-green-soft);
+  border-color:rgba(13,87,67,.32);
+}
+.gridDetailSidePanel .gdpQuickButton:disabled,
+.gridDetailSidePanel .gdpChatSend:disabled,
+.gridDetailSidePanel .gdpChatReset:disabled{
+  opacity:.5;
+  cursor:not-allowed;
+}
+.gridDetailSidePanel .gdpChatMessages{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.gridDetailSidePanel .gdpChatMessage{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+}
+.gridDetailSidePanel .gdpChatMessage.user{ align-items:flex-end; }
+.gridDetailSidePanel .gdpChatBubble{
+  max-width:90%;
+  padding:11px 13px;
+  border-radius:15px 15px 15px 4px;
+  background:var(--gdp-card);
+  color:var(--gdp-ink);
+  box-shadow:var(--gdp-shadow);
+  font-size:13px;
+  line-height:1.65;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.gridDetailSidePanel .gdpChatMessage.user .gdpChatBubble{
+  border-radius:15px 15px 4px;
+  background:var(--gdp-green);
+  color:#fff;
+}
+.gridDetailSidePanel .gdpSimulationResult{
+  width:100%;
+  margin-top:8px;
+  padding:14px;
+  border:1px solid rgba(13,87,67,.12);
+  border-radius:14px;
+  background:var(--gdp-card);
+  box-shadow:var(--gdp-shadow);
+  box-sizing:border-box;
+  overflow-wrap:anywhere;
+}
+.gridDetailSidePanel .gdpSimulationDelta{
+  margin-bottom:10px;
+  color:var(--gdp-green);
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  line-height:1.3;
+}
+.gridDetailSidePanel .gdpSimulationDelta span{
+  font-size:11px;
+  font-weight:700;
+}
+.gridDetailSidePanel .gdpSimulationDelta strong{
+  font-size:20px;
+  font-weight:800;
+}
+.gridDetailSidePanel .gdpSimulationRows{
+  margin:0;
+  display:grid;
+  grid-template-columns:auto minmax(0, 1fr);
+  gap:7px 10px;
+  color:var(--gdp-ink2);
+  font-size:12px;
+  line-height:1.5;
+}
+.gridDetailSidePanel .gdpSimulationRows dt,
+.gridDetailSidePanel .gdpSimulationRows dd{
+  min-width:0;
+  margin:0;
+}
+.gridDetailSidePanel .gdpSimulationRows dt{
+  overflow-wrap:anywhere;
+}
+.gridDetailSidePanel .gdpSimulationRows dd{
+  color:var(--gdp-ink);
+  font-weight:700;
+  text-align:right;
+  overflow-wrap:anywhere;
+}
+.gridDetailSidePanel .gdpChatNotice{
+  width:100%;
+  margin:7px 0 0;
+  padding:9px 11px;
+  border-radius:10px;
+  box-sizing:border-box;
+  font-size:11px;
+  line-height:1.55;
+  overflow-wrap:anywhere;
+}
+.gridDetailSidePanel .gdpChatNotice.warning{
+  background:var(--gdp-hot-soft);
+  color:#994008;
+}
+.gridDetailSidePanel .gdpChatNotice.limitation{
+  background:var(--gdp-sub);
+  color:var(--gdp-ink2);
+}
+.gridDetailSidePanel .gdpChatError{
+  margin:10px 0 0;
+  padding:10px 12px;
+  border-radius:11px;
+  background:var(--gdp-danger-soft);
+  color:var(--gdp-danger);
+  font-size:12px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+.gridDetailSidePanel .gdpChatComposer{
+  flex:none;
+  padding:12px 14px 14px;
+  border-top:1px solid var(--gdp-line);
+  background:var(--gdp-card);
+  display:flex;
+  align-items:flex-end;
+  gap:8px;
+}
+.gridDetailSidePanel .gdpChatTextarea{
+  min-width:0;
+  min-height:42px;
+  max-height:112px;
+  flex:1;
+  resize:none;
+  border:1px solid #d9dee3;
+  border-radius:13px;
+  background:var(--gdp-sub);
+  color:var(--gdp-ink);
+  padding:10px 12px;
+  box-sizing:border-box;
+  font:inherit;
+  font-size:13px;
+  line-height:1.5;
+}
+.gridDetailSidePanel .gdpChatTextarea::placeholder{ color:var(--gdp-ink3); }
+.gridDetailSidePanel .gdpChatSend{
+  min-width:58px;
+  min-height:42px;
+  padding:9px 12px;
+  border:0;
+  border-radius:13px;
+  background:var(--gdp-green);
+  color:#fff;
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+}
+.gridDetailSidePanel .gdpChatSend:hover:not(:disabled){ background:var(--gdp-green2); }
+.gridDetailSidePanel .gdpChatLoading{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  color:var(--gdp-ink3);
+  font-size:12px;
+  line-height:1.5;
+}
+
+.gridDetailSidePanel .gaonAiEntry:focus-visible,
+.gridDetailSidePanel .gdpChatBack:focus-visible,
+.gridDetailSidePanel .gdpChatReset:focus-visible,
+.gridDetailSidePanel .gdpQuickButton:focus-visible,
+.gridDetailSidePanel .gdpChatTextarea:focus-visible,
+.gridDetailSidePanel .gdpChatSend:focus-visible{
+  outline:3px solid rgba(18,135,106,.28);
+  outline-offset:2px;
+}

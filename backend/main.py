@@ -7,6 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from backend.llm_poc.chat_service import (
+    ChatInputError,
+    ChatProtocolError,
+    OllamaConnectionError,
+    OllamaModelError,
+    OllamaTimeoutError,
+    run_chat,
+)
+
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -65,6 +74,19 @@ class SimulationRequest(BaseModel):
 class BatchSimulationRequest(BaseModel):
     grid_ids: list[str]
     changes: dict[str, float] = Field(default_factory=dict)
+
+
+class ChatRequest(BaseModel):
+    message: str
+    selected_grid_id: str | None = None
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    used_tools: list[str]
+    tool_data: dict[str, Any]
+    warnings: list[str]
+    limitations: list[str]
 
 
 def _file_response(file_path: Path, media_type: str) -> FileResponse:
@@ -163,6 +185,48 @@ def _load_predict_core():
 @app.get("/api/health")
 def health():
     return {"ok": True, "backend": "fastapi"}
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+def chat(payload: ChatRequest) -> ChatResponse:
+    try:
+        result = run_chat(payload.message, payload.selected_grid_id)
+    except ChatInputError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except OllamaTimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="로컬 AI 응답 시간이 초과되었습니다. 다시 시도해 주세요.",
+        ) from None
+    except OllamaConnectionError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "로컬 AI 서버에 연결할 수 없습니다. "
+                "Ollama 실행 상태를 확인해 주세요."
+            ),
+        ) from None
+    except OllamaModelError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "로컬 AI 모델 qwen3:4b를 사용할 수 없습니다. "
+                "모델 설치 상태를 확인해 주세요."
+            ),
+        ) from None
+    except ChatProtocolError:
+        raise HTTPException(
+            status_code=503,
+            detail="로컬 AI 응답을 처리하지 못했습니다. 다시 시도해 주세요.",
+        ) from None
+
+    return ChatResponse(
+        answer=result.answer,
+        used_tools=result.used_tools,
+        tool_data=result.tool_data,
+        warnings=result.warnings,
+        limitations=result.limitations,
+    )
 
 
 @app.get("/api/model/status")
