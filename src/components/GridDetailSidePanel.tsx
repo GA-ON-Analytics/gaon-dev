@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiRequestError, simulateBatchGridPolicy, simulateGridPolicy } from '../services/api';
 import type { GridAnalysisProperties, GridResolution, SimulationResponse } from '../types/dashboard';
+import AiChatView from './AiChatView';
 
 interface Props {
   properties: GridAnalysisProperties | null;
@@ -198,11 +199,25 @@ function GridDetailSidePanel({
   onStartCompare,
   onClearCompare
 }: Props) {
+  const [rightPanelMode, setRightPanelMode] = useState<'dashboard' | 'chat'>('dashboard');
   const fmt = (key: keyof GridAnalysisProperties) => formatValue(properties, key);
   const guLabel = properties
     ? [properties.gu_name, properties.dong_name].filter(Boolean).join(' ')
     : '';
   const gridId = properties?.display_grid_id ?? properties?.grid_id ?? '';
+  // AI Tool 문맥에는 ML 데이터셋의 실제 100m grid_id만 전달한다.
+  // display_grid_id는 헤더 표시용이며 API 문맥으로 승격하지 않는다.
+  const selectedGridId =
+    selectedGridResolution === '100m' &&
+    typeof properties?.grid_id === 'string' &&
+    properties.grid_id.trim()
+      ? properties.grid_id.trim()
+      : null;
+  const selectedDisplayGridId = gridId || null;
+  const selectedGuName =
+    typeof properties?.gu_name === 'string' && properties.gu_name.trim()
+      ? properties.gu_name.trim()
+      : null;
   const lst = properties?.mean_actual_lst;
   const anomaly = properties?.mean_actual_anomaly;
   const level = heatLevel(anomaly);
@@ -250,8 +265,26 @@ function GridDetailSidePanel({
       </button>
 
       <div className="sidePanelBody">
-        <div className="gridReport">
-          {properties ? (
+        <section
+          className="rightPanelDashboard"
+          hidden={rightPanelMode !== 'dashboard'}
+          aria-hidden={rightPanelMode !== 'dashboard'}
+        >
+          <button
+            type="button"
+            className="gaonAiEntry"
+            onClick={() => setRightPanelMode('chat')}
+          >
+            <span className="gaonAiEntryIcon" aria-hidden="true">AI</span>
+            <span className="gaonAiEntryText">
+              <strong>GA:ON AI</strong>
+              <small>선택 격자를 질문하고 정책 변화를 살펴보세요</small>
+            </span>
+            <span className="gaonAiEntryArrow" aria-hidden="true">›</span>
+          </button>
+
+          <div className="gridReport">
+            {properties ? (
             <>
             <div className="card">
               <div className="eyebrow">격자 상세</div>
@@ -475,8 +508,23 @@ function GridDetailSidePanel({
                 격자를 클릭하면 온도·녹지·취약성과 개선 시뮬레이션을 볼 수 있어요.
               </p>
             </div>
-          )}
-        </div>
+            )}
+          </div>
+        </section>
+
+        <section
+          className="rightPanelChat"
+          hidden={rightPanelMode !== 'chat'}
+          aria-hidden={rightPanelMode !== 'chat'}
+        >
+          <AiChatView
+            isActive={rightPanelMode === 'chat' && isOpen}
+            selectedGridId={selectedGridId}
+            selectedDisplayGridId={selectedDisplayGridId}
+            selectedGuName={selectedGuName}
+            onBack={() => setRightPanelMode('dashboard')}
+          />
+        </section>
       </div>
     </aside>
   );
