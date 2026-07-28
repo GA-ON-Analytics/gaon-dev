@@ -168,7 +168,8 @@ function sanitizeToolData(value: unknown): AiChatToolData | undefined {
     'before_anomaly',
     'after_anomaly',
     'delta_c',
-    'uncertainty_std'
+    'uncertainty_std',
+    'delta_std'
   ] as const) {
     const number = finiteNumber(value[field]);
     if (number !== undefined) sanitized[field] = number;
@@ -412,16 +413,29 @@ function SimulationResultCard({ message }: { message: AiChatMessage }) {
         <dd>{formatModelValue(data.before_anomaly)}</dd>
         <dt>변경 후 모델 예측 anomaly</dt>
         <dd>{formatModelValue(data.after_anomaly)}</dd>
+        {typeof data.delta_std === 'number' && (
+          <>
+            <dt>트리 간 변화량 편차</dt>
+            <dd>{formatModelValue(data.delta_std)}</dd>
+          </>
+        )}
         {typeof data.uncertainty_std === 'number' && (
           <>
-            <dt>모델 불확실성</dt>
-            <dd>±{formatModelValue(data.uncertainty_std)}</dd>
+            <dt>트리 간 예측 편차</dt>
+            <dd>{formatModelValue(data.uncertainty_std)}</dd>
           </>
         )}
       </dl>
       <p className="gdpChatNotice limitation">
         이 값들은 절대온도가 아니라 모델이 예측한 anomaly와 그 변화입니다.
       </p>
+      {(typeof data.delta_std === 'number' ||
+        typeof data.uncertainty_std === 'number') && (
+        <p className="gdpChatNotice limitation">
+          편차는 랜덤포레스트 개별 트리 예측값이 흩어진 정도입니다. 실제 오차범위나
+          신뢰구간이 아닙니다.
+        </p>
+      )}
       {data.interpretation_basis && (
         <p className="gdpChatNotice limitation">{data.interpretation_basis}</p>
       )}
