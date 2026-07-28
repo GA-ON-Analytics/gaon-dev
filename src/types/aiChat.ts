@@ -22,6 +22,7 @@ export interface AiChatToolData {
   after_anomaly?: number;
   delta_c?: number;
   uncertainty_std?: number;
+  delta_std?: number;
   interpretation_basis?: string;
   warnings?: string[];
   limitations?: string[];

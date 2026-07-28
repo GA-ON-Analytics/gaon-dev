@@ -369,6 +369,7 @@ def _empty_simulation_result(
         "after_anomaly": None,
         "delta_c": None,
         "uncertainty_std": None,
+        "delta_std": None,
         "warnings": [],
         "policy_direction_notes": [],
         "interpretation_basis": INTERPRETATION_BASIS,
@@ -594,6 +595,7 @@ def run_simulation(
         "after_anomaly",
         "delta_c",
         "uncertainty_std",
+        "delta_std",
         "changed_features",
         "warnings",
     )
@@ -607,6 +609,7 @@ def run_simulation(
         "after_anomaly",
         "delta_c",
         "uncertainty_std",
+        "delta_std",
     )
     invalid_numeric_fields = [
         field
@@ -634,6 +637,7 @@ def run_simulation(
             "after_anomaly": prediction["after_anomaly"],
             "delta_c": prediction["delta_c"],
             "uncertainty_std": prediction["uncertainty_std"],
+            "delta_std": prediction["delta_std"],
             "changed_features": applied_changes,
             "message": prediction.get("message"),
             "warnings": list(prediction["warnings"]),

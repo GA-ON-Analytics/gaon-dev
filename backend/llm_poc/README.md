@@ -225,7 +225,8 @@ Tool은 일반적인 열 저감 정책 방향과 반대인 시나리오라는 �
 | `before_anomaly` | 변경 전 입력에 대한 모델 예측 anomaly |
 | `after_anomaly` | 제약 적용 후 입력에 대한 모델 예측 anomaly |
 | `delta_c` | 두 모델 예측의 차이인 모델 기준 예상 변화량 |
-| `uncertainty_std` | 모델 트리별 시나리오 예측의 표준편차 |
+| `uncertainty_std` | 변경 후 절대 anomaly 예측의 트리 간 표준편차. `delta_c`의 오차범위가 아니다 |
+| `delta_std` | 트리별 (변경 후 − 변경 전) 변화량의 표준편차. `delta_c`의 안정성 지표 |
 | `warnings` | 학습 범위 clip 등 `predict()`가 반환한 경고 |
 | `policy_direction_notes` | 일반적인 열 저감 방향과 반대인 입력에 대한 설명 |
 | `interpretation_basis` | anomaly와 `delta_c`의 해석 기준 |
