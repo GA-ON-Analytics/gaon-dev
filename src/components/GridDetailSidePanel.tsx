@@ -546,8 +546,8 @@ function SimulationCard({
           return;
         }
         const sub =
-          typeof res.uncertainty_std === 'number'
-            ? `${res.before_anomaly.toFixed(1)}℃ → ${res.after_anomaly.toFixed(1)}℃ · 불확실성 ±${res.uncertainty_std.toFixed(1)}℃`
+          typeof res.delta_std === 'number'
+            ? `${res.before_anomaly.toFixed(1)}℃ → ${res.after_anomaly.toFixed(1)}℃ · 트리 간 변화량 편차 ${res.delta_std.toFixed(2)}℃`
             : undefined;
         setResult({ delta: res.delta_c, sub });
       } else {
