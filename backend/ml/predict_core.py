@@ -228,13 +228,21 @@ def predict(grid_id: str, changes: dict | None = None, top_k: int = 3) -> dict:
     Xs = pd.DataFrame([[scen[f] for f in feats]], columns=feats)
     predicted = float(model.predict(Xs)[0])
 
-    # 트리 분산으로 불확실성
+    # 트리 산포 두 가지를 나눠서 낸다.
+    # uncertainty_std: 변경 후 절대 anomaly 예측의 트리 간 산포.
+    # delta_std: 트리별 (변경 후 - 변경 전) 변화량의 산포. 두 예측이 같은 트리에서
+    #            나와 강하게 상관되므로, 변화량의 불확실성은 반드시 짝지어 계산해야 한다.
+    #            uncertainty_std를 변화량 오차로 쓰면 공분산 항이 빠져 크게 과대평가된다.
     if hasattr(model, "estimators_"):
+        Xb_arr = Xb.to_numpy()
         Xs_arr = Xs.to_numpy()
-        per_tree = np.array([t.predict(Xs_arr)[0] for t in model.estimators_])
-        std = float(per_tree.std())
+        per_tree_before = np.array([t.predict(Xb_arr)[0] for t in model.estimators_])
+        per_tree_after = np.array([t.predict(Xs_arr)[0] for t in model.estimators_])
+        std = float(per_tree_after.std(ddof=1))
+        delta_std = float((per_tree_after - per_tree_before).std(ddof=1))
     else:
         std = 0.0
+        delta_std = 0.0
         warnings.append("모델 estimator 분산을 계산할 수 없어 uncertainty_std=0.0 반환")
 
     result = {
@@ -244,6 +252,7 @@ def predict(grid_id: str, changes: dict | None = None, top_k: int = 3) -> dict:
         "after_anomaly": round(predicted, 3),
         "delta_c": round(predicted - baseline, 3),
         "uncertainty_std": round(std, 3),
+        "delta_std": round(delta_std, 3),
         "changed_features": changed_features,
         "message": "ML simulation completed",
         "warnings": warnings,
