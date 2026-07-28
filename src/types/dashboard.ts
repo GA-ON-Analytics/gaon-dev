@@ -49,6 +49,7 @@ export interface SimulationResponse {
   after_anomaly: number;
   delta_c: number;
   uncertainty_std?: number;
+  delta_std?: number;
   changed_features: Record<string, SimulationChangedFeature>;
   message: string;
   warnings?: string[];
