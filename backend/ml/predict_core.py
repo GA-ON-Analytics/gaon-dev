@@ -6,8 +6,7 @@ compact 배포 모델(25MB)로 재예측한다. RandomForest는 비선형이라 
 
 핵심 안전장치 (LLM 임의 입력 대비):
   1) 각 변수를 학습 분포 범위로 clip (모델이 본 적 없는 값 = 환각 예측 방지)
-  2) 파생 일관성: built_surface_ratio는 impervious_ratio 변화량과 함께 움직이게 한다
-  3) 예측 신뢰도: 입력이 학습 분포에서 얼마나 벗어났는지 out_of_range 플래그로 알림
+  2) 예측 신뢰도: 입력이 학습 분포에서 얼마나 벗어났는지 out_of_range 플래그로 알림
 """
 from __future__ import annotations
 
@@ -28,7 +27,7 @@ FEATURE_META_PATH = BACKEND_DIR / "models" / "feature_meta.json"
 
 # 0~1 비율 변수
 RATIO_FEATURES = {"building_ratio", "road_ratio", "green_ratio", "impervious_ratio",
-                  "built_surface_ratio", "zoning_residential_ratio", "zoning_commercial_ratio",
+                  "zoning_residential_ratio", "zoning_commercial_ratio",
                   "zoning_industrial_ratio", "zoning_green_ratio"}
 REQUIRED_FILES = (
     MODEL_PATH,
@@ -158,7 +157,6 @@ def _apply_and_constrain(base: dict, changes: dict, feats: list, ranges: dict):
     warnings = []
     scen = {f: base[f] for f in feats}
     changed_features: dict[str, dict[str, float]] = {}
-    applied_deltas: dict[str, float] = {}
 
     for k, delta in changes.items():
         if k not in feats:
@@ -169,23 +167,10 @@ def _apply_and_constrain(base: dict, changes: dict, feats: list, ranges: dict):
         if val < lo or val > hi:
             warnings.append(f"{k}={val:.3f} 학습범위[{lo:.2f},{hi:.2f}] 밖 → clip")
         scen[k] = _clip_feature_value(k, val, ranges)
-        applied_deltas[k] = float(scen[k]) - float(base[k])
 
-    # 파생 일관성: 불투수↔시가화는 같은 축 → 한쪽 변화량을 다른쪽에도 반영
-    if (
-        "impervious_ratio" in applied_deltas
-        and "built_surface_ratio" in feats
-        and "built_surface_ratio" not in changes
-    ):
-        next_value = float(base["built_surface_ratio"]) + applied_deltas["impervious_ratio"]
-        scen["built_surface_ratio"] = _clip_feature_value("built_surface_ratio", next_value, ranges)
-    if (
-        "built_surface_ratio" in applied_deltas
-        and "impervious_ratio" in feats
-        and "impervious_ratio" not in changes
-    ):
-        next_value = float(base["impervious_ratio"]) + applied_deltas["built_surface_ratio"]
-        scen["impervious_ratio"] = _clip_feature_value("impervious_ratio", next_value, ranges)
+    # 예전에는 여기서 impervious_ratio ↔ built_surface_ratio를 연동했으나, 두 컬럼은
+    # 값이 100% 동일한 중복이었고 built_surface_ratio를 모델 입력에서 제거하면서
+    # 연동 자체가 무의미해졌다. 녹지↔불투수처럼 실제로 의미 있는 연동은 별도 이슈에서 다룬다.
 
     _final_clip_scenario(scen, feats, ranges, warnings)
 
