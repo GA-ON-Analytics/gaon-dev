@@ -124,10 +124,15 @@ export function simulateGridPolicy(payload: SimulationRequest): Promise<Simulati
 // 여러 100m 격자에 같은 정책을 적용해 평균 저감을 구한다 (250/500m 집계 격자 시뮬레이션용).
 export function simulateBatchGridPolicy(
   gridIds: string[],
-  changes: Record<string, number>
+  changes: Record<string, number>,
+  coupleLandCover = true
 ): Promise<BatchSimulationResponse> {
-  return postJson<BatchSimulationResponse, { grid_ids: string[]; changes: Record<string, number> }>(
-    '/api/simulate/batch',
-    { grid_ids: gridIds, changes }
-  );
+  return postJson<
+    BatchSimulationResponse,
+    { grid_ids: string[]; changes: Record<string, number>; couple_land_cover: boolean }
+  >('/api/simulate/batch', {
+    grid_ids: gridIds,
+    changes,
+    couple_land_cover: coupleLandCover
+  });
 }

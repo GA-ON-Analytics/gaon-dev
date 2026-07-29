@@ -92,11 +92,16 @@ python3 -m uvicorn backend.main:app --reload --port 8000
   }
 }
 ```
+**모든 델타는 절대 변화량이다.** 비율 변수는 퍼센트포인트 단위로 원래 값에 그냥 더한다.
+`green_ratio`가 0.40인 격자에 `+0.10`을 주면 **0.50**이 된다. "현재 값의 10%"를 더하는
+상대 증가가 아니므로 0.44가 아니다.
+
 - `green_ratio_delta`는 `green_ratio`에 더한다.
-- `impervious_ratio_delta`는 `impervious_ratio`에 더한다. 프론트의 "불투수면 감소폭 5%"는 `-0.05`로 전달한다.
-- `park_area_m2`는 `park_area_within_500m`에 더한다.
-- `built_surface_ratio`는 `impervious_ratio`와 값이 100% 동일한 중복 변수여서 제거했다.
-  두 변수를 연동하던 로직도 함께 삭제됐다.
+- `impervious_ratio_delta`는 `impervious_ratio`에 더한다. 프론트의 "불투수면 감소폭 5%p"는 `-0.05`로 전달한다.
+- `park_area_m2`는 `park_area_within_500m`에 더한다(단위 ㎡).
+- `ndvi`는 비율이 아니라 −1~1 지표라, `+0.05`면 0.30 → 0.35가 된다.
+- `built_surface_ratio`는 `impervious_ratio`와 값이 100% 동일한 중복 변수여서 제거했다(#15).
+- `couple_land_cover` (기본 `true`): 녹지↔불투수 연동. 아래 4장 참고.
 
 응답:
 ```json
@@ -107,17 +112,23 @@ python3 -m uvicorn backend.main:app --reload --port 8000
   "after_anomaly": 4.282,
   "delta_c": -0.462,
   "uncertainty_std": 1.283,
+  "delta_std": 0.981,
   "changed_features": {
-    "green_ratio": {"before": 0.16, "after": 0.21}
+    "green_ratio": {"before": 0.16, "after": 0.21},
+    "impervious_ratio": {"before": 0.42, "after": 0.3875}
   },
   "message": "ML simulation completed",
-  "warnings": []
+  "warnings": ["녹지 +5.0%p에 연동해 불투수면을 -3.3%p 조정했습니다 (관측 기울기 -0.65). 불투수면을 직접 지정하면 연동하지 않습니다."]
 }
 ```
 
+> `changed_features`에는 **연동으로 자동 변경된 변수도 포함**된다. 사용자가 입력하지 않은
+> 변수가 왜 바뀌었는지는 `warnings`에 문장으로 담기므로 그대로 화면에 노출하면 된다.
+
 ### POST `/api/simulate/batch` — 여러 격자에 같은 변화 (구역 단위 정책)
 ```json
-{ "grid_ids": ["11110_00002","11110_00003"], "changes": {"green_ratio":0.1} }
+{ "grid_ids": ["11110_00002","11110_00003"], "changes": {"green_ratio":0.1},
+  "couple_land_cover": true }
 → { "count":2, "mean_delta_c":-0.21, "results":[...] }
 ```
 
@@ -128,12 +139,42 @@ python3 -m uvicorn backend.main:app --reload --port 8000
 RandomForest는 **학습 안 한 값에 헛소리(환각)**를 낼 수 있다. 그래서 API가 자동으로:
 
 1. **범위 clip**: 각 변수를 학습 분포 min~max로 제한 (녹지 900% → 87%로)
-2. **파생 일관성**: 불투수 변화량은 시가화면 비율에도 함께 반영
-3. **경고 반환**: clip 등 제약이 작동하면 `warnings`로 알림 → 프론트가 "일부 조정됨" 표시 가능
+2. **녹지↔불투수 연동**: 아래 참고
+3. **경고 반환**: clip·연동이 작동하면 `warnings`로 알림 → 프론트가 그대로 표시
 
-주의: 현재 구현은 `building_ratio + impervious_ratio + green_ratio`를 합 1로 강제 정규화하지 않는다.
-세 변수는 모델 feature이며 의미가 겹칠 수 있으므로, 정규화하면 사용자가 입력한 정책 변화 해석이 왜곡된다.
-건물 비율은 사용자가 건물 관련 정책을 입력하지 않는 한 변경하지 않는다.
+### 녹지↔불투수 연동 (이슈 #14)
+
+녹지를 늘리려면 그만큼 다른 지표면이 줄어야 한다. 연동이 없으면 비율 합이 실제보다 커지는
+**학습 데이터에 없는 조합**이 모델에 들어가고, 효과가 크게 과소평가된다.
+
+```
+green_ratio +5%p, 격자 11230_00001 기준
+  연동 ON   delta_c -0.175 °C   (impervious_ratio -3.3%p 자동)
+  연동 OFF  delta_c -0.022 °C   ← 8배 과소평가
+```
+
+**계수는 1:1이 아니라 -0.65다.** 근거:
+
+| 측정 | 값 |
+|---|---|
+| `impervious_ratio`를 `green_ratio`로 회귀한 기울기 | **-0.655** (1:1이면 -1.0) |
+| 상관계수 | -0.737 |
+| `green + impervious` 합 평균 | **0.715** (1이 아님) |
+| 나머지 몫(물·나대지 등) 중앙값 | 0.242 |
+
+두 변수는 Dynamic World 9개 클래스 중 식생 5개(green)와 `built` 1개라서 합이 1이 되지 않는다.
+늘어난 녹지의 약 35%는 물·나대지에서 오는 것으로 관측된다. 다만 **녹지 구간별로 기울기가
+크게 흔들리므로**(10~20% 구간은 부호가 반대인 +12.5) 전역 평균값을 쓰는 근사임을 유의한다.
+
+**동작 규칙**
+- 기본 `couple_land_cover: true`. `false`면 연동하지 않는다.
+- `changes`에 `impervious_ratio`를 **직접 넣으면 연동하지 않는다** — 사용자 입력 우선.
+- 역방향(불투수 → 녹지)은 연동하지 않는다. 불투수면을 줄인다고 녹지가 늘어난다는 보장이 없다.
+- 연동 결과가 학습범위를 벗어나면 clip되고, 그 사실도 `warnings`에 담긴다.
+
+주의: `building_ratio`는 연동 대상이 아니다. 건물은 사용자가 건물 관련 정책을 입력하지 않는 한
+변경하지 않는다. 세 비율을 합 1로 강제 정규화하지도 않는다 — 정규화하면 사용자가 입력한
+정책 변화의 해석이 왜곡된다.
 
 ---
 

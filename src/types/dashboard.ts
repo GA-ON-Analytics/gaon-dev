@@ -30,11 +30,23 @@ export interface SimulationRequest {
    * 임의 변수를 직접 바꾸는 자유형 입력. 값은 변화량(델타)이며 양수=증가, 음수=감소.
    * 예: { ndvi: 0.1, building_ratio: -0.2, albedo: 0.05 }
    *
-   * policy_options/parameters는 히트맵의 3개 프리셋(녹지·불투수·공원)이고, 이쪽은 19개 변수를
+   * policy_options/parameters는 히트맵의 3개 프리셋(녹지·불투수·공원)이고, 이쪽은 18개 변수를
    * 모두 다룰 수 있다. 백엔드(main.py의 _changes_from_payload)가 둘을 합쳐 처리하므로 함께 써도
    * 되고, 자유형만 써도 된다. 바꿀 수 있는 변수 목록은 GET /api/features 참고.
    */
   changes?: Record<string, number>;
+  /**
+   * 녹지↔불투수 연동 여부 (이슈 #14). 생략하면 백엔드가 true로 본다.
+   *
+   * green_ratio를 올리면 impervious_ratio를 관측 기울기 -0.65배만큼 함께 내린다.
+   * 녹지를 늘리려면 그만큼 다른 지표면이 줄어야 하는데, 연동이 없으면 비율 합이 실제보다
+   * 커지는 '학습 데이터에 없는 조합'이 모델에 들어가 효과가 과소평가된다.
+   *
+   * 1:1이 아닌 이유: 서울 64,574격자에서 두 변수의 회귀 기울기가 -0.655이고,
+   * green+impervious 합도 평균 0.715라 나머지 약 24%(물·나대지)가 존재한다.
+   * changes에 impervious_ratio를 직접 넣으면 이 값과 무관하게 연동하지 않는다.
+   */
+  couple_land_cover?: boolean;
 }
 
 export interface SimulationChangedFeature {
@@ -49,7 +61,21 @@ export interface SimulationResponse {
   after_anomaly: number;
   delta_c: number;
   uncertainty_std?: number;
+  /**
+   * 트리별 변화량의 표준편차.
+   *
+   * ⚠️ **오차막대로 쓰지 말 것** (이슈 #17). 이 값은 '트리 하나를 뽑았을 때 답이 얼마나
+   * 다른가'이고, 화면에 보이는 delta_c는 300개 트리의 평균이다. RF는 트리를 일부러 다르게
+   * 만들므로 이 산포는 크게 나오는 게 정상이며, 데이터 부트스트랩 재학습으로 잰 실제
+   * 추정오차는 이 값의 약 1/8이었다(1.099℃ vs 0.132℃).
+   * 사용자에게는 direction_confidence를 보여준다. 이 필드는 디버깅·분석용으로만 남긴다.
+   */
   delta_std?: number;
+  /**
+   * 변화 방향에 대한 트리들의 동의율 (0~1). 변화량이 정확히 0인 트리는 제외하고
+   * 다수파 비율을 센다. 예: 0.89 → "저감 가능성 89%".
+   */
+  direction_confidence?: number | null;
   changed_features: Record<string, SimulationChangedFeature>;
   message: string;
   warnings?: string[];
