@@ -11,7 +11,6 @@
   "ndvi",
   "green_ratio",
   "impervious_ratio",
-  "built_surface_ratio",
   "nearest_park_distance_m",
   "park_area_within_500m",
   "nearest_stream_distance_m",

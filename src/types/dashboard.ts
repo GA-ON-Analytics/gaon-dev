@@ -109,7 +109,6 @@ export interface GridAnalysisProperties {
   green_ratio?: number;
   ndvi?: number;
   impervious_ratio?: number;
-  built_surface_ratio?: number;
   avg_ground_floor_count?: number;
   max_ground_floor_count?: number;
   floor_area_ratio_proxy?: number;
