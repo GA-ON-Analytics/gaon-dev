@@ -152,10 +152,12 @@ def _validate_expected_arguments(
 
 
 def _print_result(result: ChatResult, *, validated: bool = True) -> None:
-    print("첫 번째 message.thinking:")
-    print(result.first_thinking or "(없음)")
-    print("첫 번째 message.content:")
-    print(result.first_content or "(없음)")
+    print(
+        "라우터 추론 분리 상태: "
+        f"{'있음' if result.first_thinking else '없음'}"
+        f" ({len(result.first_thinking)}자)"
+    )
+    print(f"라우터 일반 본문 길이: {len(result.first_content)}자")
 
     if result.used_tools:
         print(f"호출된 도구명: {result.used_tools[0]}")
@@ -170,10 +172,8 @@ def _print_result(result: ChatResult, *, validated: bool = True) -> None:
         print("도구 반환값:")
         print("{}")
 
-    print("최종 message.thinking:")
-    print(result.final_thinking or "(없음)")
-    print("최종 message.content:")
-    print(result.final_content or "(없음)")
+    print("성능 지표:")
+    print(json.dumps(result.metrics, ensure_ascii=False, indent=2))
     print("최종 답변:" if validated else "최종 답변 후보(검증 실패):")
     print(result.answer)
 
@@ -186,8 +186,7 @@ def run_tool_calling(
 ) -> str:
     """공용 서비스로 질문을 실행하고 도구 호출 추적과 최종 답변을 출력한다."""
 
-    print("사용자 질문:")
-    print(question)
+    print(f"사용자 질문 길이: {len(question)}자")
     try:
         result = run_chat(question, client=client)
     except ChatProtocolError as exc:
@@ -195,6 +194,20 @@ def run_tool_calling(
             _print_result(exc.result, validated=False)
         raise
     _print_result(result)
+
+    ollama_call_count = result.metrics.get("ollama_call_count")
+    if (
+        isinstance(ollama_call_count, bool)
+        or not isinstance(ollama_call_count, int)
+        or ollama_call_count > 1
+    ):
+        raise RuntimeError(
+            "질문 한 건에서 Ollama가 한 번보다 많이 호출되었습니다."
+        )
+    if result.used_tools and ollama_call_count != 1:
+        raise RuntimeError("Tool Calling 질문의 Ollama 호출 횟수가 1이 아닙니다.")
+    if result.final_thinking:
+        raise RuntimeError("Python formatter 이후 별도 LLM 추론이 존재합니다.")
 
     if expected_tool_name is not None:
         expected_tools = (

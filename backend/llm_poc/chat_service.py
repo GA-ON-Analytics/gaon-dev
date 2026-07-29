@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import re
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from numbers import Real
@@ -18,12 +20,16 @@ from backend.llm_poc.tools import (
     GRID_FIELD_SPECS,
     RUN_SIMULATION_TOOL,
     TOOL_FUNCTIONS,
+    format_grid_field_value,
 )
 
 
 MODEL_NAME = "qwen3:4b"
 DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
+ROUTER_NUM_PREDICT = 3072
+MODEL_KEEP_ALIVE = "5m"
 TOOL_SCHEMAS = [GET_GRID_DATA_TOOL, RUN_SIMULATION_TOOL]
+LOGGER = logging.getLogger("uvicorn.error")
 _GRID_FIELD_LABELS = "、".join(
     str(GRID_FIELD_SPECS[field]["label"]) for field in ALLOWED_GRID_FIELDS
 )
@@ -33,71 +39,18 @@ SUPPORTED_SCOPE_ANSWER = (
     "사용자가 지정한 녹지율·불투수율·공원 면적 변경 시나리오만 지원합니다. "
     "정책 추천, 모델 설명, 문서 검색은 현재 지원하지 않습니다."
 )
+AMBIGUOUS_RATIO_CHANGE_ANSWER = (
+    "비율 변경은 상대 퍼센트(%)가 아니라 퍼센트포인트(%p)로 입력해 주세요."
+)
 
-
-def _field_catalog_prompt() -> str:
-    lines: list[str] = []
-    for field in ALLOWED_GRID_FIELDS:
-        spec = GRID_FIELD_SPECS[field]
-        aliases = "、".join(
-            dict.fromkeys(
-                [
-                    str(spec["label"]),
-                    field,
-                    *(str(alias) for alias in spec["aliases"]),
-                ]
-            )
-        )
-        if spec["is_ratio"]:
-            display = "원본 0~1 값에 100을 곱해 소수점 둘째 자리 %로 표시"
-        elif spec["unit"]:
-            display = f"원본값을 {spec['unit']} 단위로 표시"
-        else:
-            display = "원본값을 별도 단위 없이 표시"
-        lines.append(f"- {field}: {spec['label']}; 별칭={aliases}; {display}")
-    return "\n".join(lines)
-
-
-GRID_FIELD_CATALOG_PROMPT = _field_catalog_prompt()
-
-SYSTEM_PROMPT = f"""당신은 GA:ON 100m 격자 데이터 조회·정책 시뮬레이션 도우미다.
-
-다음 규칙을 반드시 지켜라.
-1. 특정 격자의 현재 지표·특성·데이터 조회에는 반드시 get_grid_data를 호출한다. 녹지율과 불투수율은 지원 예시일 뿐 전용 조회 대상이 아니다.
-2. 사용자가 요청한 지표만 정확한 영문 필드명으로 fields에 전달한다. 요청하지 않은 지표를 추가하지 않는다.
-3. "전체 데이터", "모든 데이터", "전체 지표"를 요청하면 허용된 19개 필드를 모두 fields에 전달한다.
-4. 아래 목록에 없는 지표는 유사 필드로 바꾸거나 값을 추측하지 말고, 도구를 호출하지 않은 채 현재 지원 범위를 안내한다.
-5. 정책 변경 후 모델 예측 결과나 예상 변화량 질문에는 반드시 run_simulation을 호출한다.
-6. 비율 변화량은 0~1 단위의 부호 있는 delta다. 5%p 증가는 0.05이고 5%p 감소는 -0.05다.
-7. 공원 면적 변화량은 ㎡ 단위이며 park_area_delta로 전달한다.
-8. success가 false이면 값을 추측하지 말고 error 문자열만 그대로 최종 답변으로 출력한다.
-9. success가 true이면 도구 반환값에 없는 수치·효과·통계·온도·원인을 만들거나 보충하지 않는다.
-10. 답변 본문에는 사용자에게 보여줄 최종 한국어 답변만 작성하고 내부 추론 과정은 출력하지 않는다. JSON, 객체, 키-값 구조, 코드 블록으로 감싸지 말고 자연어 문장만 출력한다.
-
-get_grid_data 성공 답변 규칙:
-11. 도구가 반환한 answer_template 전체를 처음부터 끝까지 그대로 답변으로 출력하고 문장을 추가하거나 일부 항목을 생략하지 않는다.
-12. answer_template은 answer_prefix, 요청 순서의 모든 field_metadata label과 display_value로 만들어진 한국어 표시문이다. 수치를 다시 계산하거나 자릿수를 바꾸지 않는다.
-13. 도구가 반환한 field_metadata의 label과 unit을 그대로 사용한다. 표시명을 번역·축약·의역하거나 새로운 명칭을 만들지 않는다.
-14. requested_fields에 없는 지표·표시명·수치와 도구 결과에 없는 100m 같은 숫자를 답변에 추가하지 않는다.
-15. 전체 조회도 JSON이나 코드 블록이 아니라 각 지표를 구분할 수 있는 읽기 쉬운 한국어 자연어로 작성한다.
-
-조회 필드·한국어 별칭·표시 규칙:
-{GRID_FIELD_CATALOG_PROMPT}
-
-run_simulation 성공 답변 규칙:
-16. 최종 답변은 다음 A~D 부분을 순서대로 모두 작성해야 한다. A만 작성하고 답변을 끝내면 안 된다.
-   A. 첫 문장: "{{grid_id}} 격자({{gu_name}})의 모델 예측 anomaly는 A에서 B로 변하며, 모델 기준 예상 변화량(delta_c)은 D℃로 방향문구."
-   B. policy_direction_notes가 있으면 각 문자열을 원문 순서대로 별도 문장으로 그대로 작성한다.
-   C. warnings가 있으면 "경고: " 뒤에 각 문자열을 원문 순서대로 " | "로 연결하고, 이어서 "학습 범위 밖 입력은 predict_core에서 내부적으로 보정되었으며, 입력값 그대로가 아니라 도구의 applied_changes가 실제 반영값입니다."라고 작성한다.
-   D. interpretation_basis 문자열 전체를 그대로 작성한 다음, limitations 배열의 모든 문자열을 원문 순서대로 하나도 빠뜨리지 않고 각각 작성한다.
-17. 첫 문장의 A와 B는 before_anomaly와 after_anomaly를 소수점 이하 세 자리로, D는 delta_c를 소수점 이하 세 자리로 쓴다. 양수 D의 + 기호는 붙이거나 생략할 수 있고 0에는 붙이지 않는다.
-   delta_c의 단위 기호는 반드시 ℃를 그대로 쓰고 °C나 '도'로 바꾸지 않는다.
-18. delta_c가 음수이면 방향문구는 "감소했습니다", 양수이면 "증가했습니다", 0이면 "변화가 없습니다"로 쓴다.
-19. before_anomaly와 after_anomaly를 실제 절대온도나 기존·변경 후 실제 온도라고 부르지 않는다.
-20. delta_c는 모델 기준 예상 변화량으로만 표현하며 실제 정책의 인과효과로 단정하지 않는다.
-21. 답변을 끝내기 전에 D의 interpretation_basis와 limitations가 실제 답변 본문에 모두 들어갔는지 반드시 확인한다.
-22. 모델 기준 예상 변화량, interpretation_basis, 모든 limitations와 해당되는 모든 warnings·policy_direction_notes를 절대 생략하지 않는다.
-23. 위 두 기능 외의 질문에는 도구를 호출하지 말고 현재 지원 범위만 한국어 자연어로 안내한다.
+SYSTEM_PROMPT = """당신은 GA:ON Tool 라우터다.
+사용자에게 답변 문장을 작성하지 말고, 지원 요청이면 도구를 정확히 한 번 호출한다.
+- 현재 격자 지표·특성·데이터 조회: get_grid_data
+- 녹지율·불투수율·반경 500m 내 공원 면적 변경 후 모델 결과: run_simulation
+- 비율 변화량은 0~1 단위의 부호 있는 delta다. 5%p 증가는 0.05, 감소는 -0.05다.
+- %p가 아닌 % 변경 요청은 모호하므로 도구를 호출하지 않는다.
+- 공원 면적 변화량은 ㎡ 단위다.
+- 지원하지 않는 지표·정책 추천·모델 설명·문서 검색에는 도구를 호출하지 않는다.
 """
 
 _GRID_ID_PATTERN = re.compile(r"(?<![\d_])\d{5}_\d{5}(?![\d_])")
@@ -109,6 +62,14 @@ _NUMBER_PATTERN = re.compile(
 _ALL_GRID_DATA_PATTERNS = (
     re.compile(r"(?:전체|모든)\s*(?:격자\s*)?(?:데이터|지표|특성)"),
     re.compile(r"19\s*개\s*(?:데이터|지표|특성|필드)"),
+)
+_AMBIGUOUS_RATIO_CHANGE_PATTERN = re.compile(
+    r"\d+(?:\.\d+)?\s*%(?!\s*[pP])"
+    r".{0,20}(?:올리|높이|늘리|낮추|줄이|증가|감소|변경)",
+)
+_EXPLICIT_SIMULATION_PATTERN = re.compile(
+    r"\d+(?:\.\d+)?\s*(?:%\s*[pP]|㎡)"
+    r".{0,24}(?:올리|높이|늘리|낮추|줄이|증가|감소|변경)",
 )
 _REASONING_PATTERNS = (
     re.compile(r"\b(?:okay|wait|let's|i need to|the user|according to rule)\b", re.I),
@@ -129,6 +90,7 @@ _UNSUPPORTED_SCOPE_PATTERNS = (
         r"|(?:검색|찾|조회).{0,20}(?:문서|자료|가이드|서비스\s*설명)",
     ),
     re.compile(r"\bRAG\b", re.IGNORECASE),
+    re.compile(r"(?:인구\s*데이터|인구밀도|인구수)"),
 )
 
 
@@ -226,6 +188,50 @@ class ChatResult:
     first_content: str
     final_thinking: str
     final_content: str
+    metrics: dict[str, Any]
+
+
+def _new_chat_metrics() -> dict[str, Any]:
+    return {
+        "chat_total_seconds": 0.0,
+        "llm_router_seconds": 0.0,
+        "tool_execution_seconds": 0.0,
+        "answer_format_seconds": 0.0,
+        "validation_seconds": 0.0,
+        "ollama_call_count": 0,
+        "load_duration": None,
+        "prompt_eval_duration": None,
+        "eval_duration": None,
+        "prompt_eval_count": None,
+        "eval_count": None,
+        "status": "error",
+    }
+
+
+def _capture_ollama_metrics(
+    metrics: dict[str, Any],
+    response: Any,
+) -> None:
+    for field in (
+        "load_duration",
+        "prompt_eval_duration",
+        "eval_duration",
+        "prompt_eval_count",
+        "eval_count",
+    ):
+        if isinstance(response, Mapping):
+            value = response.get(field)
+        else:
+            value = getattr(response, field, None)
+        if isinstance(value, Real) and not isinstance(value, bool):
+            metrics[field] = int(value)
+
+
+def _log_chat_metrics(metrics: Mapping[str, Any]) -> None:
+    LOGGER.info(
+        "gaon_llm_metrics %s",
+        json.dumps(dict(metrics), ensure_ascii=False, sort_keys=True),
+    )
 
 
 def _llm_timeout_seconds() -> float:
@@ -300,20 +306,18 @@ def _raise_ollama_error(exc: Exception) -> None:
 def _ollama_chat(
     client: Any,
     messages: list[Any],
-    *,
-    enable_tools: bool = True,
 ) -> Any:
     try:
-        request: dict[str, Any] = {
-            "model": MODEL_NAME,
-            "messages": messages,
-            "think": True,
-            "options": {"temperature": 0},
-        }
-        if enable_tools:
-            request["tools"] = TOOL_SCHEMAS
         return client.chat(
-            **request,
+            model=MODEL_NAME,
+            messages=messages,
+            tools=TOOL_SCHEMAS,
+            think=True,
+            options={
+                "temperature": 0,
+                "num_predict": ROUTER_NUM_PREDICT,
+            },
+            keep_alive=MODEL_KEEP_ALIVE,
         )
     except ChatServiceError:
         raise
@@ -816,6 +820,142 @@ def _validate_simulation_answer(
     _validate_supported_numbers(answer, "run_simulation", tool_result)
 
 
+def _tool_error_answer(tool_result: Mapping[str, Any]) -> str | None:
+    if tool_result.get("success") is True:
+        return None
+    error = tool_result.get("error")
+    if not isinstance(error, str) or not error.strip():
+        raise ChatProtocolError("도구 오류 결과에 error 문자열이 없습니다.")
+    return error.strip()
+
+
+def format_grid_data_answer(tool_result: Mapping[str, Any]) -> str:
+    """조회 Tool 결과만 사용해 결정적인 한국어 답변을 만든다."""
+
+    error_answer = _tool_error_answer(tool_result)
+    if error_answer is not None:
+        return error_answer
+
+    grid_id = tool_result.get("grid_id")
+    gu_name = tool_result.get("gu_name")
+    requested_fields = tool_result.get("requested_fields")
+    values = tool_result.get("values")
+    if (
+        not isinstance(grid_id, str)
+        or not grid_id
+        or not isinstance(gu_name, str)
+        or not gu_name
+        or not isinstance(requested_fields, list)
+        or not requested_fields
+        or not isinstance(values, Mapping)
+    ):
+        raise ChatProtocolError("조회 Tool 결과의 필수 필드가 올바르지 않습니다.")
+
+    lines = [f"{grid_id} 격자({gu_name})의 현재 데이터입니다."]
+    for raw_field in requested_fields:
+        if not isinstance(raw_field, str) or raw_field not in GRID_FIELD_SPECS:
+            raise ChatProtocolError("조회 Tool 결과에 지원하지 않는 필드가 있습니다.")
+        raw_value = values.get(raw_field)
+        if (
+            not isinstance(raw_value, Real)
+            or isinstance(raw_value, bool)
+            or not math.isfinite(float(raw_value))
+        ):
+            raise ChatProtocolError(
+                f"조회 Tool 결과의 {raw_field} 값이 유한 숫자가 아닙니다."
+            )
+        lines.append(
+            f"- {GRID_FIELD_SPECS[raw_field]['label']}: "
+            f"{format_grid_field_value(raw_field, float(raw_value))}"
+        )
+    return "\n".join(lines)
+
+
+def format_simulation_answer(tool_result: Mapping[str, Any]) -> str:
+    """시뮬레이션 Tool 결과만 사용해 결정적인 한국어 답변을 만든다."""
+
+    error_answer = _tool_error_answer(tool_result)
+    if error_answer is not None:
+        return error_answer
+
+    grid_id = tool_result.get("grid_id")
+    gu_name = tool_result.get("gu_name")
+    if (
+        not isinstance(grid_id, str)
+        or not grid_id
+        or not isinstance(gu_name, str)
+        or not gu_name
+    ):
+        raise ChatProtocolError("시뮬레이션 Tool 결과의 지역 정보가 올바르지 않습니다.")
+
+    numeric_values: dict[str, float] = {}
+    for field in ("before_anomaly", "after_anomaly", "delta_c"):
+        raw_value = tool_result.get(field)
+        if (
+            not isinstance(raw_value, Real)
+            or isinstance(raw_value, bool)
+            or not math.isfinite(float(raw_value))
+        ):
+            raise ChatProtocolError(
+                f"시뮬레이션 Tool 결과의 {field}가 유한 숫자가 아닙니다."
+            )
+        numeric_values[field] = float(raw_value)
+
+    before = numeric_values["before_anomaly"]
+    after = numeric_values["after_anomaly"]
+    delta = numeric_values["delta_c"]
+    display_delta = 0.0 if math.isclose(delta, 0.0, abs_tol=0.0005) else delta
+    if delta > 0:
+        direction = "증가"
+    elif delta < 0:
+        direction = "감소"
+    else:
+        direction = "변화가 없는"
+
+    lines = [
+        (
+            f"{grid_id} 격자({gu_name})의 모델 예측 anomaly는 "
+            f"{before:.3f}에서 {after:.3f}로 변했습니다."
+        ),
+        (
+            "모델 기준 예상 변화량(delta_c)은 "
+            f"{display_delta:.3f}℃로 {direction} 방향입니다."
+        ),
+        (
+            "before_anomaly와 after_anomaly는 절대온도가 아니라 모델 예측 "
+            "anomaly이며, delta_c는 두 모델 예측의 차이인 모델 기준 "
+            "예상 변화량입니다."
+        ),
+    ]
+
+    policy_notes = tool_result.get("policy_direction_notes") or []
+    warnings = tool_result.get("warnings") or []
+    limitations = tool_result.get("limitations") or []
+    if not all(isinstance(items, list) for items in (policy_notes, warnings, limitations)):
+        raise ChatProtocolError("시뮬레이션 Tool 결과의 안내 목록이 올바르지 않습니다.")
+
+    lines.extend(str(note) for note in policy_notes)
+    lines.extend(f"경고: {warning}" for warning in warnings)
+    if warnings:
+        lines.append(
+            "학습 범위 밖 입력은 내부적으로 보정되었으며, 입력값 그대로가 "
+            "아니라 적용 결과에 표시된 값이 실제 반영값입니다."
+        )
+    lines.extend(str(limitation) for limitation in limitations)
+    return "\n".join(lines)
+
+
+def _format_tool_answer(
+    tool_name: str,
+    tool_result: Mapping[str, Any],
+) -> str:
+    if tool_name == "get_grid_data":
+        return format_grid_data_answer(tool_result)
+    if tool_name == "run_simulation":
+        return format_simulation_answer(tool_result)
+    raise ChatProtocolError(f"답변 formatter를 지원하지 않는 도구입니다: {tool_name}")
+
+
 def _validate_final_answer(
     answer: str,
     tool_name: str,
@@ -871,11 +1011,14 @@ def _is_unsupported_scope(message: str) -> bool:
 
 def _supported_scope_result(
     *,
+    answer: str = SUPPORTED_SCOPE_ANSWER,
     first_thinking: str = "",
     first_content: str = "",
+    metrics: dict[str, Any] | None = None,
 ) -> ChatResult:
+    result_metrics = metrics if metrics is not None else _new_chat_metrics()
     return ChatResult(
-        answer=SUPPORTED_SCOPE_ANSWER,
+        answer=answer,
         used_tools=[],
         tool_data={},
         warnings=[],
@@ -884,7 +1027,8 @@ def _supported_scope_result(
         first_thinking=first_thinking,
         first_content=first_content,
         final_thinking="",
-        final_content=SUPPORTED_SCOPE_ANSWER,
+        final_content=answer,
+        metrics=result_metrics,
     )
 
 
@@ -892,20 +1036,25 @@ def _run_chat_with_client(
     client: Any,
     message: str,
     resolved_grid_id: str,
+    metrics: dict[str, Any],
 ) -> ChatResult:
     recognized_lookup_fields = _recognized_lookup_fields(message)
     lookup_field_hint = ""
-    if recognized_lookup_fields:
+    if _EXPLICIT_SIMULATION_PATTERN.search(message):
         lookup_field_hint = (
-            " 현재 데이터 조회 질문이라면 질문 문구에서 확인된 fields는 "
-            f"{json.dumps(recognized_lookup_fields, ensure_ascii=False)}이다. "
-            "get_grid_data의 fields에 이 필드들만 정확히 전달한다."
+            " 이 요청은 정책 변경 시뮬레이션이다. run_simulation을 즉시 "
+            "호출하고 질문에서 변경값의 부호와 크기만 추출한다."
+        )
+    elif recognized_lookup_fields:
+        lookup_field_hint = (
+            " 이 요청은 현재 데이터 조회다. get_grid_data를 즉시 호출하며 "
+            "fields는 정확히 "
+            f"{json.dumps(recognized_lookup_fields, ensure_ascii=False)}로 전달한다."
         )
     request_prompt = (
         f"{SYSTEM_PROMPT}\n"
-        f"이번 요청에서 사용할 grid_id는 {resolved_grid_id}이다. "
-        "도구 인자와 최종 답변 모두에서 이 값을 글자 하나도 변경하거나 "
-        "생략하지 말고 정확히 그대로 사용한다."
+        f"사용할 grid_id는 {resolved_grid_id}이다. "
+        "도구 인자에서 이 값을 글자 하나도 변경하거나 생략하지 않는다."
         f"{lookup_field_hint}"
     )
     messages: list[Any] = [
@@ -913,17 +1062,26 @@ def _run_chat_with_client(
         {"role": "user", "content": message},
     ]
 
-    first_response = _ollama_chat(client, messages)
+    router_started = time.perf_counter()
+    metrics["ollama_call_count"] += 1
+    try:
+        first_response = _ollama_chat(client, messages)
+    finally:
+        metrics["llm_router_seconds"] = round(
+            time.perf_counter() - router_started,
+            6,
+        )
+    _capture_ollama_metrics(metrics, first_response)
     first_message = _response_message(first_response)
     first_thinking = _message_thinking(first_message)
     first_content = _message_content(first_message)
-    messages.append(first_message)
 
     calls = _tool_calls(first_message)
     if not calls:
         return _supported_scope_result(
             first_thinking=first_thinking,
             first_content=first_content,
+            metrics=metrics,
         )
     if len(calls) != 1:
         raise ChatProtocolError("Qwen은 도구를 정확히 한 번 호출해야 합니다.")
@@ -950,7 +1108,9 @@ def _run_chat_with_client(
                 "Qwen이 사용자가 요청한 조회 fields를 정확히 전달하지 않았습니다."
             )
 
+    metrics["tool_name"] = tool_name
     tool_function = TOOL_FUNCTIONS[tool_name]
+    tool_started = time.perf_counter()
     try:
         raw_tool_result = tool_function(**tool_arguments)
     except TypeError:
@@ -961,26 +1121,23 @@ def _run_chat_with_client(
         }
     except Exception as exc:
         raise ChatProtocolError("도구를 안전하게 실행할 수 없습니다.") from exc
+    finally:
+        metrics["tool_execution_seconds"] = round(
+            time.perf_counter() - tool_started,
+            6,
+        )
     if not isinstance(raw_tool_result, Mapping):
         raise ChatProtocolError("도구가 올바른 객체를 반환하지 않았습니다.")
     tool_result = dict(raw_tool_result)
 
-    messages.append(
-        {
-            "role": "tool",
-            "tool_name": tool_name,
-            "content": json.dumps(tool_result, ensure_ascii=False),
-        }
-    )
-    final_response = _ollama_chat(client, messages, enable_tools=False)
-    final_message = _response_message(final_response)
-    if _tool_calls(final_message):
-        raise ChatProtocolError("Qwen이 최종 답변 단계에서 도구를 다시 호출했습니다.")
-
-    final_thinking = _message_thinking(final_message)
-    final_content = _message_content(final_message)
-    if not final_content:
-        raise ChatProtocolError("Qwen이 최종 답변을 반환하지 않았습니다.")
+    formatter_started = time.perf_counter()
+    try:
+        final_content = _format_tool_answer(tool_name, tool_result)
+    finally:
+        metrics["answer_format_seconds"] = round(
+            time.perf_counter() - formatter_started,
+            6,
+        )
     raw_warnings = tool_result.get("warnings")
     warnings = (
         [str(item) for item in raw_warnings]
@@ -1002,14 +1159,21 @@ def _run_chat_with_client(
         tool_arguments=tool_arguments,
         first_thinking=first_thinking,
         first_content=first_content,
-        final_thinking=final_thinking,
+        final_thinking="",
         final_content=final_content,
+        metrics=metrics,
     )
+    validation_started = time.perf_counter()
     try:
         _validate_final_answer(final_content, tool_name, tool_result)
     except ChatProtocolError as exc:
         exc.result = result
         raise
+    finally:
+        metrics["validation_seconds"] = round(
+            time.perf_counter() - validation_started,
+            6,
+        )
     return result
 
 
@@ -1025,29 +1189,46 @@ def run_chat(
     호출자가 관리한다.
     """
 
-    normalized_message, resolved_grid_id = _resolved_grid_id(
-        message,
-        selected_grid_id,
-    )
-    if _is_unsupported_scope(normalized_message):
-        return _supported_scope_result()
-    if client is not None:
-        return _run_chat_with_client(
-            client,
-            normalized_message,
-            resolved_grid_id,
-        )
-
-    ollama_client = _create_ollama_client()
+    metrics = _new_chat_metrics()
+    chat_started = time.perf_counter()
     try:
-        with ollama_client as managed_client:
-            return _run_chat_with_client(
-                managed_client,
+        normalized_message, resolved_grid_id = _resolved_grid_id(
+            message,
+            selected_grid_id,
+        )
+        if _AMBIGUOUS_RATIO_CHANGE_PATTERN.search(normalized_message):
+            result = _supported_scope_result(
+                answer=AMBIGUOUS_RATIO_CHANGE_ANSWER,
+                metrics=metrics,
+            )
+        elif _is_unsupported_scope(normalized_message):
+            result = _supported_scope_result(metrics=metrics)
+        elif client is not None:
+            result = _run_chat_with_client(
+                client,
                 normalized_message,
                 resolved_grid_id,
+                metrics,
             )
+        else:
+            ollama_client = _create_ollama_client()
+            with ollama_client as managed_client:
+                result = _run_chat_with_client(
+                    managed_client,
+                    normalized_message,
+                    resolved_grid_id,
+                    metrics,
+                )
+        metrics["status"] = "ok"
+        return result
     except ChatServiceError:
         raise
     except Exception as exc:
         _raise_ollama_error(exc)
         raise AssertionError("unreachable")
+    finally:
+        metrics["chat_total_seconds"] = round(
+            time.perf_counter() - chat_started,
+            6,
+        )
+        _log_chat_metrics(metrics)

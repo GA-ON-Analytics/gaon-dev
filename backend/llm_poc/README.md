@@ -1,6 +1,7 @@
 # GA:ON Ollama + Qwen Tool Calling
 
-Ollama의 `qwen3:4b`가 사용자 질문에 따라 다음 도구를 선택하며, 같은 공용
+Ollama의 `qwen3:4b`는 사용자 질문에서 다음 도구와 인자만 선택합니다. Tool
+실행 후 최종 한국어 답변은 Python formatter가 결정적으로 생성하며, 같은 공용
 서비스를 CLI와 FastAPI `POST /api/chat`에서 사용합니다.
 
 - `get_grid_data`: 현재 격자의 19개 모델 입력 지표 중 요청한 필드 조회
@@ -40,6 +41,11 @@ Ollama 요청 제한 시간은 `GAON_LLM_TIMEOUT_SECONDS`로 설정할 수 있�
 export GAON_LLM_TIMEOUT_SECONDS=120
 ```
 
+이 제한은 질문 전체가 아니라 단일 Ollama HTTP 호출에 적용됩니다. 현재 지원
+질문은 Ollama를 한 번만 호출합니다. 동기 클라이언트에는 서버 추론을 명시적으로
+취소하는 API가 없으므로, 브라우저 요청 취소 또는 timeout이 이미 시작된 서버
+추론까지 항상 중단한다고 보장하지 않습니다.
+
 ## CLI 실행
 
 녹지율·불투수율 회귀, 범용 지표 조회, 미지원 지표, 전체 데이터 조회와
@@ -65,23 +71,54 @@ python -m backend.llm_poc.cli_test \
   "11230_00001 격자의 녹지율을 5%p 높이면 모델 기준 예상 변화량이 어떻게 돼?"
 ```
 
-CLI는 각 질문에 대해 다음 항목을 출력하고 검증합니다.
+CLI는 각 질문에 대해 다음 항목을 출력하고 검증합니다. 사용자 질문 원문과
+내부 추론 내용은 성능 로그에 출력하지 않습니다.
 
-1. 사용자 질문
-2. 첫 번째 `message.thinking`과 `message.content`
-3. 호출된 도구명과 인자
-4. 도구 반환값
-5. 최종 `message.thinking`과 `message.content`
-6. 검증된 최종 한국어 답변
-7. 전체 실행의 최종 종료 코드
+1. 사용자 질문 길이와 라우터 추론 분리 상태
+2. 호출된 도구명과 인자
+3. 도구 반환값
+4. 단계별 성능 지표와 Ollama 호출 횟수
+5. Python formatter가 만든 검증 완료 한국어 답변
+6. 전체 실행의 최종 종료 코드
 
 `get_grid_data`의 `values`는 기존 데이터 원본값을 유지합니다. 비율 필드는
-0~1 원본값이며 퍼센트 변환은 시스템 프롬프트의 지시에 따라 Qwen이 최종
-답변에서만 수행합니다.
+0~1 원본값이며 퍼센트 변환과 반올림은 중앙 표시 규칙을 재사용하는 Python
+formatter가 수행합니다.
 
-Ollama 호출은 `think=True`를 사용합니다. 추론은 `message.thinking`으로 분리해
-출력만 하며, 최종 답변과 숫자 검증은 `message.content`만 대상으로 합니다.
-최종 `message.content`에 `<think>` 또는 `</think>`가 있으면 실패합니다.
+라우터 호출은 `temperature=0`, `num_predict=3072`, `keep_alive="5m"`를
+사용합니다. 현재 Ollama `qwen3:4b`는 `think=False`에서 Tool Calling 대신
+일반 본문을 생성하는 것이 실제 테스트에서 확인되어, 정확도를 위해 라우터
+한 번만 `think=True`를 사용합니다. 분리된 추론은 API·브라우저 저장소·성능
+로그로 전달하지 않습니다.
+
+## 응답 처리와 성능 로그
+
+현재 처리 흐름은 다음과 같습니다.
+
+```text
+질문 → Qwen Tool 라우팅 1회 → Python Tool 실행
+     → Python formatter → 수치·단위·한계 검증 → API 응답
+```
+
+Tool 결과를 최종 답변으로 바꾸기 위한 두 번째 Ollama 호출은 없습니다.
+`format_grid_data_answer()`와 `format_simulation_answer()`는 Tool 결과에 있는
+값만 사용합니다. 시뮬레이션 답변에는 내부 Python 함수명을 노출하지 않으며,
+경고와 모델 한계를 빠뜨리지 않습니다.
+
+요청마다 다음 성능 지표를 한 줄의 `gaon_llm_metrics` 로그로 남깁니다.
+
+- `chat_total_seconds`
+- `llm_router_seconds`
+- `tool_execution_seconds`
+- `answer_format_seconds`
+- `validation_seconds`
+- `ollama_call_count`
+- `load_duration`, `prompt_eval_duration`, `eval_duration`
+- `prompt_eval_count`, `eval_count`
+
+질문 원문과 추론 내용은 로그에 포함하지 않습니다. `keep_alive="5m"`는 연속
+요청 시 모델 재로딩을 줄이는 메모리 유지 정책입니다. 모델이 GPU 메모리에
+로드되어 있는 상태와 실제 토큰 생성으로 GPU가 연산 중인 상태는 다릅니다.
 
 ## FastAPI와 대시보드 실행
 
@@ -168,7 +205,7 @@ proxy이므로 단위를 붙이거나 공식 용적률로 표현하지 않습니
 | 필드 | 한국어 표시명 | 최종 표시 단위 | 주요 별칭 |
 |---|---|---|---|
 | `building_ratio` | 건물 바닥면적 비율 | `%` | 건물 비율, 건물밀도, 건폐율 |
-| `avg_ground_floor_count` | 평균 지상층수 | `층` | 층수, 높이 |
+| `avg_ground_floor_count` | 평균 지상층수 | `층` | 층수, 고층, 저층 |
 | `max_ground_floor_count` | 최대 지상층수 | `층` | 최고층, 최대높이 |
 | `floor_area_ratio_proxy` | 연면적비 proxy | 단위 없음 | 용적률, 연면적, 개발밀도 |
 | `road_ratio` | 도로율 | `%` | 도로, 포장도로 |
@@ -254,6 +291,8 @@ Tool은 일반적인 열 저감 정책 방향과 반대인 시나리오라는 �
   미지원 필드는 조회 가능한 19개 필드 목록도 함께 반환합니다.
 - 일치하는 격자가 없거나 필수 모델 피처가 누락되면 해당 이유를 반환합니다.
 - 변경값이 숫자가 아니거나 NaN·무한대이면 오류를 반환합니다.
+- `%p`가 아닌 `%` 비율 변경 요청은 상대 변화인지 퍼센트포인트 변화인지
+  모호하므로 Tool을 호출하지 않고 `%p` 입력을 안내합니다.
 - `park_area_delta`가 음수이면 기존 `/api/simulate`의 `park_area_m2 >= 0`
   규칙과 같이 오류를 반환합니다.
 - 모델·feature metadata·데이터셋 등 필수 파일이 없으면 `missing_files`와
