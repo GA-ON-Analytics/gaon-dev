@@ -95,7 +95,8 @@ python3 -m uvicorn backend.main:app --reload --port 8000
 - `green_ratio_delta`는 `green_ratio`에 더한다.
 - `impervious_ratio_delta`는 `impervious_ratio`에 더한다. 프론트의 "불투수면 감소폭 5%"는 `-0.05`로 전달한다.
 - `park_area_m2`는 `park_area_within_500m`에 더한다.
-- `built_surface_ratio`는 `impervious_ratio`의 실제 반영 변화량만큼 함께 이동한다.
+- `built_surface_ratio`는 `impervious_ratio`와 값이 100% 동일한 중복 변수여서 제거했다.
+  두 변수를 연동하던 로직도 함께 삭제됐다.
 
 응답:
 ```json

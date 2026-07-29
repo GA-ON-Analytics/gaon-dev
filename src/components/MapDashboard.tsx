@@ -280,7 +280,6 @@ function formatAnyProperty(properties: GridAnalysisProperties | null, key: keyof
       key === 'green_ratio' ||
       key === 'building_ratio' ||
       key === 'impervious_ratio' ||
-      key === 'built_surface_ratio' ||
       key === 'road_ratio' ||
       key === 'zoning_residential_ratio' ||
       key === 'zoning_commercial_ratio' ||

@@ -39,7 +39,6 @@ function heatLevel(anomaly?: number) {
 const FEATURE_LABELS: Record<string, string> = {
   impervious_ratio: '불투수면 비율',
   building_ratio: '건물 비율',
-  built_surface_ratio: '지표면(built-up)',
   green_ratio: '녹지율',
   ndvi: '식생지수(NDVI)',
   albedo: '알베도(반사율)',
@@ -71,7 +70,6 @@ const CORE_MODEL_FEATURES: (keyof GridAnalysisProperties)[] = [
   'green_ratio',
   'ndvi',
   'impervious_ratio',
-  'built_surface_ratio',
   'albedo',
   'elevation_m',
   'building_ratio'
@@ -88,7 +86,6 @@ function isIncompleteGrid(properties: GridAnalysisProperties | null): boolean {
 const METRIC_DESC: Record<string, string> = {
   impervious_ratio: '빗물이 스며들지 못하는 포장·건물 등 인공 지표면 비율. 높을수록 낮에 열을 머금어 더 뜨겁습니다.',
   building_ratio: '격자에서 건물이 땅을 덮은 비율(건폐율). 높을수록 열 축적·복사가 커집니다.',
-  built_surface_ratio: '위성으로 본 인공 지표면(건물+도로+포장) 비율.',
   green_ratio: '나무·풀 등 녹지가 덮은 면적 비율. 높을수록 그늘·수분 증발로 시원합니다.',
   ndvi: '식생 활력 지수(−1~1). 높을수록 식물이 많고 건강해 냉각 효과가 큽니다.',
   albedo: '지표면이 햇빛을 반사하는 정도(0~1). 높을수록 덜 데워집니다.',
