@@ -1456,7 +1456,10 @@ td {
 }
 
 /* 선택 격자의 가장 가까운 무더위쉼터 핀 */
+/* 박스(40x40) 중앙에 핀을 놓는다. MapDashboard의 iconAnchor 계산이 이 전제에 기댄다 */
 .shelterPinIcon {
+  display: grid;
+  place-items: center;
   background: transparent;
   border: 0;
 }
@@ -1494,6 +1497,38 @@ td {
 
 .shelterPopup .leaflet-popup-content span {
   color: #4e5968;
+}
+
+/* 핀에 마우스를 올렸을 때 뜨는 라벨. 이 핀이 무더위쉼터라는 걸 클릭 전에 알린다. */
+.leaflet-tooltip.shelterTip {
+  display: grid;
+  gap: 1px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: #0d5743;
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(13, 87, 67, 0.28);
+}
+
+.leaflet-tooltip.shelterTip b {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #9fd6c2;
+}
+
+.leaflet-tooltip.shelterTip .stDist {
+  color: #bfe3d6;
+  font-size: 10.5px;
+}
+
+/* 말풍선 꼬리도 배경색에 맞춘다 (기본값은 흰색이라 튄다) */
+.leaflet-tooltip.shelterTip.leaflet-tooltip-top::before {
+  border-top-color: #0d5743;
 }
 
 .districtLabelIconWithValue {
@@ -1944,6 +1979,8 @@ td {
   opacity:0; visibility:hidden;
   transition:opacity .12s ease, transform .12s ease; z-index:20; pointer-events:none;
 }
+/* 카드가 패널 상단에 있으면 위로 열린 말풍선이 잘린다. 그럴 때는 아래로 편다. */
+.gridDetailSidePanel .infotip-down .infotip-bubble{ bottom:auto; top:calc(100% + 7px); }
 /* 아이콘 위치에 따라 펼치는 방향 (패널 밖으로 안 나가게) */
 .gridDetailSidePanel .infotip-left .infotip-bubble{ left:0; transform:translateY(3px); }
 .gridDetailSidePanel .infotip-right .infotip-bubble{ right:0; transform:translateY(3px); }
@@ -2033,16 +2070,46 @@ td {
 .gridDetailSidePanel .gdpSim input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:3px; background:var(--gdp-sub2); outline:none; margin:0; }
 .gridDetailSidePanel .gdpSim input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); box-shadow:0 1px 4px rgba(13,87,67,.35); }
 .gridDetailSidePanel .gdpSim input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); }
+/* 라벨 바로 아래 한 줄 설명이 붙으므로 sr-top의 아래 여백은 줄인다 */
+.gridDetailSidePanel .sr-top{ margin-bottom:2px; }
+/* 슬라이더 한 줄 설명 — 용어를 모르는 사람도 바로 알아보게 */
+.gridDetailSidePanel .sr-note{
+  margin:0 0 9px; font-size:11px; line-height:1.4; color:var(--gdp-ink3); font-weight:500;
+}
+/* 값이 0이 아닐 때만 초록으로 강조 — 무엇을 건드렸는지 한눈에 보이게 */
+.gridDetailSidePanel .sr-val{
+  color:var(--gdp-ink3); font-weight:600; transition:color .12s ease;
+}
+.gridDetailSidePanel .sr-val-on{ color:var(--gdp-green); font-weight:800; }
+
 /* 녹지↔불투수 연동 토글 (이슈 #14). 근거는 옆 ⓘ 툴팁에 있다. */
-.gridDetailSidePanel .sim-couple{ display:flex; align-items:center; gap:6px; margin:12px 0 4px; }
-.gridDetailSidePanel .sc-toggle{ display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; color:var(--gdp-green); cursor:pointer; }
-.gridDetailSidePanel .sc-toggle input{ width:15px; height:15px; accent-color:var(--gdp-green); cursor:pointer; }
-.gridDetailSidePanel .sc-state{ margin:0 0 10px; }
-.gridDetailSidePanel .sc-note{ margin-top:6px; padding-left:10px; border-left:3px solid var(--gdp-green-soft); }
-/* 연동 중 잠긴 슬라이더 — 값은 녹지에서 파생되므로 조작 불가임을 시각적으로 알린다 */
-.gridDetailSidePanel .sim-row-locked{ opacity:.62; }
-.gridDetailSidePanel .sim-row-locked input[type=range]{ cursor:not-allowed; }
-.gridDetailSidePanel .sr-lock{ font-size:11px; }
+.gridDetailSidePanel .sim-couple{
+  display:flex; align-items:center; gap:5px; margin:14px 0 0;
+  padding:10px 12px 0; border-top:1px solid var(--gdp-line);
+}
+.gridDetailSidePanel .sc-toggle{
+  display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600;
+  color:var(--gdp-ink); cursor:pointer;
+}
+.gridDetailSidePanel .sc-toggle input{
+  width:15px; height:15px; accent-color:var(--gdp-green); cursor:pointer; flex:none;
+}
+.gridDetailSidePanel .sc-state{
+  margin:3px 0 12px; padding-left:35px;
+  font-size:11px; line-height:1.4; color:var(--gdp-ink3);
+}
+/* 백엔드 warnings(연동·clip 안내) */
+.gridDetailSidePanel .sc-note{
+  margin-top:7px; padding:7px 10px; border-radius:8px;
+  background:var(--gdp-green-soft); color:var(--gdp-green); font-size:11px; line-height:1.5;
+}
+/* 연동 중 잠긴 슬라이더 — 값이 녹지에서 파생되므로 조작 불가임을 알린다 */
+.gridDetailSidePanel .sim-row-locked input[type=range]{ cursor:not-allowed; opacity:.55; }
+.gridDetailSidePanel .sr-lock{
+  margin-left:6px; padding:1px 6px; border-radius:20px;
+  background:var(--gdp-green-soft); color:var(--gdp-green);
+  font-size:9.5px; font-weight:700; letter-spacing:.02em; vertical-align:middle; cursor:help;
+}
 .gridDetailSidePanel .sim-out{ background:var(--gdp-green-soft); border-radius:14px; padding:15px 17px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .gridDetailSidePanel .so-lab{ font-size:13px; color:var(--gdp-green); font-weight:600; }
 .gridDetailSidePanel .so-num{ font-size:26px; font-weight:800; color:var(--gdp-green); letter-spacing:-.02em; }
