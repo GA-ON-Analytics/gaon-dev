@@ -16,6 +16,7 @@ import {
   Popup,
   ScaleControl,
   TileLayer,
+  Tooltip,
   useMap,
   useMapEvents,
   ZoomControl
@@ -448,12 +449,21 @@ function getShelterPin(properties: GridAnalysisProperties | null) {
 }
 
 // 쉼터 핀 아이콘 (divIcon — 자치구 라벨과 동일 패턴). 스타일은 styles.css .shelterPinIcon
+//
+// 박스를 40x40으로 잡은 이유: .shelterPinDot은 28x28을 -45도 회전한 것이라 대각선이
+// 28*sqrt(2) = 39.6px다. 예전 28x34 박스로는 그림이 밖으로 삐져나왔고, 삐져나온 부분을
+// 클릭하면 아래 격자 레이어로 통과해 엉뚱한 격자가 선택됐다.
+//
+// 앵커 [20,40]: CSS에서 span을 박스 중앙(20,20)에 놓는다. 회전 후 뾰족한 모서리는
+// 중앙에서 아래로 19.8px 지점(20, 39.8)에 오므로, 그 끝이 실제 좌표에 닿게 맞춘 값이다.
+// tooltipAnchor는 핀 꼭대기(앵커에서 위로 약 40px) 위에 라벨이 뜨도록 잡았다.
 const SHELTER_PIN_ICON = L.divIcon({
   className: 'shelterPinIcon',
   html: '<span class="shelterPinDot"><i>🏠</i></span>',
-  iconSize: [28, 34],
-  iconAnchor: [14, 32],
-  popupAnchor: [0, -30]
+  iconSize: [40, 40],
+  iconAnchor: [20, 40],
+  popupAnchor: [0, -38],
+  tooltipAnchor: [0, -40]
 });
 
 function buildDistrictTooltip(feature: Feature<Geometry>, selectedLayer: LayerKey) {
@@ -1195,7 +1205,26 @@ export function MapDashboard() {
             const shelter = getShelterPin(selectedGridProperties);
             if (!shelter) return null;
             return (
-              <Marker position={shelter.position} icon={SHELTER_PIN_ICON}>
+              <Marker
+                position={shelter.position}
+                icon={SHELTER_PIN_ICON}
+                alt={`무더위쉼터 ${shelter.name}`}
+              >
+                {/* 항상 보이는 라벨.
+                    hover로 띄우면 두 가지가 걸린다. (1) 격자 hover 툴팁이 sticky라 마우스를
+                    따라다니며 이 라벨을 덮는다. (2) 핀 그림(-45도 회전한 28x28)의 대각선이
+                    아이콘 클릭영역(28x34) 밖으로 나와, 삐져나온 부분을 클릭하면 아래 격자
+                    레이어로 통과해 다른 격자가 선택된다.
+                    항상 띄워두면 hover도 클릭도 필요 없어 둘 다 우회한다. */}
+                <Tooltip className="shelterTip" direction="top" opacity={1} permanent>
+                  <b>무더위쉼터</b>
+                  <span>{shelter.name}</span>
+                  {shelter.distance !== null && (
+                    <span className="stDist">
+                      여기서 약 {Math.round(shelter.distance).toLocaleString()}m
+                    </span>
+                  )}
+                </Tooltip>
                 <Popup className="shelterPopup" autoPan={false}>
                   <strong>{shelter.name}</strong>
                   {shelter.addr && <span>{shelter.addr}</span>}

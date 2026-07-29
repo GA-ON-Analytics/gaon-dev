@@ -109,9 +109,22 @@ const METRIC_DESC: Record<string, string> = {
 
 // ⓘ 아이콘에 마우스를 올리면 설명 말풍선을 띄우는 커스텀 툴팁
 // align: 말풍선이 열리는 방향 (아이콘이 패널 왼쪽이면 'left'=오른쪽으로 펼침, 오른쪽이면 'right')
-function InfoTip({ text, align = 'left' }: { text: string; align?: 'left' | 'center' | 'right' }) {
+// down: 기본은 위로 열리는데, 카드가 패널 상단에 있으면 말풍선이 잘린다. 그럴 때 아래로 연다.
+function InfoTip({
+  text,
+  align = 'left',
+  down = false
+}: {
+  text: string;
+  align?: 'left' | 'center' | 'right';
+  down?: boolean;
+}) {
   return (
-    <span className={`infotip infotip-${align}`} tabIndex={0} aria-label={text}>
+    <span
+      className={`infotip infotip-${align}${down ? ' infotip-down' : ''}`}
+      tabIndex={0}
+      aria-label={text}
+    >
       i<span className="infotip-bubble" role="tooltip">{text}</span>
     </span>
   );
@@ -477,41 +490,68 @@ function GridDetailSidePanel({
 // 기본값은 모두 0 — 격자를 클릭한 직후에는 그 격자의 현재 값이 그대로 유지되고,
 // 사용자가 움직인 것만 시나리오에 반영된다.
 //
-// 알베도·주변 공원 면적 슬라이더는 뺐다(이슈 #18). 전수 점검 결과 이 두 변수는 모델이
-// 물리와 반대 방향을 학습했다. 서울에서 알베도가 높은 표면은 밝은 콘크리트·나대지라
-// 실제로 더 덥고(관측 상관 +0.346), 공원은 도심 고밀도 지역에 조성돼 '도심다움'의 대리
-// 지표가 됐다(+0.353). 그대로 두면 "쿨루프를 칠하면 0.32℃ 더워집니다", "공원을 늘리면
-// 더워집니다"라고 안내하게 된다. 남긴 4개는 기대 방향 일치율 77~91%로 검증된 것들이다.
+// 알베도는 단조성 제약 도입(#18)으로 방향이 바로잡혀 되살렸다.
+// 제약 전 기대방향 36.3%(반대 63.7%) -> 제약 후 89.8%(반대 0.0%).
+//
+// 주변 공원 면적(park_area_within_500m)은 여전히 뺀 상태다. 이 변수에는 제약을 걸지
+// 않았고 - 걸면 모델이 변수를 아예 포기해 99.4%가 무변화가 된다 - 방향 일치율 18.1%,
+// 반대 28.0%로 역방향이 그대로다. 서울 공원은 도심 고밀도 지역에 조성되는 경우가 많아
+// 사실상 '도심다움'의 대리 지표가 됐다(관측 상관 +0.353). 되살리면 "공원을 늘리면
+// 더워집니다"라고 안내하게 된다.
+//
 // tip: 각 슬라이더가 '무엇에 얼마를 더하는지'를 설명한다. %p는 절대 퍼센트포인트여서
 // 녹지율 40%인 격자에 +10%p면 50%가 된다(44%가 아니다). 이 구분을 사용자가 모르면
 // 결과 크기를 완전히 다르게 읽는다.
+//
+// max는 3,000격자 반응 측정으로 정했다. 기준은 clip이 아니라 '포화'다. clip은 그 격자가
+// 학습범위 끝에 닿아 더 못 가는 정직한 제한이고 warnings로 알려주지만, 포화는 슬라이더를
+// 끌어도 결과가 안 바뀌어 고장난 것처럼 보인다.
+//   green  40까지 효과 증가(-1.029℃), 40->50 증가분 -0.050으로 포화 시작
+//   imp    효과는 계속 크지만 30을 넘으면 격자 절반 이상이 하한(0.024)에 걸린다
+//   ndvi   30에서 이미 포화 (30->40 증가분 -0.026, 40->50 -0.002)
+//   alb    5에서 완전 포화 (5 이후 증가분 0.000)
+// tip은 짧게. 말풍선 폭이 185px라 길면 열 줄이 넘어가 아무도 안 읽는다.
+// 각 슬라이더에서 사용자가 오해하기 쉬운 딱 한 가지만 담는다.
 const SIM_SLIDERS = [
   {
     key: 'green',
     label: '녹지율 늘리기',
     min: 0,
-    max: 20,
+    max: 40,
     step: 1,
     def: 0,
-    tip: '격자의 녹지율에 그만큼을 더합니다(절대 퍼센트포인트). 녹지율이 40%인 격자에 +10%p를 주면 50%가 돼요. "40%의 10%"를 더하는 게 아니라서 44%가 아닙니다.'
+    tip: '녹지가 덮은 면적 비율을 올려요.\n예) 25% 격자에 +10 → 35%\n(25%의 10%가 아니에요)',
+    note: '공원·가로수·화단처럼 식물이 덮은 땅'
   },
   {
     key: 'imp',
     label: '불투수면 줄이기',
     min: 0,
-    max: 20,
+    max: 30,
     step: 1,
     def: 0,
-    tip: '격자의 불투수면 비율에서 그만큼을 뺍니다(절대 퍼센트포인트). 불투수면이 60%인 격자에 −10%p를 주면 50%가 됩니다.'
+    tip: '물이 스미지 않는 면적을 줄여요.\n예) 40% 격자에 −10 → 30%',
+    note: '아스팔트·콘크리트처럼 물이 안 스미는 땅'
   },
   {
     key: 'ndvi',
-    label: '식생지수(NDVI) 늘리기',
+    label: '식생 활력도 높이기',
     min: 0,
     max: 30,
     step: 1,
     def: 0,
-    tip: 'NDVI 값 자체에 더하는 양이에요(비율이 아닙니다). 눈금 5는 +0.05를 뜻하고, NDVI가 0.30인 격자면 0.35가 됩니다. NDVI는 식생이 얼마나 무성한지를 나타내는 −1~1 지표예요.'
+    tip: '같은 면적이라도 잎이 더 무성해지는 정도예요.\n눈금 5 = +0.05',
+    note: '나무가 얼마나 건강하고 빽빽한지'
+  },
+  {
+    key: 'alb',
+    label: '표면 반사율 높이기',
+    min: 0,
+    max: 5,
+    step: 1,
+    def: 0,
+    tip: '밝은 지붕·포장재로 햇빛을 더 반사시켜요.\n\n⚠️ 모델이 이 효과를 실제보다 작게 봅니다. 참고용으로만 보세요.',
+    note: '쿨루프처럼 밝은 색으로 바꾸는 것'
   }
 ] as const;
 type SimKey = (typeof SIM_SLIDERS)[number]['key'];
@@ -520,24 +560,18 @@ type SimKey = (typeof SIM_SLIDERS)[number]['key'];
 // 값은 서울 64,574격자에서 실측한 것이라, 바꿀 일이 생기면 재측정 후 함께 고쳐야 한다.
 const COUPLE_COEF = 0.65;
 const COUPLE_TIP =
-  '녹지를 늘리려면 그만큼 다른 지표면이 줄어야 해요. ' +
-  '서울 64,574격자에서 불투수면과 녹지율의 관계를 재보니 기울기가 −0.655였어요. ' +
-  '녹지 +5%p당 불투수면 −3.3%p인 셈이에요. ' +
-  '1:1로 줄지 않는 건 녹지와 불투수면의 합이 평균 0.715라서예요 — ' +
-  '나머지 약 24%는 물·나대지여서, 늘어난 녹지의 일부는 그쪽에서 옵니다. ' +
-  '연동 중에는 불투수면이 녹지에 따라 자동으로 정해지므로 슬라이더가 잠깁니다. ' +
-  '직접 지정하려면 연동을 꺼주세요.';
+  '녹지를 늘리면 그만큼 딱딱한 바닥이 줄어야 현실적이에요.\n\n' +
+  '서울 격자를 분석해보니 녹지 10만큼 늘 때 불투수면은 6.5만큼 줄었어요. ' +
+  '나머지는 흙·물에서 옵니다.';
 const NO_COUPLE_TIP =
-  '연동을 끄면 녹지와 불투수면을 따로 조절합니다. ' +
-  '녹지만 늘리고 불투수면을 그대로 두면 비율의 합이 실제보다 커지는, ' +
-  '학습 데이터에 없는 조합이 되어 효과가 과소평가됩니다' +
-  '(같은 격자에서 −0.175℃ → −0.022℃). ' +
-  '변수 하나만의 영향을 따로 보거나, 감축량을 직접 정하고 싶을 때만 쓰세요.';
+  '녹지와 바닥을 따로 조절합니다.\n\n' +
+  '녹지만 늘리면 현실에 없는 조합이라 효과가 실제보다 작게 나와요. ' +
+  '한 가지 영향만 따로 볼 때 쓰세요.';
 
 function simDisplay(key: SimKey, v: number): string {
   if (key === 'green') return `+${v}%p`;
   if (key === 'imp') return `−${v.toFixed(v % 1 === 0 ? 0 : 1)}%p`;
-  return `+${(v / 100).toFixed(2)}`; // ndvi
+  return `+${(v / 100).toFixed(2)}`; // ndvi, albedo
 }
 
 // 슬라이더 원값(정수) → 모델 changes 델타.
@@ -548,6 +582,7 @@ function simChanges(v: Record<SimKey, number>, couple: boolean): Record<string, 
   if (v.green) c.green_ratio = v.green / 100;
   if (!couple && v.imp) c.impervious_ratio = -v.imp / 100;
   if (v.ndvi) c.ndvi = v.ndvi / 100;
+  if (v.alb) c.albedo = v.alb / 100;
   return c;
 }
 
@@ -559,9 +594,11 @@ function confidenceLabel(delta: number, confidence: number): string {
   return `${dir} 가능성 ${Math.round(confidence * 100)}%`;
 }
 
+// 소수점 3자리. 정책 개입 효과가 0.1℃ 미만인 경우가 흔해서(특히 알베도) 1자리로는
+// 서로 다른 시나리오가 전부 같은 값으로 보인다.
 function formatDelta(delta: number): string {
   const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
-  return `${sign}${Math.abs(delta).toFixed(1)}℃`;
+  return `${sign}${Math.abs(delta).toFixed(3)}℃`;
 }
 
 function SimulationCard({
@@ -614,8 +651,10 @@ function SimulationCard({
         }
         // delta_std는 오차막대로 쓰지 않는다(이슈 #17) — 실제 추정오차의 약 8배다.
         // 대신 트리들이 방향에 얼마나 동의하는지를 보여준다.
+        // before/after도 3자리로 맞춘다. 1자리면 12.3 → 12.0으로 보여 사용자가 0.3을
+        // 계산하는데 정작 delta는 -0.246이라 어긋나 보인다.
         const sub =
-          `${res.before_anomaly.toFixed(1)}℃ → ${res.after_anomaly.toFixed(1)}℃` +
+          `${res.before_anomaly.toFixed(3)}℃ → ${res.after_anomaly.toFixed(3)}℃` +
           (typeof res.direction_confidence === 'number'
             ? ` · ${confidenceLabel(res.delta_c, res.direction_confidence)}`
             : '');
@@ -659,8 +698,12 @@ function SimulationCard({
       <div className="sec-title">
         직접 시뮬레이션
         <InfoTip
-          align="right"
-          text="모델이 물리적으로 옳은 방향을 학습했는지 확인된 변수만 조절할 수 있어요. 알베도(반사율)와 주변 공원 면적은 뺐습니다 — 서울에서 알베도가 높은 표면은 밝은 콘크리트·나대지라 실제로 더 덥고, 공원은 도심에 많아서, 모델이 '올리면 더워진다'고 잘못 학습했기 때문이에요."
+          align="left"
+          down
+          text={
+            '이 격자에 정책을 적용하면 온도가 얼마나 변할지 예측해요.\n\n' +
+            '검증을 통과한 4가지만 조절할 수 있습니다.'
+          }
         />
       </div>
       <div className="sim-ctrl">
@@ -673,11 +716,18 @@ function SimulationCard({
               <div className="sr-top">
                 <span className="sr-lab">
                   {s.label}
-                  <InfoTip text={s.tip} />
-                  {locked && <span className="sr-lock" aria-hidden="true"> 🔒</span>}
+                  <InfoTip text={s.tip} down />
+                  {locked && (
+                    <span className="sr-lock" title="녹지율에 연동되어 자동 계산됩니다">
+                      자동
+                    </span>
+                  )}
                 </span>
-                <span className="sr-val">{simDisplay(s.key, shown)}</span>
+                <span className={`sr-val${shown > 0 ? ' sr-val-on' : ''}`}>
+                  {simDisplay(s.key, shown)}
+                </span>
               </div>
+              <p className="sr-note">{s.note}</p>
               <input
                 type="range"
                 min={s.min}
@@ -704,16 +754,16 @@ function SimulationCard({
             checked={couple}
             onChange={(e) => setCouple(e.target.checked)}
           />
-          <span>녹지↔불투수 연동</span>
+          <span>녹지를 늘리면 바닥도 함께 줄이기</span>
         </label>
         <InfoTip text={couple ? COUPLE_TIP : NO_COUPLE_TIP} align="right" />
       </div>
-      <p className="gdpNote sc-state">
+      <p className="sc-state">
         {coupleActive
-          ? `녹지 +${values.green}%p에 맞춰 불투수면을 −${coupledImp.toFixed(1)}%p 함께 낮춥니다.`
+          ? `녹지 +${values.green} → 불투수면 −${coupledImp.toFixed(1)} 자동 적용 중`
           : couple
-            ? '녹지율을 올리면 불투수면이 자동으로 함께 낮아집니다.'
-            : '연동 꺼짐 — 녹지와 불투수면을 따로 조절합니다. 녹지만 올리면 효과가 과소평가돼요.'}
+            ? '녹지를 올리면 불투수면이 따라 내려갑니다'
+            : '두 값을 따로 조절합니다'}
       </p>
 
       <div className="sim-out">
