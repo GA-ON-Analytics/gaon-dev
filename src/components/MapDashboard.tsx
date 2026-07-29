@@ -84,12 +84,10 @@ const HEAT_ISLAND_INDICATORS: LayerOption[] = [
     help: '위성 관측 지표온도',
     desc: '위성으로 관측한 지표면 온도(℃)예요. 2023~2025년 여름철 평균 기준.'
   },
-  {
-    key: 'green_delta_c',
-    label: '시나리오 저감효과',
-    help: '녹지 확대 시 냉각량',
-    desc: '녹지를 늘렸을 때 예상되는 온도 저감량(℃)이에요. 음수(파랑)일수록 냉각 효과가 큽니다.'
-  },
+  // '시나리오 저감효과'(green_delta_c) 레이어는 뺐다. 단일 고정 시나리오(녹지+5%p·NDVI+0.03·
+  // 불투수-5%p) 하나만 지도 전체에 칠하는 방식이라, 우측 패널의 시뮬레이션 값과 어긋나 혼란을
+  // 줬다. 시나리오별 저감효과는 우측 상세 패널에서 시나리오를 골라 보는 방식으로 옮긴다.
+  // green_delta_c 필드 자체는 priority_score 계산에 쓰이므로 데이터에는 그대로 남아 있다.
   {
     key: 'green_ratio',
     label: '녹지율',
@@ -294,7 +292,6 @@ function formatAnyProperty(properties: GridAnalysisProperties | null, key: keyof
     if (
       key === 'mean_actual_lst' ||
       key === 'mean_actual_anomaly' ||
-      key === 'green_delta_c' ||
       key === 'seoul_anomaly' ||
       key === 'pred_anomaly' ||
       key === 'pred_anomaly_std'
@@ -373,13 +370,6 @@ function colorByLayerValue(properties: GridAnalysisProperties, layer: LayerKey) 
     if (value >= 1.5) return '#f29a4b';
     if (value >= 0) return '#f2cf5b';
     return '#6fbf73';
-  }
-  if (layer === 'green_delta_c') {
-    if (value <= -2) return '#2f855a';
-    if (value < -1) return '#75c8a2';
-    if (value < 0) return '#b9dce8';
-    if (value === 0) return NEUTRAL_COLOR;
-    return '#cf3f3f';
   }
   if (layer === 'green_ratio' || layer === 'ndvi') return colorByRatio(value, false);
   if (layer === 'building_ratio' || layer === 'impervious_ratio') return colorByRatio(value, true);

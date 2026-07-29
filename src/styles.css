@@ -2033,6 +2033,16 @@ td {
 .gridDetailSidePanel .gdpSim input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:3px; background:var(--gdp-sub2); outline:none; margin:0; }
 .gridDetailSidePanel .gdpSim input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); box-shadow:0 1px 4px rgba(13,87,67,.35); }
 .gridDetailSidePanel .gdpSim input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); }
+/* 녹지↔불투수 연동 토글 (이슈 #14). 근거는 옆 ⓘ 툴팁에 있다. */
+.gridDetailSidePanel .sim-couple{ display:flex; align-items:center; gap:6px; margin:12px 0 4px; }
+.gridDetailSidePanel .sc-toggle{ display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; color:var(--gdp-green); cursor:pointer; }
+.gridDetailSidePanel .sc-toggle input{ width:15px; height:15px; accent-color:var(--gdp-green); cursor:pointer; }
+.gridDetailSidePanel .sc-state{ margin:0 0 10px; }
+.gridDetailSidePanel .sc-note{ margin-top:6px; padding-left:10px; border-left:3px solid var(--gdp-green-soft); }
+/* 연동 중 잠긴 슬라이더 — 값은 녹지에서 파생되므로 조작 불가임을 시각적으로 알린다 */
+.gridDetailSidePanel .sim-row-locked{ opacity:.62; }
+.gridDetailSidePanel .sim-row-locked input[type=range]{ cursor:not-allowed; }
+.gridDetailSidePanel .sr-lock{ font-size:11px; }
 .gridDetailSidePanel .sim-out{ background:var(--gdp-green-soft); border-radius:14px; padding:15px 17px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .gridDetailSidePanel .so-lab{ font-size:13px; color:var(--gdp-green); font-weight:600; }
 .gridDetailSidePanel .so-num{ font-size:26px; font-weight:800; color:var(--gdp-green); letter-spacing:-.02em; }

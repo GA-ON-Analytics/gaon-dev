@@ -292,7 +292,7 @@ function GridDetailSidePanel({
               <div className="tile">
                 <div className="t-lab">
                   녹지화 시 저감 가능
-                  <InfoTip text="녹지율 +5%p · NDVI +0.03 · 불투수/지표면 각 −5%p 를 적용했을 때 모델이 예측한 온도 변화입니다. 격자별 '녹지화 여지'를 비교하는 지표예요." />
+                  <InfoTip text="녹지율 +5%p · NDVI +0.03 · 불투수면 −5%p 를 함께 적용했을 때 모델이 예측한 온도 변화입니다. 모든 격자에 같은 조건을 적용한 값이라, 격자끼리 '녹지화 여지'를 비교하는 용도예요. 아래 직접 시뮬레이션은 원하는 값을 넣어보는 것이라 결과가 다를 수 있습니다." />
                 </div>
                 <div className={`t-num ${greenDelta != null && greenDelta < 0 ? 'cool' : ''}`}>
                   {greenDelta != null ? fmt('green_delta_c') : '—'}
@@ -474,31 +474,89 @@ function GridDetailSidePanel({
 // 슬라이더 값은 목업과 같은 정수 눈금, API에는 delta로 변환해 보낸다.
 // - 100m 격자: 그 격자를 그대로 재예측 → delta_c
 // - 250/500m 격자: 구성 100m 셀들(member_grid_ids)에 같은 정책을 적용해 batch 평균(mean_delta_c)
+// 기본값은 모두 0 — 격자를 클릭한 직후에는 그 격자의 현재 값이 그대로 유지되고,
+// 사용자가 움직인 것만 시나리오에 반영된다.
+//
+// 알베도·주변 공원 면적 슬라이더는 뺐다(이슈 #18). 전수 점검 결과 이 두 변수는 모델이
+// 물리와 반대 방향을 학습했다. 서울에서 알베도가 높은 표면은 밝은 콘크리트·나대지라
+// 실제로 더 덥고(관측 상관 +0.346), 공원은 도심 고밀도 지역에 조성돼 '도심다움'의 대리
+// 지표가 됐다(+0.353). 그대로 두면 "쿨루프를 칠하면 0.32℃ 더워집니다", "공원을 늘리면
+// 더워집니다"라고 안내하게 된다. 남긴 4개는 기대 방향 일치율 77~91%로 검증된 것들이다.
+// tip: 각 슬라이더가 '무엇에 얼마를 더하는지'를 설명한다. %p는 절대 퍼센트포인트여서
+// 녹지율 40%인 격자에 +10%p면 50%가 된다(44%가 아니다). 이 구분을 사용자가 모르면
+// 결과 크기를 완전히 다르게 읽는다.
 const SIM_SLIDERS = [
-  { key: 'green', label: '녹지율 늘리기', min: 0, max: 20, step: 1, def: 5 },
-  { key: 'imp', label: '불투수면 줄이기', min: 0, max: 20, step: 1, def: 5 },
-  { key: 'ndvi', label: '식생지수(NDVI) 늘리기', min: 0, max: 30, step: 1, def: 5 },
-  { key: 'alb', label: '알베도(반사율) 늘리기', min: 0, max: 20, step: 1, def: 5 },
-  { key: 'park', label: '주변 공원 면적 확충', min: 0, max: 5000, step: 250, def: 1000 }
+  {
+    key: 'green',
+    label: '녹지율 늘리기',
+    min: 0,
+    max: 20,
+    step: 1,
+    def: 0,
+    tip: '격자의 녹지율에 그만큼을 더합니다(절대 퍼센트포인트). 녹지율이 40%인 격자에 +10%p를 주면 50%가 돼요. "40%의 10%"를 더하는 게 아니라서 44%가 아닙니다.'
+  },
+  {
+    key: 'imp',
+    label: '불투수면 줄이기',
+    min: 0,
+    max: 20,
+    step: 1,
+    def: 0,
+    tip: '격자의 불투수면 비율에서 그만큼을 뺍니다(절대 퍼센트포인트). 불투수면이 60%인 격자에 −10%p를 주면 50%가 됩니다.'
+  },
+  {
+    key: 'ndvi',
+    label: '식생지수(NDVI) 늘리기',
+    min: 0,
+    max: 30,
+    step: 1,
+    def: 0,
+    tip: 'NDVI 값 자체에 더하는 양이에요(비율이 아닙니다). 눈금 5는 +0.05를 뜻하고, NDVI가 0.30인 격자면 0.35가 됩니다. NDVI는 식생이 얼마나 무성한지를 나타내는 −1~1 지표예요.'
+  }
 ] as const;
 type SimKey = (typeof SIM_SLIDERS)[number]['key'];
 
+// 녹지↔불투수 연동(이슈 #14)의 근거. 툴팁으로 그대로 보여준다.
+// 값은 서울 64,574격자에서 실측한 것이라, 바꿀 일이 생기면 재측정 후 함께 고쳐야 한다.
+const COUPLE_COEF = 0.65;
+const COUPLE_TIP =
+  '녹지를 늘리려면 그만큼 다른 지표면이 줄어야 해요. ' +
+  '서울 64,574격자에서 불투수면과 녹지율의 관계를 재보니 기울기가 −0.655였어요. ' +
+  '녹지 +5%p당 불투수면 −3.3%p인 셈이에요. ' +
+  '1:1로 줄지 않는 건 녹지와 불투수면의 합이 평균 0.715라서예요 — ' +
+  '나머지 약 24%는 물·나대지여서, 늘어난 녹지의 일부는 그쪽에서 옵니다. ' +
+  '연동 중에는 불투수면이 녹지에 따라 자동으로 정해지므로 슬라이더가 잠깁니다. ' +
+  '직접 지정하려면 연동을 꺼주세요.';
+const NO_COUPLE_TIP =
+  '연동을 끄면 녹지와 불투수면을 따로 조절합니다. ' +
+  '녹지만 늘리고 불투수면을 그대로 두면 비율의 합이 실제보다 커지는, ' +
+  '학습 데이터에 없는 조합이 되어 효과가 과소평가됩니다' +
+  '(같은 격자에서 −0.175℃ → −0.022℃). ' +
+  '변수 하나만의 영향을 따로 보거나, 감축량을 직접 정하고 싶을 때만 쓰세요.';
+
 function simDisplay(key: SimKey, v: number): string {
   if (key === 'green') return `+${v}%p`;
-  if (key === 'imp') return `−${v}%p`;
-  if (key === 'ndvi' || key === 'alb') return `+${(v / 100).toFixed(2)}`;
-  return `+${v.toLocaleString()}㎡`;
+  if (key === 'imp') return `−${v.toFixed(v % 1 === 0 ? 0 : 1)}%p`;
+  return `+${(v / 100).toFixed(2)}`; // ndvi
 }
 
-// 슬라이더 원값(정수) → 모델 changes 델타
-function simChanges(v: Record<SimKey, number>): Record<string, number> {
+// 슬라이더 원값(정수) → 모델 changes 델타.
+// couple=true면 impervious_ratio를 아예 보내지 않는다. 보내면 백엔드가 '사용자가 직접
+// 지정했다'고 보고 연동을 건너뛰기 때문이다(연동 규칙: dst in changes면 연동 안 함).
+function simChanges(v: Record<SimKey, number>, couple: boolean): Record<string, number> {
   const c: Record<string, number> = {};
   if (v.green) c.green_ratio = v.green / 100;
-  if (v.imp) c.impervious_ratio = -v.imp / 100;
+  if (!couple && v.imp) c.impervious_ratio = -v.imp / 100;
   if (v.ndvi) c.ndvi = v.ndvi / 100;
-  if (v.alb) c.albedo = v.alb / 100;
-  if (v.park) c.park_area_within_500m = v.park;
   return c;
+}
+
+// 트리 방향 동의율을 사람이 읽는 문구로. 60% 미만이면 숫자 대신 '판단 어려움'으로 쓴다 —
+// 그 구간에서 퍼센트를 보여주면 없는 정밀도를 있는 것처럼 읽히게 한다.
+function confidenceLabel(delta: number, confidence: number): string {
+  if (confidence < 0.6) return '방향을 판단하기 어려움';
+  const dir = delta < 0 ? '저감' : '상승';
+  return `${dir} 가능성 ${Math.round(confidence * 100)}%`;
 }
 
 function formatDelta(delta: number): string {
@@ -526,29 +584,44 @@ function SimulationCard({
   const [values, setValues] = useState<Record<SimKey, number>>(
     () => Object.fromEntries(SIM_SLIDERS.map((s) => [s.key, s.def])) as Record<SimKey, number>
   );
-  const [result, setResult] = useState<{ delta: number; sub?: string } | null>(null);
+  const [result, setResult] = useState<{ delta: number; sub?: string; notes?: string[] } | null>(
+    null
+  );
+  const [couple, setCouple] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 연동 중에는 불투수면이 녹지에서 파생되므로 슬라이더를 잠그고 파생값을 대신 보여준다.
+  // (예전엔 슬라이더 기본값 imp=5가 항상 changes에 실려 연동이 한 번도 걸리지 않았다)
+  const coupledImp = values.green * COUPLE_COEF;
+  const coupleActive = couple && values.green !== 0;
 
   async function apply() {
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const changes = simChanges(values);
+      const changes = simChanges(values, couple);
       if (targetIds.length === 1) {
-        const res = await simulateGridPolicy({ grid_id: targetIds[0], changes });
+        const res = await simulateGridPolicy({
+          grid_id: targetIds[0],
+          changes,
+          couple_land_cover: couple
+        });
         if (typeof res.error === 'string') {
           setError('선택한 격자를 시뮬레이션할 수 없어요.');
           return;
         }
+        // delta_std는 오차막대로 쓰지 않는다(이슈 #17) — 실제 추정오차의 약 8배다.
+        // 대신 트리들이 방향에 얼마나 동의하는지를 보여준다.
         const sub =
-          typeof res.delta_std === 'number'
-            ? `${res.before_anomaly.toFixed(1)}℃ → ${res.after_anomaly.toFixed(1)}℃ · 트리 간 변화량 편차 ${res.delta_std.toFixed(2)}℃`
-            : undefined;
-        setResult({ delta: res.delta_c, sub });
+          `${res.before_anomaly.toFixed(1)}℃ → ${res.after_anomaly.toFixed(1)}℃` +
+          (typeof res.direction_confidence === 'number'
+            ? ` · ${confidenceLabel(res.delta_c, res.direction_confidence)}`
+            : '');
+        setResult({ delta: res.delta_c, sub, notes: res.warnings });
       } else {
-        const res = await simulateBatchGridPolicy(targetIds, changes);
+        const res = await simulateBatchGridPolicy(targetIds, changes, couple);
         if (res.mean_delta_c == null) {
           setError('시뮬레이션할 수 있는 구성 격자가 없어요.');
           return;
@@ -583,27 +656,65 @@ function SimulationCard({
 
   return (
     <div className="card gdpSim">
-      <div className="sec-title">직접 시뮬레이션</div>
-      <div className="sim-ctrl">
-        {SIM_SLIDERS.map((s) => (
-          <div className="sim-row" key={s.key}>
-            <div className="sr-top">
-              <span className="sr-lab">{s.label}</span>
-              <span className="sr-val">{simDisplay(s.key, values[s.key])}</span>
-            </div>
-            <input
-              type="range"
-              min={s.min}
-              max={s.max}
-              step={s.step}
-              value={values[s.key]}
-              onChange={(e) =>
-                setValues((cur) => ({ ...cur, [s.key]: Number(e.target.value) }))
-              }
-            />
-          </div>
-        ))}
+      <div className="sec-title">
+        직접 시뮬레이션
+        <InfoTip
+          align="right"
+          text="모델이 물리적으로 옳은 방향을 학습했는지 확인된 변수만 조절할 수 있어요. 알베도(반사율)와 주변 공원 면적은 뺐습니다 — 서울에서 알베도가 높은 표면은 밝은 콘크리트·나대지라 실제로 더 덥고, 공원은 도심에 많아서, 모델이 '올리면 더워진다'고 잘못 학습했기 때문이에요."
+        />
       </div>
+      <div className="sim-ctrl">
+        {SIM_SLIDERS.map((s) => {
+          // 불투수면은 연동 중이면 잠기고, 녹지에서 파생된 값을 표시한다.
+          const locked = s.key === 'imp' && couple;
+          const shown = locked ? Math.min(coupledImp, s.max) : values[s.key];
+          return (
+            <div className={`sim-row${locked ? ' sim-row-locked' : ''}`} key={s.key}>
+              <div className="sr-top">
+                <span className="sr-lab">
+                  {s.label}
+                  <InfoTip text={s.tip} />
+                  {locked && <span className="sr-lock" aria-hidden="true"> 🔒</span>}
+                </span>
+                <span className="sr-val">{simDisplay(s.key, shown)}</span>
+              </div>
+              <input
+                type="range"
+                min={s.min}
+                max={s.max}
+                step={s.step}
+                value={shown}
+                disabled={locked}
+                aria-label={locked ? `${s.label} (녹지율에 연동되어 자동 계산됨)` : s.label}
+                onChange={(e) =>
+                  setValues((cur) => ({ ...cur, [s.key]: Number(e.target.value) }))
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 녹지↔불투수 연동 (이슈 #14). 기본 켬이되 잠그지 않는다 — 계수 0.65는 관측값이지
+          구간마다 흔들리므로, 근거를 툴팁으로 노출하고 사용자가 끌 수 있게 둔다. */}
+      <div className="sim-couple">
+        <label className="sc-toggle">
+          <input
+            type="checkbox"
+            checked={couple}
+            onChange={(e) => setCouple(e.target.checked)}
+          />
+          <span>녹지↔불투수 연동</span>
+        </label>
+        <InfoTip text={couple ? COUPLE_TIP : NO_COUPLE_TIP} align="right" />
+      </div>
+      <p className="gdpNote sc-state">
+        {coupleActive
+          ? `녹지 +${values.green}%p에 맞춰 불투수면을 −${coupledImp.toFixed(1)}%p 함께 낮춥니다.`
+          : couple
+            ? '녹지율을 올리면 불투수면이 자동으로 함께 낮아집니다.'
+            : '연동 꺼짐 — 녹지와 불투수면을 따로 조절합니다. 녹지만 올리면 효과가 과소평가돼요.'}
+      </p>
 
       <div className="sim-out">
         <span className="so-lab">
@@ -614,6 +725,11 @@ function SimulationCard({
         </span>
       </div>
       {result?.sub && <p className="gdpNote">{result.sub}</p>}
+      {result?.notes?.map((note) => (
+        <p className="gdpNote sc-note" key={note}>
+          {note}
+        </p>
+      ))}
       {error && <p className="gdpNote gdpSimError">{error}</p>}
 
       <button className="gdpSimBtn" type="button" onClick={apply} disabled={loading}>
