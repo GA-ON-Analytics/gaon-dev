@@ -32,29 +32,59 @@ _GRID_FIELD_LABELS = "、".join(
 _SIMULATION_FIELDS = (
     "green_ratio",
     "impervious_ratio",
-    "park_area_within_500m",
+    "ndvi",
+    "albedo",
 )
 _SIMULATION_ARGUMENT_BY_FIELD = {
     "green_ratio": "green_ratio_delta",
     "impervious_ratio": "impervious_ratio_delta",
-    "park_area_within_500m": "park_area_delta",
+    "ndvi": "ndvi_delta",
+    "albedo": "albedo_delta",
 }
 _SIMULATION_FIELD_TERMS = {
     "green_ratio": ("녹지",),
     "impervious_ratio": ("불투수",),
-    "park_area_within_500m": ("공원",),
+    "ndvi": ("ndvi", "식생", "녹화"),
+    "albedo": ("albedo", "알베도", "반사율", "쿨루프"),
 }
-_SIMULATION_ARGUMENTS = tuple(_SIMULATION_ARGUMENT_BY_FIELD.values())
 _SUPPORTED_INTENTS = {
     "lookup",
     "simulation",
     "unsupported",
 }
 _SUPPORTED_OPERATIONS = {"increase", "decrease"}
-_SUPPORTED_UNITS = {"percent", "percentage_point", "m2"}
+_SUPPORTED_UNITS = {"percent", "percentage_point", "unitless"}
 _SUPPORTED_BASES = {"direct", "relative_to_current"}
 _FULL_SCOPE_TERMS = ("전체", "모두", "모든", "전부")
-_EXCLUDED_SCOPE_TERMS = ("말고", "제외", "필요없", "보여주지말고")
+_EXCLUDED_SCOPE_TERMS = (
+    "말고",
+    "제외",
+    "필요없",
+    "보여주지말고",
+    "아니라",
+    "대신",
+    "빼고",
+)
+_GENERIC_LOOKUP_TARGET_TERMS = ("데이터", "정보", "현재값", "현황")
+_GENERIC_LOOKUP_REQUEST_TERMS = ("알려", "보여", "줘", "조회", "확인")
+_META_REQUEST_TERMS = (
+    "설명",
+    "원리",
+    "학습",
+    "산출",
+    "지원",
+    "가능",
+    "종류",
+    "목록",
+    "출처",
+    "수집",
+    "근거",
+    "어디서",
+    "할수있",
+    "뭘할수",
+    "무엇을할수",
+)
+_EXPLICIT_SIMULATION_TERMS = ("시뮬레이션", "정책변경", "예상변화", "예측변화")
 _STANDALONE_ALL_PATTERN = re.compile(
     r"(?<![가-힣A-Za-z0-9_])다(?![가-힣A-Za-z0-9_])"
 )
@@ -67,23 +97,24 @@ _UNRESOLVED_CODES = {
     "change_value",
     "conflicting_changes",
     "lookup_field",
-    "park_area_decrease",
 }
 _CLARIFICATION_BY_CODE = {
     "ambiguous_request": "요청에서 확정되지 않은 부분을 구체적으로 알려주세요.",
     "change_field": "변경할 지표를 알려주세요.",
     "change_operation": "증가 또는 감소 방향을 알려주세요.",
     "change_source": "변경 요청의 원문 근거를 다시 확인해 주세요.",
-    "change_unit": "비율은 % 또는 %p, 공원 면적은 ㎡ 단위로 알려주세요.",
+    "change_unit": (
+        "녹지율·불투수율은 % 또는 %p, NDVI·알베도는 0.05처럼 "
+        "지수에 더할 소수 변화량으로 알려주세요."
+    ),
     "change_value": "변경량을 숫자로 알려주세요.",
     "conflicting_changes": "같은 지표의 변경값은 하나로 확정해 주세요.",
     "lookup_field": "조회할 격자 지표를 알려주세요.",
-    "park_area_decrease": "공원 면적 감소는 지원하지 않습니다.",
 }
 SUPPORTED_SCOPE_ANSWER = (
     "현재 GA:ON AI는 선택한 100m 격자의 다음 현재 데이터를 조회할 수 있습니다: "
     f"{_GRID_FIELD_LABELS}. "
-    "사용자가 지정한 녹지율·불투수율·공원 면적 변경 시나리오만 지원합니다. "
+    "사용자가 지정한 녹지율·불투수율·NDVI·알베도 변경 시나리오만 지원합니다. "
     "정책 추천, 모델 설명, 문서 검색은 현재 지원하지 않습니다."
 )
 ROUTER_OUTPUT_SCHEMA = {
@@ -133,7 +164,7 @@ ROUTER_OUTPUT_SCHEMA = {
                         "description": (
                             "green_ratio=녹지 비율, "
                             "impervious_ratio=불투수 비율, "
-                            "park_area_within_500m=공원 면적"
+                            "ndvi=식생지수, albedo=표면 반사율"
                         ),
                     },
                     "operation": {
@@ -156,7 +187,17 @@ ROUTER_OUTPUT_SCHEMA = {
                         "type": "string",
                         "enum": sorted(_SUPPORTED_BASES),
                     },
-                    "source_text": {"type": "string"},
+                    "source_text": {
+                        "type": "string",
+                        "description": "변경 지표를 나타낸 원문의 가장 짧은 구간",
+                    },
+                    "operation_text": {
+                        "type": "string",
+                        "description": (
+                            "증가 또는 감소 방향을 명시한 원문의 가장 짧은 구간. "
+                            "방향 표현이 없으면 임의로 만들지 않는다."
+                        ),
+                    },
                     "value_text": {
                         "type": "string",
                         "description": (
@@ -172,6 +213,7 @@ ROUTER_OUTPUT_SCHEMA = {
                     "unit",
                     "basis",
                     "source_text",
+                    "operation_text",
                     "value_text",
                 ],
                 "additionalProperties": False,
@@ -209,28 +251,39 @@ SYSTEM_PROMPT = """사용자 요청의 의미를 JSON schema로만 정규화한�
 답변 문장이나 실제 실행 인자를 만들지 않는다.
 - 먼저 지원 범위를 판정한다. 요청 지표가 허용된 requested_fields 또는 지원 변경 field와 대응하지 않으면 다른 지표로 대체하지 말고 unsupported다.
 - simulation이면 lookup_all=false, requested_fields=[], excluded_scope=false로 두고 각 변경을 changes에 하나씩 둔다.
-- 녹지·녹지 비중은 green_ratio, 불투수·불투수 비중은 impervious_ratio, 공원 면적은 park_area_within_500m이다.
-- 일반 percent 또는 비율 문맥의 단위 없는 수치는 증감 방향이 명확하면 unit=percent, basis=direct로 두고 해당 해석을 assumptions에 한국어로 쓴다.
-- 명시적 %p는 percentage_point/direct, 현재 값의 일정 비율은 percent/relative_to_current, 공원 면적은 m2/direct다.
+- 변경 가능한 지표는 녹지·녹지 비중=green_ratio, 불투수·불투수 비중=impervious_ratio, 식생지수·NDVI=ndvi, 알베도·표면 반사율=albedo다.
+- 녹지율·불투수율의 일반 percent 또는 비율 문맥의 단위 없는 수치는 증감 방향이 명확하면 unit=percent, basis=direct로 두고 해당 해석을 assumptions에 한국어로 쓴다.
+- 녹지율·불투수율에서 명시적 %p는 percentage_point/direct, 현재 값의 일정 비율은 percent/relative_to_current다.
+- NDVI와 알베도는 비율이 아닌 무단위 지수다. "0.05 높인다"처럼 지수에 직접 더할 소수가 명시된 경우에만 unit=unitless, basis=direct로 둔다. %·%p 또는 상대 비율 표현은 임의 환산하지 말고 unresolved=["change_unit"]으로 둔다.
 - value는 원문 표면 수치를 그대로 쓴다. 예를 들어 5%와 5%p는 value=5이며 0.05로 환산하지 않는다.
-- 공원과 제곱미터 의미의 수치가 포함된 면적 변경은 simulation이다.
+- 공원 면적은 현재값 조회만 가능하고 정책 변경은 지원하지 않는다.
 - direct 변경에는 현재 값이 필요하지 않다.
 - 문맥상 명확한 오타는 assumptions에 남기고 정규화한다.
 - assumptions는 원문을 실제로 다르게 정규화하거나 단위를 가정한 경우에만 쓰며 명확한 현재값 조회에는 비운다.
+- 각 변경의 증가·감소 방향이 원문에 명시돼야 한다. 여러 지표와 수치만 있고 방향이 없는 복합 요청에는 operation을 추측하지 말고 unresolved=["change_operation"]으로 둔다.
+- "높이면/낮추면 결과가 어떻게 돼?" 같은 조건형 질문도 원문에 증가·감소 방향과 변경량이 명시된 실행 가능한 simulation이다.
 - 지시 대상·방향·수치 중 필요한 의미가 불명확할 때는 changes에 추측하지 않는다.
 - unresolved에는 자유 문장 대신 change_field, change_operation, change_value, change_unit, ambiguous_request 중 필요한 코드만 쓴다.
-- 각 source_text는 지표·방향·변경량이 나타난 원문 구간이고, value_text는 변경량 숫자와 단위가 나타난 가장 짧은 원문 구간이다.
+- source_text는 변경 지표를 나타낸 가장 짧은 원문 구간이다. operation_text는 증가·감소를 명시한 가장 짧은 원문 구간이고 value_text는 변경량 숫자와 단위가 나타난 가장 짧은 원문 구간이다. 이 세 문자열은 반드시 원문을 그대로 인용한다.
 - 현재값 조회를 명시적으로 묻는 경우만 intent=lookup이다. 일부 조회는 lookup_all=false와 요청한 requested_fields를 사용한다.
+- 선택된 격자의 데이터·정보·현재값·현황을 요청하면서 특정 지표를 지정하지 않으면 intent=lookup, lookup_all=true, requested_fields=[]다. "현재 데이터"처럼 짧은 명사형 요청도 전체 현재값 조회다.
 - 전체·모두·모든·전부 또는 독립된 "다"로 격자의 전체 데이터나 정보를 요구하면 intent=lookup, lookup_all=true, requested_fields=[]다.
 - 전체 범위 표현 뒤에 말고·제외·필요 없고·보여주지 말고처럼 전체 조회를 부정하면 excluded_scope=true, lookup_all=false이고 실제로 요청한 일부 필드만 requested_fields에 둔다.
+- 능력·지원 범위를 묻거나 데이터의 정의·출처·모델 설명을 요구하면 현재값 조회가 아니므로 unsupported다.
+- 데이터 조회를 부정하고 시뮬레이션을 요청하면 simulation을 우선한다.
 - 식생지수와 NDVI는 ndvi다. 허용 지표가 아닌 요청을 비슷한 requested_fields로 바꾸거나 추측하지 말고 unsupported로 둔다.
 - 인구·인구밀도처럼 허용 목록에 없는 지표는 unsupported다.
 - 조회에서 공원까지 거리는 nearest_park_distance_m, 500m 내 공원 면적은 park_area_within_500m이다.
 - 지원하지 않는 요청은 intent=unsupported, lookup_all=false, requested_fields=[], excluded_scope=false이며 changes를 비운다.
 예: "이 격자 데이터 모두 알려줘"는 intent=lookup, lookup_all=true, requested_fields=[], excluded_scope=false다.
+예: "데이터 알려줘", "현재 데이터", "이 격자 정보 보여줘"는 intent=lookup, lookup_all=true, requested_fields=[], excluded_scope=false다.
 예: "모든 데이터 말고 녹지율만 알려줘"는 intent=lookup, lookup_all=false, requested_fields=["green_ratio"], excluded_scope=true다.
 예: "인구밀도를 알려줘"는 intent=unsupported, lookup_all=false, requested_fields=[], excluded_scope=false다.
+예: "어떤 데이터를 지원해?", "데이터의 출처가 뭐야?", "모델 데이터 설명해줘"는 intent=unsupported다.
 예: "그거 5플오 해줘"처럼 변경 대상과 방향이 불명확하면 intent=simulation, lookup_all=false, requested_fields=[], excluded_scope=false, changes=[], unresolved=["change_field","change_operation"]이다.
+예: "녹지율을 올려줘"처럼 대상과 방향은 명확하지만 수치가 없으면 changes=[], unresolved=["change_value"]이다.
+예: "녹지율 5플오 증가"는 문맥상 명확한 오타이므로 changes=[{"field":"green_ratio","operation":"increase","value":5,"unit":"percent","basis":"direct","source_text":"녹지율","operation_text":"증가","value_text":"5플오"}], assumptions=["5플오를 5%로 해석"], unresolved=[]로 정규화한다.
+예: "녹지율 5%p, NDVI 0.05"처럼 각 변경 방향이 없으면 changes를 실행 가능한 것으로 만들지 않고 unresolved=["change_operation"]이다.
 """
 
 _GRID_ID_PATTERN = re.compile(r"(?<![\d_])\d{5}_\d{5}(?![\d_])")
@@ -249,6 +302,10 @@ _ADJACENT_UNIT_SUFFIX_PATTERN = re.compile(
     r"^\s*(?:%\s*[pP]?|㎡|m\s*(?:²|\^?2)\b|제곱(?:미터)?)",
     re.IGNORECASE,
 )
+_DIRECTION_TERMS = {
+    "increase": ("증가", "증대", "늘", "높", "올", "추가", "확대", "상향", "+"),
+    "decrease": ("감소", "줄", "낮", "내", "제거", "축소", "하향", "빼", "-", "−"),
+}
 _REASONING_PATTERNS = (
     re.compile(r"\b(?:okay|wait|let's|i need to|the user|according to rule)\b", re.I),
     re.compile(r"추론\s*과정"),
@@ -263,6 +320,7 @@ class _NormalizedChange:
     unit: str
     basis: str
     source_text: str
+    operation_text: str
     value_text: str
 
 
@@ -301,21 +359,6 @@ def _normalized_router_text_list(value: Any, field_name: str) -> tuple[str, ...]
         if text not in normalized:
             normalized.append(text)
     return tuple(normalized)
-
-
-def _lookup_field_is_grounded(message: str, field: str) -> bool:
-    """중앙 필드 메타데이터의 명칭이 사용자 원문에 실제로 있는지 확인한다."""
-
-    compact_message = "".join(message.split()).casefold()
-    spec = GRID_FIELD_SPECS[field]
-    raw_aliases = spec.get("aliases")
-    aliases = raw_aliases if isinstance(raw_aliases, (tuple, list)) else ()
-    terms = (field, str(spec["label"]), *(str(alias) for alias in aliases))
-    return any(
-        compact_term and compact_term in compact_message
-        for term in terms
-        if (compact_term := "".join(term.split()).casefold())
-    )
 
 
 def _recognized_lookup_fields(message: str) -> list[str]:
@@ -361,10 +404,80 @@ def _recognized_lookup_fields(message: str) -> list[str]:
 
 def _simulation_field_is_grounded(source_text: str, field: str) -> bool:
     compact_source = "".join(source_text.split()).casefold()
-    return _lookup_field_is_grounded(source_text, field) or any(
+    recognized_fields = _recognized_lookup_fields(source_text)
+    if recognized_fields:
+        return recognized_fields == [field]
+    return any(
         "".join(term.split()).casefold() in compact_source
         for term in _SIMULATION_FIELD_TERMS[field]
     )
+
+
+def _simulation_operation_is_grounded(
+    source_text: str,
+    operation_text: str,
+    operation: str,
+) -> bool:
+    """구조화된 증감 방향이 실제 원문의 명시적 표현인지 확인한다."""
+
+    compact_source = "".join(source_text.split()).casefold()
+    compact_operation = "".join(operation_text.split()).casefold()
+    if not compact_operation or compact_operation not in compact_source:
+        return False
+
+    matched_directions = {
+        direction
+        for direction, terms in _DIRECTION_TERMS.items()
+        if any(term in compact_operation for term in terms)
+    }
+    if matched_directions == {operation}:
+        return True
+
+    # 소형 모델이 operation_text 대신 수치 구간을 복사하는 경우에도 원문 전체에
+    # 한 방향만 명시됐다면 그 근거를 사용할 수 있다. 서로 다른 방향이 섞인
+    # 복합 문장에서는 이 보정을 하지 않아 각 변경 방향을 추측하지 않는다.
+    original_directions = {
+        direction
+        for direction, terms in _DIRECTION_TERMS.items()
+        if any(term in compact_source for term in terms)
+    }
+    return original_directions == {operation}
+
+
+def _simulation_change_context(
+    original_message: str,
+    source_text: str,
+    raw_changes: list[Any],
+) -> str:
+    """현재 지표부터 다음 변경 지표 전까지의 원문 구간을 반환한다."""
+
+    source_starts = [
+        match.start()
+        for match in re.finditer(re.escape(source_text), original_message)
+    ]
+    if len(source_starts) != 1:
+        return source_text
+    current_start = source_starts[0]
+
+    later_starts: list[int] = []
+    for candidate in raw_changes:
+        if not isinstance(candidate, Mapping):
+            continue
+        candidate_source = candidate.get("source_text")
+        if not isinstance(candidate_source, str):
+            continue
+        normalized_candidate = " ".join(candidate_source.split())
+        if not normalized_candidate or normalized_candidate == source_text:
+            continue
+        candidate_start = original_message.find(
+            normalized_candidate,
+            current_start + len(source_text),
+        )
+        if candidate_start > current_start:
+            later_starts.append(candidate_start)
+
+    context_end = min(later_starts, default=len(original_message))
+    return original_message[current_start:context_end]
 
 
 def _value_unit_evidence(original_message: str, value_text: str) -> str:
@@ -395,6 +508,159 @@ def _scope_signals(message: str) -> tuple[bool, bool]:
         term in compact_message for term in _EXCLUDED_SCOPE_TERMS
     )
     return has_full_scope, has_excluded_scope
+
+
+def _compact_routing_text(message: str) -> str:
+    return "".join(message.split()).casefold()
+
+
+def _has_lookup_negation(message: str) -> bool:
+    compact_message = _compact_routing_text(message)
+    return any(term in compact_message for term in _EXCLUDED_SCOPE_TERMS)
+
+
+def _is_meta_request(message: str) -> bool:
+    compact_message = _compact_routing_text(message)
+    return any(term in compact_message for term in _META_REQUEST_TERMS)
+
+
+def _has_simulation_intent(message: str) -> bool:
+    compact_message = _compact_routing_text(message)
+    if any(term in compact_message for term in _EXPLICIT_SIMULATION_TERMS):
+        return True
+
+    simulation_fields = {
+        field
+        for field in _recognized_lookup_fields(message)
+        if field in _SIMULATION_FIELDS
+    }
+    has_direction = any(
+        term in compact_message
+        for terms in _DIRECTION_TERMS.values()
+        for term in terms
+    )
+    return bool(
+        simulation_fields
+        and has_direction
+        and _NUMBER_PATTERN.search(message) is not None
+    )
+
+
+def _is_generic_full_lookup_request(message: str) -> bool:
+    """특정 필드 없는 현재 데이터·정보 조회 요청만 안전하게 인식한다."""
+
+    compact_message = re.sub(
+        r"[^0-9a-z가-힣]",
+        "",
+        _compact_routing_text(message),
+    )
+    target_matches = [
+        (compact_message.find(term), term)
+        for term in _GENERIC_LOOKUP_TARGET_TERMS
+        if term in compact_message
+    ]
+    if (
+        not target_matches
+        or _has_lookup_negation(message)
+        or _is_meta_request(message)
+        or _has_simulation_intent(message)
+    ):
+        return False
+
+    target_start, target = min(target_matches, key=lambda item: item[0])
+    prefix = compact_message[:target_start]
+    suffix = compact_message[target_start + len(target):]
+    allowed_prefixes = {
+        "",
+        "현재",
+        "현재의",
+        "격자",
+        "격자의",
+        "이격자",
+        "이격자의",
+        "이격자현재",
+        "선택격자",
+        "선택한격자",
+        "선택된격자",
+        "해당격자",
+        "이곳",
+        "이곳현재",
+        "여기",
+        "여기현재",
+    }
+    if prefix not in allowed_prefixes:
+        return False
+
+    for particle in ("으로", "에서", "의", "을", "를", "은", "는", "이", "가", "도", "만"):
+        if suffix.startswith(particle):
+            suffix = suffix[len(particle):]
+            break
+    has_lookup_action = any(
+        term in suffix for term in _GENERIC_LOOKUP_REQUEST_TERMS
+    )
+    residual_suffix = suffix
+    for term in (
+        *_GENERIC_LOOKUP_REQUEST_TERMS,
+        "주세요",
+        "줘",
+        "좀",
+        "봐",
+        "해",
+        "요",
+    ):
+        residual_suffix = residual_suffix.replace(term, "")
+    if residual_suffix:
+        return False
+
+    is_implicit_current_request = (
+        "현재" in prefix
+        or (not prefix and not suffix)
+    )
+    return has_lookup_action or is_implicit_current_request
+
+
+def _is_safe_explicit_full_lookup_request(
+    message: str,
+    *,
+    has_full_scope: bool,
+    has_excluded_scope: bool,
+) -> bool:
+    if (
+        not has_full_scope
+        or has_excluded_scope
+        or _has_lookup_negation(message)
+        or _is_meta_request(message)
+        or _has_simulation_intent(message)
+    ):
+        return False
+
+    normalized_message = " ".join(message.split()).casefold()
+    standalone_match = _STANDALONE_ALL_PATTERN.search(normalized_message)
+    if standalone_match is not None:
+        without_all = _STANDALONE_ALL_PATTERN.sub("", normalized_message)
+        compact_without_all = _compact_routing_text(without_all)
+        has_lookup_action = any(
+            term in compact_without_all
+            for term in _GENERIC_LOOKUP_REQUEST_TERMS
+        )
+        residual = compact_without_all
+        for term in (
+            *_GENERIC_LOOKUP_REQUEST_TERMS,
+            "주세요",
+            "줘",
+            "좀",
+            "봐",
+            "해",
+            "요",
+        ):
+            residual = residual.replace(term, "")
+        if has_lookup_action and not residual:
+            return True
+
+    without_scope = normalized_message
+    for term in _FULL_SCOPE_TERMS:
+        without_scope = without_scope.replace(term, "")
+    return _is_generic_full_lookup_request(without_scope)
 
 
 def _parse_normalized_request(
@@ -483,6 +749,7 @@ def _parse_normalized_request(
         "unit",
         "basis",
         "source_text",
+        "operation_text",
         "value_text",
     }
     normalized_original_message = " ".join(original_message.split())
@@ -502,12 +769,19 @@ def _parse_normalized_request(
             raw_change.get("source_text"),
             "source_text",
         )
+        operation_text = _normalized_router_text(
+            raw_change.get("operation_text"),
+            "operation_text",
+        )
         value_text = _normalized_router_text(
             raw_change.get("value_text"),
             "value_text",
         )
         if source_text not in normalized_original_message:
             unresolved.append("change_source")
+            continue
+        if operation_text not in normalized_original_message:
+            unresolved.append("change_operation")
             continue
         if value_text not in normalized_original_message:
             unresolved.append("change_value")
@@ -519,13 +793,11 @@ def _parse_normalized_request(
             normalized_original_message,
             value_text,
         )
-        park_value_unit = (
-            _M2_UNIT_PATTERN.search(value_unit_evidence) is not None
-        )
+        if _M2_UNIT_PATTERN.search(value_unit_evidence):
+            unresolved.extend(("change_field", "change_unit"))
+            continue
         field_is_grounded = _simulation_field_is_grounded(source_text, field)
-        if not field_is_grounded or (
-            field != "park_area_within_500m" and park_value_unit
-        ):
+        if not field_is_grounded:
             unresolved.append("change_field")
             continue
         if (
@@ -533,6 +805,18 @@ def _parse_normalized_request(
             or operation not in _SUPPORTED_OPERATIONS
         ):
             raise ChatProtocolError("Qwen이 지원하지 않는 변경 연산을 반환했습니다.")
+        change_context = _simulation_change_context(
+            normalized_original_message,
+            source_text,
+            raw_changes,
+        )
+        if not _simulation_operation_is_grounded(
+            change_context,
+            operation_text,
+            operation,
+        ):
+            unresolved.append("change_operation")
+            continue
         if not isinstance(unit, str) or unit not in _SUPPORTED_UNITS:
             raise ChatProtocolError("Qwen이 지원하지 않는 변경 단위를 반환했습니다.")
         if not isinstance(basis, str) or basis not in _SUPPORTED_BASES:
@@ -577,28 +861,24 @@ def _parse_normalized_request(
             unresolved.append("change_operation")
             continue
 
-        if field == "park_area_within_500m":
-            if not park_value_unit:
-                unresolved.append("change_unit")
-                continue
-            unit = "m2"
-        elif _PERCENTAGE_POINT_UNIT_PATTERN.search(value_unit_evidence):
-            unit = "percentage_point"
-        elif _PERCENT_UNIT_PATTERN.search(value_unit_evidence):
-            unit = "percent"
-
-        if field == "park_area_within_500m":
-            if unit != "m2" or basis != "direct":
-                unresolved.append("change_unit")
-                continue
-            if operation == "decrease":
-                unresolved.append("park_area_decrease")
-                continue
-        else:
+        if field in {"green_ratio", "impervious_ratio"}:
+            if _PERCENTAGE_POINT_UNIT_PATTERN.search(value_unit_evidence):
+                unit = "percentage_point"
+            elif _PERCENT_UNIT_PATTERN.search(value_unit_evidence):
+                unit = "percent"
             if unit not in {"percent", "percentage_point"}:
                 unresolved.append("change_unit")
                 continue
             if unit == "percentage_point" and basis != "direct":
+                unresolved.append("change_unit")
+                continue
+        else:
+            if (
+                _PERCENTAGE_POINT_UNIT_PATTERN.search(value_unit_evidence)
+                or _PERCENT_UNIT_PATTERN.search(value_unit_evidence)
+                or unit != "unitless"
+                or basis != "direct"
+            ):
                 unresolved.append("change_unit")
                 continue
 
@@ -618,6 +898,7 @@ def _parse_normalized_request(
                 unit=unit,
                 basis=basis,
                 source_text=source_text,
+                operation_text=operation_text,
                 value_text=value_text,
             )
         )
@@ -639,7 +920,54 @@ def _parse_normalized_request(
         ]
         unresolved.append("conflicting_changes")
 
+    if changes and len(changes) == len(raw_changes):
+        # Qwen이 unresolved를 함께 반환했더라도 모든 change가 원문 근거·단위·
+        # 수치 검증을 통과했다면 해당 항목의 거짓 양성 신호는 제거한다.
+        unresolved = [
+            code
+            for code in unresolved
+            if code
+            not in {
+                "change_field",
+                "change_operation",
+                "change_source",
+                "change_unit",
+                "change_value",
+            }
+        ]
+    elif not raw_changes:
+        grounded_simulation_fields = [
+            field
+            for field in _recognized_lookup_fields(original_message)
+            if field in _SIMULATION_FIELDS
+        ]
+        compact_message = "".join(original_message.split()).casefold()
+        grounded_directions = {
+            direction
+            for direction, terms in _DIRECTION_TERMS.items()
+            if any(term in compact_message for term in terms)
+        }
+        if (
+            grounded_simulation_fields
+            and len(grounded_directions) == 1
+            and _NUMBER_PATTERN.search(original_message) is None
+        ):
+            unresolved = [
+                code
+                for code in unresolved
+                if code not in {"change_field", "change_operation"}
+            ]
+            unresolved.append("change_value")
+
     has_full_scope, has_excluded_scope = _scope_signals(original_message)
+    has_meta_request = _is_meta_request(original_message)
+    has_simulation_intent = _has_simulation_intent(original_message)
+    has_generic_full_lookup = _is_generic_full_lookup_request(original_message)
+    has_safe_explicit_full_lookup = _is_safe_explicit_full_lookup_request(
+        original_message,
+        has_full_scope=has_full_scope,
+        has_excluded_scope=has_excluded_scope,
+    )
     lookup_all = raw_lookup_all
     excluded_scope = raw_excluded_scope
 
@@ -661,41 +989,67 @@ def _parse_normalized_request(
         grounded_fields = _recognized_lookup_fields(original_message)
         excluded_scope = has_excluded_scope
 
-        if has_full_scope and not has_excluded_scope:
-            lookup_all = True
+        if has_meta_request:
+            intent = "unsupported"
+            lookup_all = False
             requested_fields = []
+            excluded_scope = False
+        elif has_simulation_intent:
+            intent = "simulation"
+            lookup_all = False
+            requested_fields = []
+            excluded_scope = False
+            unresolved.append("ambiguous_request")
         elif has_excluded_scope:
             lookup_all = False
             requested_fields = grounded_fields
             if not requested_fields and not unresolved:
                 unresolved.append("lookup_field")
-        elif lookup_all:
-            if requested_fields:
-                raise ChatProtocolError(
-                    "전체 조회 구조화 출력에 개별 requested_fields가 포함되었습니다."
-                )
+        elif has_safe_explicit_full_lookup:
+            lookup_all = True
+            requested_fields = []
+        elif grounded_fields:
+            # 전체 범위 표현이 없으면 Qwen의 lookup_all 신호보다 원문에
+            # 실제로 나타난 조회 필드를 우선한다.
+            lookup_all = False
+            requested_fields = grounded_fields
+        elif has_generic_full_lookup:
+            lookup_all = True
+            requested_fields = []
+            excluded_scope = False
         else:
-            if grounded_fields:
-                requested_fields = grounded_fields
-            else:
-                requested_fields = []
-                intent = "unsupported"
+            lookup_all = False
+            requested_fields = []
+            intent = "unsupported"
     else:
         if changes or requested_fields or lookup_all:
             raise ChatProtocolError(
                 "지원하지 않는 요청의 구조화 출력에 실행 정보가 포함되었습니다."
             )
         grounded_fields = _recognized_lookup_fields(original_message)
-        if has_full_scope and not has_excluded_scope:
-            intent = "lookup"
-            lookup_all = True
+        if has_meta_request:
+            excluded_scope = False
+        elif has_simulation_intent:
+            intent = "simulation"
+            lookup_all = False
             requested_fields = []
             excluded_scope = False
+            unresolved.append("ambiguous_request")
         elif has_excluded_scope and grounded_fields:
             intent = "lookup"
             lookup_all = False
             requested_fields = grounded_fields
             excluded_scope = True
+        elif has_safe_explicit_full_lookup:
+            intent = "lookup"
+            lookup_all = True
+            requested_fields = []
+            excluded_scope = False
+        elif has_generic_full_lookup:
+            intent = "lookup"
+            lookup_all = True
+            requested_fields = []
+            excluded_scope = False
         else:
             excluded_scope = has_excluded_scope
 
@@ -1035,11 +1389,38 @@ def _allowed_content_numbers(
         applied = tool_result.get("applied_changes")
         if isinstance(applied, Mapping):
             for feature, values in applied.items():
-                if "ratio" not in str(feature) or not isinstance(values, Mapping):
+                if not isinstance(values, Mapping):
                     continue
-                for value in values.values():
-                    if isinstance(value, Real) and not isinstance(value, bool):
-                        allowed.append(float(value) * 100)
+                before = values.get("before")
+                after = values.get("after")
+                if (
+                    isinstance(before, Real)
+                    and not isinstance(before, bool)
+                    and isinstance(after, Real)
+                    and not isinstance(after, bool)
+                ):
+                    before_number = float(before)
+                    after_number = float(after)
+                    if (
+                        math.isfinite(before_number)
+                        and math.isfinite(after_number)
+                    ):
+                        allowed.append(after_number - before_number)
+                        if "ratio" in str(feature):
+                            allowed.extend(
+                                (
+                                    before_number * 100,
+                                    after_number * 100,
+                                    (after_number - before_number) * 100,
+                                )
+                            )
+        confidence = tool_result.get("direction_confidence")
+        if (
+            isinstance(confidence, Real)
+            and not isinstance(confidence, bool)
+            and math.isfinite(float(confidence))
+        ):
+            allowed.append(float(confidence) * 100)
     return allowed
 
 
@@ -1314,6 +1695,71 @@ def _validate_simulation_answer(
         raise ChatProtocolError(
             "delta_c의 모델 기준 예상 변화량 설명이 누락되었습니다."
         )
+
+    applied_changes = tool_result.get("applied_changes")
+    auto_applied_changes = tool_result.get("auto_applied_changes")
+    if not isinstance(applied_changes, Mapping) or not isinstance(
+        auto_applied_changes,
+        Mapping,
+    ):
+        raise ChatProtocolError("시뮬레이션 실제 적용 내역이 올바르지 않습니다.")
+    for raw_field, raw_values in applied_changes.items():
+        if not isinstance(raw_field, str) or not isinstance(raw_values, Mapping):
+            raise ChatProtocolError(
+                "시뮬레이션 실제 적용 내역이 올바르지 않습니다."
+            )
+        expected_line = _simulation_change_line(
+            raw_field,
+            raw_values,
+            automatic=raw_field in auto_applied_changes,
+        )
+        if expected_line not in answer:
+            raise ChatProtocolError(
+                f"실제 적용된 {raw_field} 변경값이 최종 답변에서 누락되었습니다."
+            )
+
+    confidence = tool_result.get("direction_confidence")
+    if confidence is None:
+        if (
+            "direction_confidence" not in answer
+            or "산정되지 않았" not in answer
+        ):
+            raise ChatProtocolError(
+                "산정되지 않은 direction_confidence 설명이 누락되었습니다."
+            )
+    elif (
+        isinstance(confidence, Real)
+        and not isinstance(confidence, bool)
+        and math.isfinite(float(confidence))
+        and 0.0 <= float(confidence) <= 1.0
+    ):
+        if (
+            "direction_confidence" not in answer
+            or not _contains_formatted_number(
+                answer,
+                float(confidence) * 100,
+                decimals=1,
+                unit="%",
+            )
+        ):
+            raise ChatProtocolError(
+                "direction_confidence 값이 최종 답변에서 누락되거나 다릅니다."
+            )
+    else:
+        raise ChatProtocolError("direction_confidence 반환값이 올바르지 않습니다.")
+    if "신뢰구간" not in answer or re.search(
+        r"신뢰구간.{0,24}(?:아니|아님|아닙|않)",
+        answer,
+        re.DOTALL,
+    ) is None:
+        raise ChatProtocolError(
+            "direction_confidence가 신뢰구간이 아니라는 설명이 누락되었습니다."
+        )
+    if "delta_std" in answer:
+        raise ChatProtocolError(
+            "사용자 답변에 내부 트리 산포 지표 delta_std가 노출되었습니다."
+        )
+
     if re.search(
         r"인과\s*효과.{0,40}(?:단정할 수 없|단정하지 않|아니|보장하지 않)",
         answer,
@@ -1347,7 +1793,12 @@ def _validate_simulation_answer(
             raise ChatProtocolError(
                 "predict_core가 반환한 경고가 최종 답변에서 누락되었습니다."
             )
-    if warnings and not (
+    clip_warnings = [
+        str(warning)
+        for warning in warnings
+        if "학습범위" in str(warning) or "clip" in str(warning).casefold()
+    ]
+    if clip_warnings and not (
         "학습 범위" in answer
         and ("보정" in answer or "clip" in answer)
         and ("applied_changes" in answer or "실제 반영값" in answer)
@@ -1410,6 +1861,47 @@ def format_grid_data_answer(tool_result: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _simulation_change_line(
+    field: str,
+    values: Mapping[str, Any],
+    *,
+    automatic: bool,
+) -> str:
+    if field not in _SIMULATION_FIELDS:
+        raise ChatProtocolError(
+            "시뮬레이션 Tool 결과에 지원하지 않는 변경 필드가 있습니다."
+        )
+    before = values.get("before")
+    after = values.get("after")
+    if (
+        not isinstance(before, Real)
+        or isinstance(before, bool)
+        or not math.isfinite(float(before))
+        or not isinstance(after, Real)
+        or isinstance(after, bool)
+        or not math.isfinite(float(after))
+    ):
+        raise ChatProtocolError(
+            f"시뮬레이션 Tool 결과의 {field} 적용값이 올바르지 않습니다."
+        )
+
+    before_number = float(before)
+    after_number = float(after)
+    delta = after_number - before_number
+    label = str(GRID_FIELD_SPECS[field]["label"])
+    if automatic:
+        label += "(녹지율 연동 자동 조정)"
+    if GRID_FIELD_SPECS[field]["is_ratio"]:
+        return (
+            f"- {label}: {before_number * 100:.2f}% → "
+            f"{after_number * 100:.2f}% ({delta * 100:+.2f}%p)"
+        )
+    return (
+        f"- {label}: {before_number:.4f} → {after_number:.4f} "
+        f"({delta:+.4f})"
+    )
+
+
 def format_simulation_answer(tool_result: Mapping[str, Any]) -> str:
     """시뮬레이션 Tool 결과만 사용해 결정적인 한국어 답변을 만든다."""
 
@@ -1467,6 +1959,65 @@ def format_simulation_answer(tool_result: Mapping[str, Any]) -> str:
         ),
     ]
 
+    requested_changes = tool_result.get("requested_changes")
+    applied_changes = tool_result.get("applied_changes")
+    auto_applied_changes = tool_result.get("auto_applied_changes")
+    if (
+        not isinstance(requested_changes, Mapping)
+        or not isinstance(applied_changes, Mapping)
+        or not isinstance(auto_applied_changes, Mapping)
+    ):
+        raise ChatProtocolError(
+            "시뮬레이션 Tool 결과의 변경 내역이 올바르지 않습니다."
+        )
+    if not set(auto_applied_changes).issubset(applied_changes):
+        raise ChatProtocolError(
+            "자동 연동 변경 내역이 실제 적용 내역과 일치하지 않습니다."
+        )
+    lines.append("실제 적용된 변경:")
+    if applied_changes:
+        for raw_field, raw_values in applied_changes.items():
+            if not isinstance(raw_field, str) or not isinstance(raw_values, Mapping):
+                raise ChatProtocolError(
+                    "시뮬레이션 Tool 결과의 실제 적용 내역이 올바르지 않습니다."
+                )
+            lines.append(
+                _simulation_change_line(
+                    raw_field,
+                    raw_values,
+                    automatic=raw_field in auto_applied_changes,
+                )
+            )
+    else:
+        lines.append("- 학습 범위 보정 후 실제 적용된 변경이 없습니다.")
+
+    confidence = tool_result.get("direction_confidence")
+    if confidence is None:
+        lines.append(
+            "모델 트리의 변화 방향 동의율(direction_confidence)은 "
+            "산정되지 않았습니다."
+        )
+    elif (
+        isinstance(confidence, Real)
+        and not isinstance(confidence, bool)
+        and math.isfinite(float(confidence))
+        and 0.0 <= float(confidence) <= 1.0
+    ):
+        confidence_value = float(confidence)
+        lines.append(
+            "변화가 있었던 모델 트리의 방향 동의율(direction_confidence)은 "
+            f"{confidence_value * 100:.1f}%입니다."
+        )
+        if confidence_value < 0.6:
+            lines.append("모델 트리 사이에서 변화 방향을 판단하기 어렵습니다.")
+    else:
+        raise ChatProtocolError(
+            "시뮬레이션 Tool 결과의 direction_confidence가 올바르지 않습니다."
+        )
+    lines.append(
+        "방향 동의율은 통계적 신뢰구간이나 실제 정책의 성공확률이 아닙니다."
+    )
+
     policy_notes = tool_result.get("policy_direction_notes") or []
     warnings = tool_result.get("warnings") or []
     limitations = tool_result.get("limitations") or []
@@ -1475,7 +2026,12 @@ def format_simulation_answer(tool_result: Mapping[str, Any]) -> str:
 
     lines.extend(str(note) for note in policy_notes)
     lines.extend(f"경고: {warning}" for warning in warnings)
-    if warnings:
+    clip_warnings = [
+        str(warning)
+        for warning in warnings
+        if "학습범위" in str(warning) or "clip" in str(warning).casefold()
+    ]
+    if clip_warnings:
         lines.append(
             "학습 범위 밖 입력은 내부적으로 보정되었으며, 입력값 그대로가 "
             "아니라 적용 결과에 표시된 값이 실제 반영값입니다."
@@ -1601,8 +2157,8 @@ def _safe_simulation_assumptions(
         label = str(GRID_FIELD_SPECS[change.field]["label"])
         direction = "증가" if change.operation == "increase" else "감소"
         value = _display_router_number(change.value)
-        if change.field == "park_area_within_500m":
-            normalized_change = f"{value}㎡ {direction}"
+        if change.field in {"ndvi", "albedo"}:
+            normalized_change = f"{value} {direction}"
         elif change.basis == "relative_to_current":
             normalized_change = f"현재값의 {value}% {direction}"
         else:
@@ -1624,7 +2180,8 @@ def _prepare_simulation_arguments(
         "grid_id": grid_id,
         "green_ratio_delta": 0.0,
         "impervious_ratio_delta": 0.0,
-        "park_area_delta": 0.0,
+        "ndvi_delta": 0.0,
+        "albedo_delta": 0.0,
     }
     assumptions = _safe_simulation_assumptions(normalized_request)
     relative_fields = [
@@ -1673,7 +2230,7 @@ def _prepare_simulation_arguments(
 
     for change in normalized_request.changes:
         label = str(GRID_FIELD_SPECS[change.field]["label"])
-        if change.field == "park_area_within_500m":
+        if change.unit == "unitless":
             magnitude = change.value
         elif change.unit == "percentage_point":
             magnitude = change.value / 100.0

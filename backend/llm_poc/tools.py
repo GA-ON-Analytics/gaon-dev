@@ -12,7 +12,7 @@ from backend.ml import predict_core
 
 INTERPRETATION_BASIS = (
     "before_anomaly와 after_anomaly는 절대온도가 아니라 "
-    "predict_core.predict()가 반환한 모델 예측 anomaly이며, "
+    "머신러닝 모델이 반환한 예측 anomaly이며, "
     "delta_c는 두 모델 예측의 차이인 모델 기준 예상 변화량입니다."
 )
 LIMITATIONS = [
@@ -124,13 +124,6 @@ GRID_FIELD_SPECS: dict[str, dict[str, Any]] = {
         ),
         "is_ratio": True,
     },
-    "built_surface_ratio": {
-        "label": "시가화면 비율",
-        "description": "건조물·인공표면 비율(불투수와 동반)",
-        "unit": "%",
-        "aliases": ("시가화", "인공표면"),
-        "is_ratio": True,
-    },
     "nearest_park_distance_m": {
         "label": "최근접 공원거리(m)",
         "description": "가장 가까운 공원까지 거리",
@@ -212,7 +205,6 @@ GRID_FIELD_DISPLAY_DECIMALS = {
     "ndvi": 4,
     "green_ratio": 2,
     "impervious_ratio": 2,
-    "built_surface_ratio": 2,
     "nearest_park_distance_m": 2,
     "park_area_within_500m": 2,
     "nearest_stream_distance_m": 2,
@@ -289,12 +281,14 @@ RUN_SIMULATION_TOOL = {
     "function": {
         "name": "run_simulation",
         "description": (
-            "특정 100m 격자에 녹지율, 불투수율 또는 반경 500m 내 공원 면적의 "
+            "특정 100m 격자에 녹지율, 불투수율, 식생지수(NDVI) 또는 "
+            "표면 반사율(albedo)의 "
             "변경 시나리오를 적용하고 기존 머신러닝 모델을 다시 실행한다. "
             "정책 변경 후 모델 예측 anomaly와 모델 기준 예상 변화량을 묻는 경우에만 "
             "사용한다. 단순 현재 격자 데이터 조회에는 get_grid_data를 사용한다. "
             "비율 변화량은 0~1 단위의 부호 있는 delta이므로 5%p 증가는 0.05, "
-            "5%p 감소는 -0.05이다. 공원 면적 변화량은 ㎡ 단위이며 음수는 허용하지 않는다."
+            "5%p 감소는 -0.05이다. NDVI와 albedo 변화량은 퍼센트가 아닌 "
+            "무단위 지수 delta이다."
         ),
         "parameters": {
             "type": "object",
@@ -319,13 +313,20 @@ RUN_SIMULATION_TOOL = {
                         "5%p 감소는 -0.05, 5%p 증가는 0.05이다."
                     ),
                 },
-                "park_area_delta": {
+                "ndvi_delta": {
                     "type": "number",
-                    "minimum": 0,
                     "default": 0,
                     "description": (
-                        "현재 반경 500m 내 공원 면적에 더할 증가량(㎡). "
-                        "예: 1,000㎡ 증가는 1000이다."
+                        "현재 식생지수(NDVI)에 더할 부호 있는 무단위 변화량. "
+                        "예: 0.05 증가는 0.05, 0.05 감소는 -0.05이다."
+                    ),
+                },
+                "albedo_delta": {
+                    "type": "number",
+                    "default": 0,
+                    "description": (
+                        "현재 표면 반사율(albedo)에 더할 부호 있는 무단위 변화량. "
+                        "예: 0.02 증가는 0.02, 0.02 감소는 -0.02이다."
                     ),
                 },
             },
@@ -381,11 +382,14 @@ def _empty_simulation_result(
         "gu_name": None,
         "requested_changes": dict(requested_changes or {}),
         "applied_changes": {},
+        "auto_applied_changes": {},
+        "changed_features": {},
         "before_anomaly": None,
         "after_anomaly": None,
         "delta_c": None,
         "uncertainty_std": None,
         "delta_std": None,
+        "direction_confidence": None,
         "warnings": [],
         "policy_direction_notes": [],
         "interpretation_basis": INTERPRETATION_BASIS,
@@ -523,13 +527,14 @@ def run_simulation(
     grid_id: str,
     green_ratio_delta: float = 0,
     impervious_ratio_delta: float = 0,
-    park_area_delta: float = 0,
+    ndvi_delta: float = 0,
+    albedo_delta: float = 0,
 ) -> dict[str, Any]:
     """기존 ``predict_core.predict``로 100m 격자 정책 시나리오를 실행한다.
 
-    비율 변화량은 현재 0~1 원본 비율에 더할 부호 있는 delta이고, 공원 면적
-    변화량은 ㎡ 단위이다. 학습 범위 clip과 경고 생성은 기존 ``predict``에
-    그대로 위임한다.
+    녹지율·불투수율 변화량은 현재 0~1 원본 비율에 더할 부호 있는 delta이고,
+    NDVI·albedo 변화량은 무단위 지수 delta이다. 학습 범위 clip, 녹지율 변경에
+    따른 불투수율 자동 연동, 경고 생성은 기존 ``predict``에 그대로 위임한다.
     """
 
     normalized_grid_id = grid_id.strip() if isinstance(grid_id, str) else None
@@ -542,17 +547,14 @@ def run_simulation(
     for name, value in (
         ("green_ratio_delta", green_ratio_delta),
         ("impervious_ratio_delta", impervious_ratio_delta),
-        ("park_area_delta", park_area_delta),
+        ("ndvi_delta", ndvi_delta),
+        ("albedo_delta", albedo_delta),
     ):
         normalized_value, error = _validated_delta(name, value)
         if error is not None:
             result["error"] = error
             return result
         validated_deltas[name] = normalized_value
-
-    if validated_deltas["park_area_delta"] < 0:
-        result["error"] = "park_area_delta는 0 이상이어야 합니다."
-        return result
 
     requested_changes: dict[str, float] = {}
     if validated_deltas["green_ratio_delta"]:
@@ -561,10 +563,10 @@ def run_simulation(
         requested_changes["impervious_ratio"] = validated_deltas[
             "impervious_ratio_delta"
         ]
-    if validated_deltas["park_area_delta"]:
-        requested_changes["park_area_within_500m"] = validated_deltas[
-            "park_area_delta"
-        ]
+    if validated_deltas["ndvi_delta"]:
+        requested_changes["ndvi"] = validated_deltas["ndvi_delta"]
+    if validated_deltas["albedo_delta"]:
+        requested_changes["albedo"] = validated_deltas["albedo_delta"]
     result["requested_changes"] = requested_changes
 
     policy_direction_notes: list[str] = []
@@ -575,6 +577,14 @@ def run_simulation(
     if validated_deltas["impervious_ratio_delta"] > 0:
         policy_direction_notes.append(
             "불투수율 증가는 일반적인 열 저감 정책 방향과 반대인 시나리오입니다."
+        )
+    if validated_deltas["ndvi_delta"] < 0:
+        policy_direction_notes.append(
+            "식생지수(NDVI) 감소는 일반적인 열 저감 정책 방향과 반대인 시나리오입니다."
+        )
+    if validated_deltas["albedo_delta"] < 0:
+        policy_direction_notes.append(
+            "표면 반사율(albedo) 감소는 일반적인 열 저감 정책 방향과 반대인 시나리오입니다."
         )
     result["policy_direction_notes"] = policy_direction_notes
 
@@ -589,7 +599,11 @@ def run_simulation(
         return result
 
     try:
-        prediction = predict_core.predict(normalized_grid_id, requested_changes)
+        prediction = predict_core.predict(
+            normalized_grid_id,
+            requested_changes,
+            couple_land_cover=True,
+        )
     except Exception as exc:
         result["error"] = f"시뮬레이션 실행 실패: {exc}"
         return result
@@ -636,6 +650,14 @@ def run_simulation(
         missing_fields.append("changed_features")
     if not isinstance(prediction.get("warnings"), list):
         missing_fields.append("warnings")
+    direction_confidence = prediction.get("direction_confidence")
+    if "direction_confidence" not in prediction:
+        missing_fields.append("direction_confidence")
+    elif direction_confidence is not None and (
+        not _is_finite_number(direction_confidence)
+        or not 0.0 <= float(direction_confidence) <= 1.0
+    ):
+        missing_fields.append("direction_confidence")
     invalid_fields = sorted(set(missing_fields + invalid_numeric_fields))
     if invalid_fields:
         result["missing_fields"] = invalid_fields
@@ -643,17 +665,24 @@ def run_simulation(
         return result
 
     applied_changes = dict(prediction["changed_features"])
+    auto_applied_changes = {
+        field: change
+        for field, change in applied_changes.items()
+        if field not in requested_changes
+    }
     result.update(
         {
             "success": True,
             "grid_id": prediction["grid_id"],
             "gu_name": prediction["gu_name"],
             "applied_changes": applied_changes,
+            "auto_applied_changes": auto_applied_changes,
             "before_anomaly": prediction["before_anomaly"],
             "after_anomaly": prediction["after_anomaly"],
             "delta_c": prediction["delta_c"],
             "uncertainty_std": prediction["uncertainty_std"],
             "delta_std": prediction["delta_std"],
+            "direction_confidence": direction_confidence,
             "changed_features": applied_changes,
             "message": prediction.get("message"),
             "warnings": list(prediction["warnings"]),

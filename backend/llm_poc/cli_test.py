@@ -41,6 +41,20 @@ FULL_SCOPE_ENTIRE_QUESTION = "이 격자의 전체 데이터 알려줘"
 FULL_SCOPE_EVERY_QUESTION = "모든 데이터 보여줘"
 FULL_SCOPE_INFORMATION_QUESTION = "이 격자 정보 전부 알려줘"
 FULL_SCOPE_SHORT_QUESTION = "다 보여줘"
+GENERIC_DATA_GIVE_QUESTION = "데이터줘봐"
+GENERIC_DATA_TELL_QUESTION = "데이터 알려줘"
+GENERIC_CURRENT_DATA_QUESTION = "현재 데이터"
+GENERIC_GRID_INFORMATION_QUESTION = "이 격자 정보 보여줘"
+GENERIC_CURRENT_VALUE_QUESTION = "현재값 보여줘"
+GENERIC_STATUS_QUESTION = "이곳 현황 보여줘"
+MODEL_EXPLANATION_QUESTION = "데이터 말고 모델 설명해줘"
+SUPPORTED_DATA_QUESTION = "어떤 데이터를 지원해?"
+CAPABILITY_QUESTION = "뭘 할 수 있어?"
+DATA_SOURCE_QUESTION = "데이터의 출처가 뭐야?"
+MODEL_DATA_EXPLANATION_QUESTION = "모델 데이터 설명해줘"
+NEGATED_LOOKUP_SIMULATION_QUESTION = (
+    "현재 데이터가 아니라 녹지율을 5% 올려줘"
+)
 EXCLUDED_SCOPE_GREEN_QUESTION = "모든 데이터 말고 녹지율만 알려줘"
 EXCLUDED_SCOPE_NDVI_QUESTION = "전체는 필요 없고 NDVI만 보여줘"
 EXCLUDED_SCOPE_RATIOS_QUESTION = (
@@ -50,14 +64,19 @@ EXCLUDED_SCOPE_PARK_QUESTION = "다 보여주지 말고 공원면적만 알려�
 GREEN_INCREASE_QUESTION = "녹지율을 5%p 올려줘"
 IMPERVIOUS_DECREASE_QUESTION = "불투수율을 3%p 낮춰줘"
 PARK_AREA_INCREASE_QUESTION = "공원 면적을 500㎡ 늘려줘"
+NDVI_INCREASE_QUESTION = "NDVI를 0.05 높여줘"
+ALBEDO_INCREASE_QUESTION = "알베도를 0.02 높여줘"
+GREEN_NDVI_QUESTION = "녹지율을 5%p 올리고 NDVI를 0.05 높여줘"
 COMBINED_RATIO_QUESTION = (
     "녹지율을 5%p 올리고 불투수율을 3%p 낮춰줘"
 )
 MULTILINE_SIMULATION_QUESTION = (
     "녹지율을 5%p 올려줘\n"
     "불투수율을 3%p 낮춰줘\n"
-    "공원 면적을 500㎡ 늘려줘"
+    "NDVI를 0.05 높여줘\n"
+    "알베도를 0.02 높여줘"
 )
+DIRECTIONLESS_COMBINED_QUESTION = "녹지율 5%p, NDVI 0.05"
 CURRENT_RATIO_QUESTION = "현재 녹지율과 불투수율을 알려줘"
 MISSING_DELTA_QUESTION = "녹지율을 올려줘"
 GREEN_PRO_INCREASE_QUESTION = "녹지율 5프로 올려줘"
@@ -71,6 +90,33 @@ COMBINED_IMPLICIT_UNIT_QUESTION = (
 AMBIGUOUS_PLUS_FIVE_QUESTION = "그거 5플오 해줘"
 NO_TOOL_EXPECTED = "__no_tool__"
 DEFAULT_QUESTION = LOOKUP_QUESTION
+
+
+def _simulation_arguments(
+    grid_id: str,
+    *,
+    green_ratio_delta: float = 0.0,
+    impervious_ratio_delta: float = 0.0,
+    ndvi_delta: float = 0.0,
+    albedo_delta: float = 0.0,
+) -> dict[str, Any]:
+    return {
+        "grid_id": grid_id,
+        "green_ratio_delta": green_ratio_delta,
+        "impervious_ratio_delta": impervious_ratio_delta,
+        "ndvi_delta": ndvi_delta,
+        "albedo_delta": albedo_delta,
+    }
+
+
+_SIMULATION_FEATURE_BY_ARGUMENT = {
+    "green_ratio_delta": "green_ratio",
+    "impervious_ratio_delta": "impervious_ratio",
+    "ndvi_delta": "ndvi",
+    "albedo_delta": "albedo",
+}
+
+
 DEFAULT_CASES = (
     (
         LOOKUP_QUESTION,
@@ -130,69 +176,86 @@ DEFAULT_CASES = (
     (
         SIMULATION_QUESTION,
         "run_simulation",
-        {
-            "grid_id": "11230_00001",
-            "green_ratio_delta": 0.05,
-            "impervious_ratio_delta": 0.0,
-            "park_area_delta": 0.0,
-        },
+        _simulation_arguments("11230_00001", green_ratio_delta=0.05),
     ),
 )
 SELECTED_GRID_ROUTING_CASES = (
     (
         GREEN_INCREASE_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.05,
-            "impervious_ratio_delta": 0.0,
-            "park_area_delta": 0.0,
-        },
+        _simulation_arguments(ROUTING_GRID_ID, green_ratio_delta=0.05),
         None,
     ),
     (
         IMPERVIOUS_DECREASE_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.0,
-            "impervious_ratio_delta": -0.03,
-            "park_area_delta": 0.0,
-        },
+        _simulation_arguments(
+            ROUTING_GRID_ID,
+            impervious_ratio_delta=-0.03,
+        ),
         None,
     ),
     (
-        PARK_AREA_INCREASE_QUESTION,
+        NDVI_INCREASE_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.0,
-            "impervious_ratio_delta": 0.0,
-            "park_area_delta": 500.0,
-        },
+        _simulation_arguments(ROUTING_GRID_ID, ndvi_delta=0.05),
+        None,
+    ),
+    (
+        ALBEDO_INCREASE_QUESTION,
+        "run_simulation",
+        _simulation_arguments(ROUTING_GRID_ID, albedo_delta=0.02),
+        None,
+    ),
+    (
+        GREEN_NDVI_QUESTION,
+        "run_simulation",
+        _simulation_arguments(
+            ROUTING_GRID_ID,
+            green_ratio_delta=0.05,
+            ndvi_delta=0.05,
+        ),
         None,
     ),
     (
         COMBINED_RATIO_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.05,
-            "impervious_ratio_delta": -0.03,
-            "park_area_delta": 0.0,
-        },
+        _simulation_arguments(
+            ROUTING_GRID_ID,
+            green_ratio_delta=0.05,
+            impervious_ratio_delta=-0.03,
+        ),
         None,
     ),
     (
         MULTILINE_SIMULATION_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.05,
-            "impervious_ratio_delta": -0.03,
-            "park_area_delta": 500.0,
-        },
+        _simulation_arguments(
+            ROUTING_GRID_ID,
+            green_ratio_delta=0.05,
+            impervious_ratio_delta=-0.03,
+            ndvi_delta=0.05,
+            albedo_delta=0.02,
+        ),
         None,
+    ),
+    (
+        PARK_AREA_INCREASE_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        None,
+    ),
+    (
+        PARK_SQUARE_INCREASE_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        None,
+    ),
+    (
+        DIRECTIONLESS_COMBINED_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        "증가 또는 감소 방향",
     ),
     (
         CURRENT_RATIO_QUESTION,
@@ -212,67 +275,38 @@ SELECTED_GRID_ROUTING_CASES = (
     (
         GREEN_PRO_INCREASE_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.05,
-            "impervious_ratio_delta": 0.0,
-            "park_area_delta": 0.0,
-        },
+        _simulation_arguments(ROUTING_GRID_ID, green_ratio_delta=0.05),
         "%p",
     ),
     (
         GREEN_PER_INCREASE_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.05,
-            "impervious_ratio_delta": 0.0,
-            "park_area_delta": 0.0,
-        },
+        _simulation_arguments(ROUTING_GRID_ID, green_ratio_delta=0.05),
         "%p",
     ),
     (
         GREEN_PLUS_FIVE_INCREASE_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.05,
-            "impervious_ratio_delta": 0.0,
-            "park_area_delta": 0.0,
-        },
+        _simulation_arguments(ROUTING_GRID_ID, green_ratio_delta=0.05),
         "%p",
     ),
     (
         IMPERVIOUS_PER_DECREASE_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.0,
-            "impervious_ratio_delta": -0.03,
-            "park_area_delta": 0.0,
-        },
+        _simulation_arguments(
+            ROUTING_GRID_ID,
+            impervious_ratio_delta=-0.03,
+        ),
         "%p",
-    ),
-    (
-        PARK_SQUARE_INCREASE_QUESTION,
-        "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.0,
-            "impervious_ratio_delta": 0.0,
-            "park_area_delta": 500.0,
-        },
-        None,
     ),
     (
         COMBINED_IMPLICIT_UNIT_QUESTION,
         "run_simulation",
-        {
-            "grid_id": ROUTING_GRID_ID,
-            "green_ratio_delta": 0.05,
-            "impervious_ratio_delta": -0.03,
-            "park_area_delta": 0.0,
-        },
+        _simulation_arguments(
+            ROUTING_GRID_ID,
+            green_ratio_delta=0.05,
+            impervious_ratio_delta=-0.03,
+        ),
         "%p",
     ),
     (
@@ -301,6 +335,136 @@ LOOKUP_SCOPE_CASES = (
         ["park_area_within_500m"],
         False,
         True,
+    ),
+)
+GENERAL_LOOKUP_ROUTING_CASES = (
+    (
+        GENERIC_DATA_GIVE_QUESTION,
+        "get_grid_data",
+        {
+            "grid_id": ROUTING_GRID_ID,
+            "fields": list(ALLOWED_GRID_FIELDS),
+        },
+        None,
+        True,
+        False,
+    ),
+    (
+        GENERIC_DATA_TELL_QUESTION,
+        "get_grid_data",
+        {
+            "grid_id": ROUTING_GRID_ID,
+            "fields": list(ALLOWED_GRID_FIELDS),
+        },
+        None,
+        True,
+        False,
+    ),
+    (
+        GENERIC_CURRENT_DATA_QUESTION,
+        "get_grid_data",
+        {
+            "grid_id": ROUTING_GRID_ID,
+            "fields": list(ALLOWED_GRID_FIELDS),
+        },
+        None,
+        True,
+        False,
+    ),
+    (
+        GENERIC_GRID_INFORMATION_QUESTION,
+        "get_grid_data",
+        {
+            "grid_id": ROUTING_GRID_ID,
+            "fields": list(ALLOWED_GRID_FIELDS),
+        },
+        None,
+        True,
+        False,
+    ),
+    (
+        GENERIC_CURRENT_VALUE_QUESTION,
+        "get_grid_data",
+        {
+            "grid_id": ROUTING_GRID_ID,
+            "fields": list(ALLOWED_GRID_FIELDS),
+        },
+        None,
+        True,
+        False,
+    ),
+    (
+        GENERIC_STATUS_QUESTION,
+        "get_grid_data",
+        {
+            "grid_id": ROUTING_GRID_ID,
+            "fields": list(ALLOWED_GRID_FIELDS),
+        },
+        None,
+        True,
+        False,
+    ),
+    (
+        "녹지율 알려줘",
+        "get_grid_data",
+        {
+            "grid_id": ROUTING_GRID_ID,
+            "fields": ["green_ratio"],
+        },
+        None,
+        False,
+        False,
+    ),
+    (
+        MODEL_EXPLANATION_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        None,
+        False,
+        False,
+    ),
+    (
+        SUPPORTED_DATA_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        None,
+        False,
+        False,
+    ),
+    (
+        CAPABILITY_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        None,
+        False,
+        False,
+    ),
+    (
+        DATA_SOURCE_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        None,
+        False,
+        False,
+    ),
+    (
+        MODEL_DATA_EXPLANATION_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        None,
+        False,
+        False,
+    ),
+    (
+        NEGATED_LOOKUP_SIMULATION_QUESTION,
+        "run_simulation",
+        _simulation_arguments(
+            ROUTING_GRID_ID,
+            green_ratio_delta=0.05,
+        ),
+        None,
+        False,
+        False,
     ),
 )
 
@@ -332,15 +496,19 @@ def _validate_expected_arguments(
         "grid_id",
         "green_ratio_delta",
         "impervious_ratio_delta",
-        "park_area_delta",
+        "ndvi_delta",
+        "albedo_delta",
     }
-    if not set(tool_arguments).issubset(allowed_arguments):
-        raise RuntimeError("run_simulation에 예상하지 않은 인자가 전달되었습니다.")
+    if set(tool_arguments) != allowed_arguments:
+        raise RuntimeError(
+            "run_simulation에 grid_id와 네 변경 인자가 정확히 전달되지 않았습니다."
+        )
 
     for name in (
         "green_ratio_delta",
         "impervious_ratio_delta",
-        "park_area_delta",
+        "ndvi_delta",
+        "albedo_delta",
     ):
         actual = tool_arguments.get(name, 0)
         expected = expected_arguments.get(name, 0)
@@ -399,6 +567,220 @@ def _validate_grid_lookup_result(result: ChatResult) -> None:
             )
 
 
+def _validated_changed_features(
+    value: Any,
+    field_name: str,
+) -> dict[str, tuple[float, float]]:
+    if not isinstance(value, Mapping):
+        raise RuntimeError(f"Tool 결과의 {field_name}가 객체가 아닙니다.")
+
+    validated: dict[str, tuple[float, float]] = {}
+    for feature, raw_change in value.items():
+        if not isinstance(feature, str) or not isinstance(raw_change, Mapping):
+            raise RuntimeError(f"Tool 결과의 {field_name} 항목이 올바르지 않습니다.")
+        before = raw_change.get("before")
+        after = raw_change.get("after")
+        if (
+            isinstance(before, bool)
+            or not isinstance(before, (int, float))
+            or not math.isfinite(float(before))
+            or isinstance(after, bool)
+            or not isinstance(after, (int, float))
+            or not math.isfinite(float(after))
+        ):
+            raise RuntimeError(
+                f"Tool 결과의 {field_name}.{feature} 전후 값이 유한 숫자가 아닙니다."
+            )
+        validated[feature] = (float(before), float(after))
+    return validated
+
+
+def _validate_delta_std_language(answer: str) -> None:
+    normalized = (
+        answer.replace("\n", ".")
+        .replace("!", ".")
+        .replace("?", ".")
+    )
+    for sentence in normalized.split("."):
+        compact = "".join(sentence.split())
+        if not any(term in compact for term in ("오차범위", "신뢰구간")):
+            continue
+        if not any(
+            term in compact
+            for term in (
+                "아니",
+                "아닙",
+                "해석하지",
+                "사용하지",
+                "쓰지",
+                "보지",
+                "간주하지",
+            )
+        ):
+            raise RuntimeError(
+                "delta_std를 오차범위 또는 신뢰구간처럼 표현했습니다."
+            )
+
+
+def _validate_simulation_result(
+    result: ChatResult,
+    expected_arguments: Mapping[str, Any] | None,
+) -> None:
+    data = result.tool_data
+    if data.get("success") is not True:
+        raise RuntimeError("run_simulation이 성공 결과를 반환하지 않았습니다.")
+
+    requested_changes = data.get("requested_changes")
+    if not isinstance(requested_changes, Mapping):
+        raise RuntimeError("Tool 결과의 requested_changes가 객체가 아닙니다.")
+    for feature, raw_delta in requested_changes.items():
+        if (
+            not isinstance(feature, str)
+            or isinstance(raw_delta, bool)
+            or not isinstance(raw_delta, (int, float))
+            or not math.isfinite(float(raw_delta))
+        ):
+            raise RuntimeError("requested_changes에 유한 숫자가 아닌 값이 있습니다.")
+
+    expected_requested_changes: dict[str, float] | None = None
+    if expected_arguments is not None:
+        expected_requested_changes = {
+            feature: float(expected_arguments[argument])
+            for argument, feature in _SIMULATION_FEATURE_BY_ARGUMENT.items()
+            if not math.isclose(
+                float(expected_arguments[argument]),
+                0.0,
+                rel_tol=0,
+                abs_tol=1e-12,
+            )
+        }
+        if set(requested_changes) != set(expected_requested_changes):
+            raise RuntimeError(
+                "Tool 결과의 requested_changes가 검증된 네 변경 인자와 다릅니다."
+            )
+        for feature, expected_delta in expected_requested_changes.items():
+            if not math.isclose(
+                float(requested_changes[feature]),
+                expected_delta,
+                rel_tol=0,
+                abs_tol=1e-12,
+            ):
+                raise RuntimeError(
+                    f"Tool 결과의 requested_changes.{feature}가 기대값과 다릅니다."
+                )
+
+    applied_changes = _validated_changed_features(
+        data.get("applied_changes"),
+        "applied_changes",
+    )
+    auto_applied_changes = _validated_changed_features(
+        data.get("auto_applied_changes"),
+        "auto_applied_changes",
+    )
+
+    for feature, change in auto_applied_changes.items():
+        if feature not in applied_changes or applied_changes[feature] != change:
+            raise RuntimeError(
+                "auto_applied_changes가 applied_changes의 부분집합이 아닙니다."
+            )
+
+    if expected_requested_changes is not None:
+        expected_auto_fields = set(applied_changes) - set(expected_requested_changes)
+        if set(auto_applied_changes) != expected_auto_fields:
+            raise RuntimeError(
+                "명시 요청하지 않은 실제 적용값이 auto_applied_changes와 다릅니다."
+            )
+        for feature, expected_delta in expected_requested_changes.items():
+            if feature not in applied_changes:
+                raise RuntimeError(
+                    f"명시 요청한 {feature}가 applied_changes에 없습니다."
+                )
+            before, after = applied_changes[feature]
+            if not math.isclose(
+                after - before,
+                expected_delta,
+                rel_tol=0,
+                abs_tol=2e-6,
+            ):
+                raise RuntimeError(
+                    f"{feature}의 실제 적용 전후 차이가 요청 delta와 다릅니다."
+                )
+
+    if "direction_confidence" not in data:
+        raise RuntimeError("Tool 결과에 direction_confidence가 없습니다.")
+    direction_confidence = data.get("direction_confidence")
+    if direction_confidence is not None:
+        if (
+            isinstance(direction_confidence, bool)
+            or not isinstance(direction_confidence, (int, float))
+            or not math.isfinite(float(direction_confidence))
+            or not 0.0 <= float(direction_confidence) <= 1.0
+        ):
+            raise RuntimeError(
+                "direction_confidence는 0~1 유한 숫자 또는 None이어야 합니다."
+            )
+        if float(direction_confidence) < 0.6:
+            if (
+                "방향" not in result.answer
+                or "판단하기 어렵" not in result.answer
+            ):
+                raise RuntimeError(
+                    "낮은 direction_confidence가 최종 답변에 설명되지 않았습니다."
+                )
+        else:
+            display_confidence = (
+                f"{float(direction_confidence) * 100:.1f}%"
+            )
+            if (
+                display_confidence not in result.answer
+                or "방향 동의율" not in result.answer
+            ):
+                raise RuntimeError(
+                    "direction_confidence가 최종 답변에 정확히 표시되지 않았습니다."
+                )
+    elif (
+        "direction_confidence" not in result.answer
+        or "산정되지 않았" not in result.answer
+    ):
+        raise RuntimeError(
+            "산정되지 않은 direction_confidence 설명이 최종 답변에 없습니다."
+        )
+
+    warnings = data.get("warnings")
+    if not isinstance(warnings, list) or not all(
+        isinstance(warning, str) and warning.strip()
+        for warning in warnings
+    ):
+        raise RuntimeError("Tool 결과의 warnings가 문자열 배열이 아닙니다.")
+    for warning in warnings:
+        if warning not in result.answer:
+            raise RuntimeError("Tool 경고가 최종 답변에 빠졌습니다.")
+
+    if (
+        expected_requested_changes is not None
+        and set(expected_requested_changes) == {"green_ratio"}
+    ):
+        if "impervious_ratio" not in auto_applied_changes:
+            raise RuntimeError(
+                "녹지율 단독 요청에 불투수율 자동 연동이 적용되지 않았습니다."
+            )
+        coupling_warnings = [
+            warning
+            for warning in warnings
+            if "연동" in warning and "불투수" in warning
+        ]
+        if not coupling_warnings:
+            raise RuntimeError(
+                "녹지율 단독 요청의 자동 연동 경고가 없습니다."
+            )
+        if not all(warning in result.answer for warning in coupling_warnings):
+            raise RuntimeError(
+                "자동 연동 경고가 최종 답변에 표시되지 않았습니다."
+            )
+
+    _validate_delta_std_language(result.answer)
+
+
 def _print_result(result: ChatResult, *, validated: bool = True) -> None:
     print(
         "라우터 추론 분리 상태: "
@@ -455,13 +837,11 @@ def run_tool_calling(
     if (
         isinstance(ollama_call_count, bool)
         or not isinstance(ollama_call_count, int)
-        or ollama_call_count > 1
+        or ollama_call_count != 1
     ):
         raise RuntimeError(
-            "질문 한 건에서 Ollama가 한 번보다 많이 호출되었습니다."
+            "질문 한 건의 Ollama 호출 횟수가 정확히 1회가 아닙니다."
         )
-    if result.used_tools and ollama_call_count != 1:
-        raise RuntimeError("Tool Calling 질문의 Ollama 호출 횟수가 1이 아닙니다.")
     if result.final_thinking:
         raise RuntimeError("Python formatter 이후 별도 LLM 추론이 존재합니다.")
 
@@ -474,6 +854,15 @@ def run_tool_calling(
             raise RuntimeError(
                 f"Qwen이 {expected_tool_name} 대신 {actual} 도구를 선택했습니다."
             )
+        if expected_tool_name == NO_TOOL_EXPECTED and (
+            result.tool_arguments
+            or result.tool_data
+            or result.metrics.get("tool_name") is not None
+            or result.metrics.get("actual_used_tools") != []
+        ):
+            raise RuntimeError(
+                "Tool 미실행 요청에서 도구 인자·결과 또는 실행 기록이 남았습니다."
+            )
     if expected_arguments is not None:
         if not result.used_tools:
             raise RuntimeError("서비스가 기대한 도구를 실행하지 않았습니다.")
@@ -484,6 +873,8 @@ def run_tool_calling(
         )
     if result.used_tools == ["get_grid_data"]:
         _validate_grid_lookup_result(result)
+    elif result.used_tools == ["run_simulation"]:
+        _validate_simulation_result(result, expected_arguments)
     if (
         expected_lookup_all is not None
         and result.metrics.get("lookup_all") is not expected_lookup_all
@@ -530,7 +921,7 @@ def _validate_missing_grid_context() -> None:
 
     client = _NoCallClient()
     try:
-        run_chat("전체 데이터 알려줘", client=client)
+        run_chat(GENERIC_DATA_TELL_QUESTION, client=client)
     except ChatInputError as exc:
         if "격자" not in str(exc):
             raise RuntimeError("격자 선택 안내가 명확하지 않습니다.") from exc
@@ -608,7 +999,34 @@ def main() -> int:
                 lookup_all,
                 excluded_scope,
             ) in LOOKUP_SCOPE_CASES
+        ) + tuple(
+            (
+                question,
+                ROUTING_GRID_ID,
+                expected_tool_name,
+                expected_arguments,
+                expected_answer_contains,
+                expected_lookup_all,
+                expected_excluded_scope,
+            )
+            for (
+                question,
+                expected_tool_name,
+                expected_arguments,
+                expected_answer_contains,
+                expected_lookup_all,
+                expected_excluded_scope,
+            ) in GENERAL_LOOKUP_ROUTING_CASES
         )
+        legacy_case_count = (
+            len(DEFAULT_CASES)
+            + len(SELECTED_GRID_ROUTING_CASES)
+            + len(LOOKUP_SCOPE_CASES)
+        )
+        if legacy_case_count != 36:
+            raise RuntimeError(
+                "기존 qwen3:4b E2E 36개 시나리오 수가 변경되었습니다."
+            )
 
     failed_cases: list[tuple[int, str]] = []
     for index, (
