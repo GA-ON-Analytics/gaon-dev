@@ -19,6 +19,7 @@ DASHBOARD_GRID_PATHS = {
     "250m": DASHBOARD_DIR / "seoul_grid_250m.geojson",
     "500m": DASHBOARD_DIR / "seoul_grid_500m.geojson",
 }
+DASHBOARD_100M_MAP_PATH = DASHBOARD_DIR / "seoul_grid_100m_map.geojson"
 DASHBOARD_GRID_500M_PATH = DASHBOARD_DIR / "seoul_grid_500m.geojson"
 DASHBOARD_GU_LEVEL_PATH = DASHBOARD_DIR / "seoul_gu_level.geojson"
 VALID_GRID_RESOLUTIONS = set(DASHBOARD_GRID_PATHS)
@@ -59,11 +60,14 @@ class SimulationRequest(BaseModel):
     policy_options: list[str] = Field(default_factory=list)
     parameters: SimulationParameters = Field(default_factory=SimulationParameters)
     changes: dict[str, float] = Field(default_factory=dict)
+    # 녹지↔불투수 연동(이슈 #14). 기본 켬. 불투수면을 직접 지정하면 어차피 연동하지 않는다.
+    couple_land_cover: bool = True
 
 
 class BatchSimulationRequest(BaseModel):
     grid_ids: list[str]
     changes: dict[str, float] = Field(default_factory=dict)
+    couple_land_cover: bool = True
 
 
 def _file_response(file_path: Path, media_type: str) -> FileResponse:
@@ -220,6 +224,12 @@ def dashboard_grid_by_resolution(resolution: str):
     return _geojson_file_response(_dashboard_grid_path(resolution))
 
 
+@app.head("/api/dashboard/grids/100m/map")
+@app.get("/api/dashboard/grids/100m/map")
+def dashboard_100m_map():
+    return _geojson_file_response(DASHBOARD_100M_MAP_PATH)
+
+
 @app.head("/api/dashboard/grids/{resolution}/{gu_code}")
 @app.get("/api/dashboard/grids/{resolution}/{gu_code}")
 def dashboard_district_grid_by_resolution(resolution: str, gu_code: str):
@@ -279,7 +289,8 @@ def simulate(payload: SimulationRequest) -> Any:
         return _simulation_not_connected_response()
 
     predict_core = _load_predict_core()
-    return predict_core.predict(payload.grid_id, _changes_from_payload(payload))
+    return predict_core.predict(payload.grid_id, _changes_from_payload(payload),
+                                couple_land_cover=payload.couple_land_cover)
 
 
 @app.post("/api/simulate/batch")
@@ -288,7 +299,9 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
         return _simulation_not_connected_response()
 
     predict_core = _load_predict_core()
-    results = [predict_core.predict(grid_id, payload.changes) for grid_id in payload.grid_ids]
+    results = [predict_core.predict(grid_id, payload.changes,
+                                    couple_land_cover=payload.couple_land_cover)
+               for grid_id in payload.grid_ids]
     valid_results = [result for result in results if "delta_c" in result]
     mean_delta = (
         round(sum(result["delta_c"] for result in valid_results) / len(valid_results), 3)

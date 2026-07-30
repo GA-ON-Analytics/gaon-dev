@@ -167,25 +167,13 @@
   {
     "name": "impervious_ratio",
     "korean": "불투수면 비율",
-    "description": "물이 스미지 않는 포장면 비율",
+    "description": "물이 스미지 않는 포장면·인공표면 비율",
     "aliases": [
       "불투수면",
       "포장면",
       "아스팔트",
       "콘크리트",
-      "투수포장"
-    ],
-    "temp_direction": "+",
-    "editable": "policy",
-    "min": 0.0237,
-    "max": 0.7343,
-    "is_ratio": true
-  },
-  {
-    "name": "built_surface_ratio",
-    "korean": "시가화면 비율",
-    "description": "건조물·인공표면 비율(불투수와 동반)",
-    "aliases": [
+      "투수포장",
       "시가화",
       "인공표면"
     ],

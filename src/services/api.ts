@@ -1,5 +1,10 @@
 import type { FeatureCollection } from 'geojson';
-import type { GridResolution, SimulationRequest, SimulationResponse } from '../types/dashboard';
+import type {
+  BatchSimulationResponse,
+  GridResolution,
+  SimulationRequest,
+  SimulationResponse
+} from '../types/dashboard';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -72,6 +77,13 @@ export function getDistrictGrid(sigCode: string): Promise<FeatureCollection> {
 }
 
 export function getResolutionGrid(resolution: GridResolution): Promise<FeatureCollection> {
+  if (resolution === '100m') {
+    return fetchJsonWithFallback<FeatureCollection>(
+      '/api/dashboard/grids/100m/map',
+      '/dashboard/seoul_grid_100m_map.geojson'
+    );
+  }
+
   return fetchJsonWithFallback<FeatureCollection>(
     `/api/dashboard/grids/${resolution}`,
     `/dashboard/seoul_grid_${resolution}.geojson`
@@ -84,7 +96,10 @@ export function getDistrictResolutionGrid(
   district: string
 ): Promise<FeatureCollection> {
   if (resolution === '100m') {
-    return getDistrictGrid(sigCode);
+    return fetchJsonWithFallback<FeatureCollection>(
+      `/api/grids/${sigCode}`,
+      `/dashboard/100m/${sigCode}_${district}.geojson`
+    );
   }
 
   return fetchJsonWithFallback<FeatureCollection>(
@@ -104,4 +119,20 @@ export function getOverviewGrid(): Promise<FeatureCollection> {
 
 export function simulateGridPolicy(payload: SimulationRequest): Promise<SimulationResponse> {
   return postJson<SimulationResponse, SimulationRequest>('/api/simulate', payload);
+}
+
+// 여러 100m 격자에 같은 정책을 적용해 평균 저감을 구한다 (250/500m 집계 격자 시뮬레이션용).
+export function simulateBatchGridPolicy(
+  gridIds: string[],
+  changes: Record<string, number>,
+  coupleLandCover = true
+): Promise<BatchSimulationResponse> {
+  return postJson<
+    BatchSimulationResponse,
+    { grid_ids: string[]; changes: Record<string, number>; couple_land_cover: boolean }
+  >('/api/simulate/batch', {
+    grid_ids: gridIds,
+    changes,
+    couple_land_cover: coupleLandCover
+  });
 }
