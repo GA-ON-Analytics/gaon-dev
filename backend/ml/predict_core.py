@@ -6,8 +6,7 @@ compact 배포 모델(25MB)로 재예측한다. RandomForest는 비선형이라 
 
 핵심 안전장치 (LLM 임의 입력 대비):
   1) 각 변수를 학습 분포 범위로 clip (모델이 본 적 없는 값 = 환각 예측 방지)
-  2) 파생 일관성: built_surface_ratio는 impervious_ratio 변화량과 함께 움직이게 한다
-  3) 예측 신뢰도: 입력이 학습 분포에서 얼마나 벗어났는지 out_of_range 플래그로 알림
+  2) 예측 신뢰도: 입력이 학습 분포에서 얼마나 벗어났는지 out_of_range 플래그로 알림
 """
 from __future__ import annotations
 
@@ -28,7 +27,7 @@ FEATURE_META_PATH = BACKEND_DIR / "models" / "feature_meta.json"
 
 # 0~1 비율 변수
 RATIO_FEATURES = {"building_ratio", "road_ratio", "green_ratio", "impervious_ratio",
-                  "built_surface_ratio", "zoning_residential_ratio", "zoning_commercial_ratio",
+                  "zoning_residential_ratio", "zoning_commercial_ratio",
                   "zoning_industrial_ratio", "zoning_green_ratio"}
 REQUIRED_FILES = (
     MODEL_PATH,
@@ -153,8 +152,60 @@ def _final_clip_scenario(scen: dict, feats: list, ranges: dict, warnings: list[s
             scen[feature] = clipped
 
 
-def _apply_and_constrain(base: dict, changes: dict, feats: list, ranges: dict):
-    """변화 적용 + 물리 제약. (제약 적용된 시나리오, 변경값, 경고 리스트) 반환."""
+# 녹지를 늘리면 그만큼 다른 지표면이 줄어야 한다(이슈 #14). 다만 1:1은 근거가 없다.
+# 서울 64,574격자에서 impervious_ratio를 green_ratio로 회귀한 기울기가 -0.655이고,
+# green+impervious 합도 평균 0.715라 나머지 약 24%(물·나대지)가 존재한다.
+# 즉 녹지 증가분이 전량 불투수면에서 나오지는 않으므로 관측 기울기를 계수로 쓴다.
+GREEN_TO_IMPERVIOUS = -0.65
+
+
+def _apply_land_cover_coupling(changes: dict, scen: dict, feats: list, ranges: dict,
+                               applied_deltas: dict) -> list[str]:
+    """green_ratio 변화를 impervious_ratio에 반영한다. scen을 제자리에서 고친다."""
+    src, dst = "green_ratio", "impervious_ratio"
+    if src not in applied_deltas or dst not in feats:
+        return []
+    if dst in changes:  # 사용자가 직접 지정했으면 그 값을 존중한다
+        return []
+
+    delta = applied_deltas[src] * GREEN_TO_IMPERVIOUS
+    if np.isclose(delta, 0.0):
+        return []
+
+    before = float(scen[dst])
+    scen[dst] = _clip_feature_value(dst, before + delta, ranges)
+    moved = scen[dst] - before
+    if np.isclose(moved, 0.0):
+        return [f"{dst}가 이미 학습범위 끝이라 녹지 연동이 반영되지 않았습니다."]
+
+    return [f"녹지 {applied_deltas[src] * 100:+.1f}%p에 연동해 불투수면을 "
+            f"{moved * 100:+.1f}%p 조정했습니다 (관측 기울기 {GREEN_TO_IMPERVIOUS}). "
+            f"불투수면을 직접 지정하면 연동하지 않습니다."]
+
+
+def _direction_confidence(per_tree_delta: np.ndarray) -> float | None:
+    """트리들이 변화 '방향'에 얼마나 동의하는지를 0~1로 반환한다.
+
+    변화량이 정확히 0인 트리는 제외하고, 움직인 트리 중 다수파의 비율을 센다.
+    RF 트리는 계단함수라 개입이 작으면 상당수가 delta=0을 내놓는데(녹지 5%p에서 약 40%),
+    그건 '효과가 없다'가 아니라 그 트리의 분할 임계값을 넘지 못한 것이므로 판단에서 뺀다.
+
+    delta_std를 오차막대로 쓰면 8배 과대평가되므로, 사용자에게는 이 값을 보여준다.
+    """
+    moved = per_tree_delta[np.abs(per_tree_delta) > 1e-9]
+    if moved.size == 0:
+        return None
+    cooling = float((moved < 0).mean())
+    return round(max(cooling, 1.0 - cooling), 3)
+
+
+def _apply_and_constrain(base: dict, changes: dict, feats: list, ranges: dict,
+                         couple: bool = True):
+    """변화 적용 + 물리 제약. (제약 적용된 시나리오, 변경값, 경고 리스트) 반환.
+
+    couple=True면 녹지↔불투수를 연동한다(이슈 #14). 사용자가 두 변수를 모두 명시하면
+    그 값을 존중해 연동하지 않는다.
+    """
     warnings = []
     scen = {f: base[f] for f in feats}
     changed_features: dict[str, dict[str, float]] = {}
@@ -169,23 +220,11 @@ def _apply_and_constrain(base: dict, changes: dict, feats: list, ranges: dict):
         if val < lo or val > hi:
             warnings.append(f"{k}={val:.3f} 학습범위[{lo:.2f},{hi:.2f}] 밖 → clip")
         scen[k] = _clip_feature_value(k, val, ranges)
-        applied_deltas[k] = float(scen[k]) - float(base[k])
+        applied_deltas[k] = float(scen[k]) - float(base[k])  # clip 후 실제 반영량
 
-    # 파생 일관성: 불투수↔시가화는 같은 축 → 한쪽 변화량을 다른쪽에도 반영
-    if (
-        "impervious_ratio" in applied_deltas
-        and "built_surface_ratio" in feats
-        and "built_surface_ratio" not in changes
-    ):
-        next_value = float(base["built_surface_ratio"]) + applied_deltas["impervious_ratio"]
-        scen["built_surface_ratio"] = _clip_feature_value("built_surface_ratio", next_value, ranges)
-    if (
-        "built_surface_ratio" in applied_deltas
-        and "impervious_ratio" in feats
-        and "impervious_ratio" not in changes
-    ):
-        next_value = float(base["impervious_ratio"]) + applied_deltas["built_surface_ratio"]
-        scen["impervious_ratio"] = _clip_feature_value("impervious_ratio", next_value, ranges)
+    if couple:
+        warnings.extend(_apply_land_cover_coupling(changes, scen, feats, ranges,
+                                                   applied_deltas))
 
     _final_clip_scenario(scen, feats, ranges, warnings)
 
@@ -207,7 +246,8 @@ def _strip(v):
     return v.lstrip("=") if isinstance(v, str) else v
 
 
-def predict(grid_id: str, changes: dict | None = None, top_k: int = 3) -> dict:
+def predict(grid_id: str, changes: dict | None = None, top_k: int = 3,
+            couple_land_cover: bool = True) -> dict:
     model, feats, static, ranges = _load()
     base = get_grid_features(grid_id)
     if base is None:
@@ -224,17 +264,36 @@ def predict(grid_id: str, changes: dict | None = None, top_k: int = 3) -> dict:
     Xb = pd.DataFrame([[base[f] for f in feats]], columns=feats)
     baseline = float(model.predict(Xb)[0])
 
-    scen, changed_features, warnings = _apply_and_constrain(base, changes, feats, ranges)
+    scen, changed_features, warnings = _apply_and_constrain(
+        base, changes, feats, ranges, couple=couple_land_cover)
     Xs = pd.DataFrame([[scen[f] for f in feats]], columns=feats)
     predicted = float(model.predict(Xs)[0])
 
-    # 트리 분산으로 불확실성
+    # 트리 산포 지표들.
+    # uncertainty_std: 변경 후 절대 anomaly 예측의 트리 간 산포.
+    # delta_std: 트리별 (변경 후 - 변경 전) 변화량의 산포. 두 예측이 같은 트리에서
+    #            나와 강하게 상관되므로, 변화량의 불확실성은 반드시 짝지어 계산해야 한다.
+    #            uncertainty_std를 변화량 오차로 쓰면 공분산 항이 빠져 크게 과대평가된다.
+    #
+    # ⚠️ delta_std를 '이 예측의 오차'로 화면에 쓰면 안 된다. 이 값은 '트리 하나를 뽑았을 때
+    # 답이 얼마나 다른가'이고, 우리가 보여주는 값은 300개의 평균이다. RF는 배깅·피처
+    # 무작위로 트리를 일부러 다르게 만들므로 트리 산포는 크게 나오는 게 정상이고, 그중
+    # 상당수는 계단함수 양자화(변화량이 분할 임계값을 못 넘어 delta=0)라 평균에서 상쇄된다.
+    # 데이터 부트스트랩 8회 재학습으로 잰 실제 추정오차는 delta_std의 약 1/8이었다.
+    # 사용자에게는 delta_std 대신 direction_confidence(방향 확신도)를 보여준다.
     if hasattr(model, "estimators_"):
+        Xb_arr = Xb.to_numpy()
         Xs_arr = Xs.to_numpy()
-        per_tree = np.array([t.predict(Xs_arr)[0] for t in model.estimators_])
-        std = float(per_tree.std())
+        per_tree_before = np.array([t.predict(Xb_arr)[0] for t in model.estimators_])
+        per_tree_after = np.array([t.predict(Xs_arr)[0] for t in model.estimators_])
+        per_tree_delta = per_tree_after - per_tree_before
+        std = float(per_tree_after.std(ddof=1))
+        delta_std = float(per_tree_delta.std(ddof=1))
+        direction_confidence = _direction_confidence(per_tree_delta)
     else:
         std = 0.0
+        delta_std = 0.0
+        direction_confidence = None
         warnings.append("모델 estimator 분산을 계산할 수 없어 uncertainty_std=0.0 반환")
 
     result = {
@@ -244,6 +303,8 @@ def predict(grid_id: str, changes: dict | None = None, top_k: int = 3) -> dict:
         "after_anomaly": round(predicted, 3),
         "delta_c": round(predicted - baseline, 3),
         "uncertainty_std": round(std, 3),
+        "delta_std": round(delta_std, 3),
+        "direction_confidence": direction_confidence,
         "changed_features": changed_features,
         "message": "ML simulation completed",
         "warnings": warnings,

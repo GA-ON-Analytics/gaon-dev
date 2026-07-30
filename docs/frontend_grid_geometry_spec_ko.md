@@ -106,7 +106,7 @@ data/raw/grid/seoul/seoul_grid_100m_manifest.csv            (구별 격자 수 �
 | `top1_feature` / `top1_shap` | **이 셀이 뜨거운/시원한 1위 이유** | **클릭 팝업** ⭐ |
 | `top2_feature` / `top2_shap` | 2위 이유 | 클릭 팝업 |
 | `top3_feature` / `top3_shap` | 3위 이유 | 클릭 팝업 |
-| `building_ratio`, `green_ratio`, `ndvi`, `impervious_ratio`, `built_surface_ratio` | 환경 특성 | 상세 패널 |
+| `building_ratio`, `green_ratio`, `ndvi`, `impervious_ratio` | 환경 특성 | 상세 패널 |
 | `avg_ground_floor_count`, `elevation_m`, `albedo` | 층수·표고·반사율 | 상세 패널 |
 | `nearest_park_distance_m`, `park_area_within_500m`, `nearest_stream_distance_m` | 공원·하천 접근성 | 상세 패널 |
 | `area_m2` | 셀 실제 면적 | — |
@@ -136,11 +136,14 @@ priority_score = 열위험 30% + 냉각여지 20%     ← 물리 (모델·시나
 (취약성은 순서를 정하는 보조 축이지 프로젝트의 목표가 아니다.)
 
 ### `top1_feature` 값 예시 (SHAP 기여 1위 변수)
-`built_surface_ratio`(시가화면) / `impervious_ratio`(불투수면) / `green_ratio`(녹지율) /
-`ndvi`(식생) / `building_ratio`(건물비율) / `elevation_m`(표고) 등
+`impervious_ratio`(불투수면) / `green_ratio`(녹지율) / `ndvi`(식생) /
+`building_ratio`(건물비율) / `elevation_m`(표고) 등
+
+> 예전에는 `built_surface_ratio`(시가화면)도 등장했으나, `impervious_ratio`와 값이 100%
+> 동일한 중복 변수여서 제거했다. 그 탓에 TOP3에 같은 지표가 두 번 표시되던 문제가 있었다.
 
 `topN_shap`의 **부호**가 방향이다: **양수 = 온도를 올림, 음수 = 내림.**
-팝업 예시: *"이 블록이 뜨거운 이유 ① 시가화면 +0.82°C ② 녹지 부족 +0.41°C ③ 표고 낮음 +0.12°C"*
+팝업 예시: *"이 블록이 뜨거운 이유 ① 불투수면 +0.82°C ② 녹지 부족 +0.41°C ③ 표고 낮음 +0.12°C"*
 
 ---
 
