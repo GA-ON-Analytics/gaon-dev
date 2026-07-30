@@ -20,7 +20,7 @@ LIMITATIONS = [
     "비용, 토지, 공사기간, 행정 가능성은 반영하지 않았습니다.",
 ]
 
-# backend/models/feature_meta.json의 현재 19개 모델 입력 필드를 조회용으로
+# backend/models/feature_meta.json의 현재 모델 입력 필드를 조회용으로
 # 정리한 중앙 메타데이터다. feature_meta에 단위가 명시되지 않은 지표는
 # 임의로 추정하지 않고 빈 문자열로 둔다.
 GRID_FIELD_SPECS: dict[str, dict[str, Any]] = {
@@ -181,7 +181,23 @@ GRID_FIELD_SPECS: dict[str, dict[str, Any]] = {
         "is_ratio": False,
     },
 }
-ALLOWED_GRID_FIELDS = tuple(GRID_FIELD_SPECS)
+def _model_grid_fields() -> tuple[str, ...]:
+    """현재 predict_core가 공개한 모델 입력 필드만 조회 대상으로 삼는다."""
+
+    try:
+        feature_meta = predict_core.feature_meta()
+    except Exception:
+        return tuple(GRID_FIELD_SPECS)
+
+    model_fields = {
+        item.get("name")
+        for item in feature_meta
+        if isinstance(item, Mapping) and isinstance(item.get("name"), str)
+    }
+    return tuple(field for field in GRID_FIELD_SPECS if field in model_fields)
+
+
+ALLOWED_GRID_FIELDS = _model_grid_fields()
 DEFAULT_GRID_FIELDS = ("green_ratio", "impervious_ratio")
 GRID_FIELD_DISPLAY_DECIMALS = {
     "building_ratio": 2,
@@ -404,7 +420,7 @@ def _normalize_grid_fields(
             continue
         seen.add(field)
         requested_fields.append(field)
-        if field not in GRID_FIELD_SPECS:
+        if field not in ALLOWED_GRID_FIELDS:
             unsupported_fields.append(field)
 
     if unsupported_fields:

@@ -1,10 +1,12 @@
 # GA:ON Ollama + Qwen Tool Calling
 
-Ollama의 `qwen3:4b`는 사용자 질문에서 다음 도구와 인자만 선택합니다. Tool
-실행 후 최종 한국어 답변은 Python formatter가 결정적으로 생성하며, 같은 공용
+Ollama의 `qwen3:4b`는 사용자 질문을 JSON Schema에 맞는 구조화 결과로
+해석합니다. Qwen은 Tool 인자를 직접 계산하지 않으며, Python이 구조화 결과를
+검증하고 단위와 부호를 결정한 뒤 다음 Tool의 실제 인자를 만듭니다. Tool 실행
+후 최종 한국어 답변도 Python formatter가 결정적으로 생성하며, 같은 공용
 서비스를 CLI와 FastAPI `POST /api/chat`에서 사용합니다.
 
-- `get_grid_data`: 현재 격자의 19개 모델 입력 지표 중 요청한 필드 조회
+- `get_grid_data`: 현재 격자의 18개 모델 입력 지표 중 요청한 필드 조회
 - `run_simulation`: 100m 격자의 정책 변경값을 기존 머신러닝 모델에 적용해 재예측
 
 조회는 `backend.ml.predict_core.get_grid_features()`, 시뮬레이션은
@@ -74,8 +76,8 @@ python -m backend.llm_poc.cli_test \
 CLI는 각 질문에 대해 다음 항목을 출력하고 검증합니다. 사용자 질문 원문과
 내부 추론 내용은 성능 로그에 출력하지 않습니다.
 
-1. 사용자 질문 길이와 라우터 추론 분리 상태
-2. 호출된 도구명과 인자
+1. 사용자 질문 길이와 구조화 라우터 결과 상태
+2. Python이 확정한 도구명과 실제 인자
 3. 도구 반환값
 4. 단계별 성능 지표와 Ollama 호출 횟수
 5. Python formatter가 만든 검증 완료 한국어 답변
@@ -85,18 +87,19 @@ CLI는 각 질문에 대해 다음 항목을 출력하고 검증합니다. 사�
 0~1 원본값이며 퍼센트 변환과 반올림은 중앙 표시 규칙을 재사용하는 Python
 formatter가 수행합니다.
 
-라우터 호출은 `temperature=0`, `num_predict=3072`, `keep_alive="5m"`를
-사용합니다. 현재 Ollama `qwen3:4b`는 `think=False`에서 Tool Calling 대신
-일반 본문을 생성하는 것이 실제 테스트에서 확인되어, 정확도를 위해 라우터
-한 번만 `think=True`를 사용합니다. 분리된 추론은 API·브라우저 저장소·성능
-로그로 전달하지 않습니다.
+구조화 라우터는 `temperature=0`, `keep_alive="5m"`를 유지합니다.
+`think=False`, `num_predict=768`로 실행하며, JSON
+Schema 밖의 자유 형식 본문이나 내부 추론을 API·브라우저 저장소·성능 로그로
+전달하지 않습니다.
 
 ## 응답 처리와 성능 로그
 
 현재 처리 흐름은 다음과 같습니다.
 
 ```text
-질문 → Qwen Tool 라우팅 1회 → Python Tool 실행
+질문 → Qwen JSON Schema 구조화 해석 1회
+     → Python intent·필드·단위·미해결 항목 검증
+     → Python이 실제 Tool 인자 계산 → Python Tool 실행
      → Python formatter → 수치·단위·한계 검증 → API 응답
 ```
 
@@ -104,6 +107,61 @@ Tool 결과를 최종 답변으로 바꾸기 위한 두 번째 Ollama 호출은 
 `format_grid_data_answer()`와 `format_simulation_answer()`는 Tool 결과에 있는
 값만 사용합니다. 시뮬레이션 답변에는 내부 Python 함수명을 노출하지 않으며,
 경고와 모델 한계를 빠뜨리지 않습니다.
+
+Qwen의 내부 구조화 결과는 다음 계약을 사용합니다.
+
+```json
+{
+  "intent": "simulation",
+  "lookup_all": false,
+  "requested_fields": [],
+  "excluded_scope": false,
+  "changes": [
+    {
+      "field": "green_ratio",
+      "operation": "increase",
+      "value": 5,
+      "unit": "percent",
+      "basis": "direct",
+      "source_text": "녹지율 5프로 올려줘",
+      "value_text": "5프로"
+    }
+  ],
+  "assumptions": [
+    "일반 % 표현을 같은 수치의 %p로 적용"
+  ],
+  "unresolved": []
+}
+```
+
+- `intent`: 현재 데이터 조회(`lookup`), 시뮬레이션 또는 미지원 요청을
+  구분합니다.
+- `lookup_all`: 전체 격자 데이터 조회인지 나타냅니다.
+- `requested_fields`: 일부 조회에서 사용자가 요청한 지표를 정식 영문
+  필드명으로 담습니다. 전체 조회에서는 빈 배열입니다.
+- `excluded_scope`: 전체 범위 표현을 사용자가 명시적으로 부정했는지
+  나타냅니다.
+- `changes`: 변경 대상·방향·수치·단위와 `direct` 또는
+  `relative_to_current` 해석을 담습니다.
+- `assumptions`: Qwen이 정규화에 가정이 있었다는 신호입니다. 문구 자체를
+  신뢰해 노출하지 않고 Python이 검증된 `changes`와 `source_text`로 안전한
+  해석 문장을 다시 만듭니다.
+- `unresolved`: 값이나 단위처럼 확정하지 못한 항목을 제한된 코드로
+  기록합니다. Qwen의 자유 문장을 사용자 답변에 그대로 노출하지 않습니다.
+
+Python은 `intent`, 허용 필드, 원문 alias 근거, 원문 수치와 구조화 수치의
+일치, `value_text`에 연결된 단일 변경 수치, 수치의 유한성, 단위와 방향을
+다시 검증합니다.
+`unresolved`가 하나라도 있으면 Tool을 실행하지 않고 해당 항목만 묻는 부분
+재질문을 반환합니다. Qwen이 생성한 delta를 신뢰하거나 정규식으로 Tool을
+결정하지 않으며, 검증을 통과한 의미 정보로 Python이 실제 Tool 인자를
+계산합니다.
+
+`전체`, `모두`, `모든`, `전부`, 독립된 `다`는 전체 범위 검증의 안전한
+보조 신호로만 사용합니다. `말고`, `제외`, `필요 없고`, `보여주지 말고`가
+함께 있으면 전체 조회로 확장하지 않고 원문에서 확인된 일부 필드만 조회합니다.
+명확한 전체 범위인데 Qwen이 빈 일부 조회 또는 미지원 요청으로 반환한 경우에도
+Python이 `lookup_all=true`로 보정합니다.
 
 요청마다 다음 성능 지표를 한 줄의 `gaon_llm_metrics` 로그로 남깁니다.
 
@@ -115,6 +173,8 @@ Tool 결과를 최종 답변으로 바꾸기 위한 두 번째 Ollama 호출은 
 - `ollama_call_count`
 - `load_duration`, `prompt_eval_duration`, `eval_duration`
 - `prompt_eval_count`, `eval_count`
+- `intent`, `lookup_all`, `requested_fields`, `excluded_scope`
+- `validation_result`, `final_branch`, `actual_used_tools`
 
 질문 원문과 추론 내용은 로그에 포함하지 않습니다. `keep_alive="5m"`는 연속
 요청 시 모델 재로딩을 줄이는 메모리 유지 정책입니다. 모델이 GPU 메모리에
@@ -164,6 +224,13 @@ Ollama 원본 응답과 stack trace는 API 및 브라우저 저장소로 전달�
 채팅 기록은 현재 브라우저 탭의 `sessionStorage`에 저장되며 새 대화 버튼으로
 삭제할 수 있습니다.
 
+구조화 라우터 결과는 내부 처리 계약이며 `POST /api/chat` 요청·응답 필드를
+추가하거나 바꾸지 않습니다. 기존 `get_grid_data()`와 `run_simulation()`,
+`POST /api/simulate`의 입력·반환 계약도 그대로 유지합니다.
+적용한 `assumptions`는 별도 API 필드를 추가하지 않고 최종 `answer`에서
+사용자에게 설명합니다. `unresolved`가 남은 부분 재질문은 `used_tools: []`로
+기존 응답 구조 안에서 반환합니다.
+
 ## get_grid_data 입력과 결과
 
 ```python
@@ -180,7 +247,10 @@ get_grid_data(
 - 명시적인 빈 배열은 실수로 전체 데이터가 노출되지 않도록 오류로 처리합니다.
 - 미지원 필드는 비슷한 필드로 바꾸지 않으며 `unsupported_fields`와
   `available_fields`를 반환합니다.
-- “전체 데이터”는 아래 19개 필드를 모두 `fields`로 전달합니다.
+- “전체 데이터”는 아래 18개 모델 입력 필드를 모두 `fields`로 전달합니다.
+  `built_surface_ratio`는 현재 모델 입력에서 제거되어
+  `predict_core.get_grid_features()`가 반환하지 않으므로 값을 복원하거나
+  다른 필드로 대체하지 않습니다.
 
 공통 반환 구조:
 
@@ -198,7 +268,7 @@ get_grid_data(
 ## 조회 가능 필드와 표시 규칙
 
 표시명과 의미는 기존 `backend/models/feature_meta.json`을 기준으로 합니다.
-비율 9개는 원본값에 100을 곱해 `%`로 표시하고, NDVI와 albedo는 무단위
+비율 8개는 원본값에 100을 곱해 `%`로 표시하고, NDVI와 albedo는 무단위
 원본값으로 표시합니다. `floor_area_ratio_proxy`는 단위가 정의되지 않은
 proxy이므로 단위를 붙이거나 공식 용적률로 표현하지 않습니다.
 
@@ -216,7 +286,6 @@ proxy이므로 단위를 붙이거나 공식 용적률로 표현하지 않습니
 | `ndvi` | 식생지수 | 무단위 | NDVI, 식생지수, 식생 |
 | `green_ratio` | 녹지율 | `%` | 녹지율, 녹지 |
 | `impervious_ratio` | 불투수면 비율 | `%` | 불투수율, 불투수면 |
-| `built_surface_ratio` | 시가화면 비율 | `%` | 시가화, 인공표면 |
 | `nearest_park_distance_m` | 최근접 공원거리(m) | `m` | 공원까지 거리, 공원 거리 |
 | `park_area_within_500m` | 500m내 공원면적(㎡) | `㎡` | 500m 내 공원 면적, 공원 면적 |
 | `nearest_stream_distance_m` | 최근접 하천거리(m) | `m` | 하천까지 거리, 하천 거리 |
@@ -244,6 +313,27 @@ run_simulation(
 | `green_ratio_delta` | 0~1 원본 비율에 더할 부호 있는 delta. 5%p 증가는 `0.05` | `green_ratio` |
 | `impervious_ratio_delta` | 0~1 원본 비율에 더할 부호 있는 delta. 5%p 감소는 `-0.05` | `impervious_ratio` |
 | `park_area_delta` | 반경 500m 내 공원 면적 증가량(㎡). 음수 불가 | `park_area_within_500m` |
+
+구조화 결과의 `intent`, `changes`, `unresolved`를 Python이 검증해 조회와
+시뮬레이션을 결정합니다. 여러 줄 또는 한 문장에 여러 변경이 있으면 검증된
+세 delta를 하나의 `run_simulation` 호출에 결합합니다. 예를 들어
+`녹지율을 올려줘`처럼 변경량이 빠지면 현재 녹지율 조회로 바꾸지 않고,
+`unresolved`에 변경량을 남겨 그 항목만 다시 묻습니다.
+
+비율과 면적의 실제 Tool 인자는 다음 규칙으로 Python이 계산합니다.
+
+| 사용자 표현 | 구조화 해석 | Python이 만드는 delta |
+|---|---|---|
+| 녹지율 `5%p` 증가 | `direct` | `green_ratio_delta=0.05` |
+| 녹지율 `5%` 증가 | `direct` | 같은 수치의 `5%p`, 즉 `0.05`; 이 해석을 `assumptions`에 기록 |
+| 현재 녹지율 대비 `5%` 증가 | `relative_to_current` | 현재 0~1 원본값 × `0.05` |
+| 공원 면적 `1,000㎡` 증가 | 면적 변경 | `park_area_delta=1000` |
+
+감소 방향은 계산된 비율 delta에 음수 부호를 붙입니다.
+`relative_to_current`는 기존 격자 조회 경로에서 현재 원본 비율을 얻은 뒤
+Python이 계산합니다. 공원 면적은 `㎡`, `m²`, `m2`처럼 제곱미터로 확정된
+입력만 허용합니다. 다른 면적 단위나 단위 누락은 환산하지 않고
+`unresolved`에 남겨 부분 재질문합니다.
 
 기존 `/api/simulate`와 같이 녹지율 감소나 불투수율 증가도 실행합니다. 이 경우
 Tool은 일반적인 열 저감 정책 방향과 반대인 시나리오라는 설명을 반환합니다.
@@ -288,17 +378,21 @@ Tool은 일반적인 열 저감 정책 방향과 반대인 시나리오라는 �
 - Ollama 응답 제한 시간을 넘으면 HTTP 504로 처리합니다.
 - `grid_id`가 비어 있으면 `success: false`와 명확한 오류를 반환합니다.
 - `fields: []`, 문자열 배열이 아닌 `fields`, 미지원 필드는 오류로 처리합니다.
-  미지원 필드는 조회 가능한 19개 필드 목록도 함께 반환합니다.
+  미지원 필드는 조회 가능한 18개 필드 목록도 함께 반환합니다.
 - 일치하는 격자가 없거나 필수 모델 피처가 누락되면 해당 이유를 반환합니다.
 - 변경값이 숫자가 아니거나 NaN·무한대이면 오류를 반환합니다.
-- `%p`가 아닌 `%` 비율 변경 요청은 상대 변화인지 퍼센트포인트 변화인지
-  모호하므로 Tool을 호출하지 않고 `%p` 입력을 안내합니다.
+- 일반 `%` 비율 변경은 `direct`로 해석해 같은 수치의 `%p`를 적용하고 그
+  가정을 사용자에게 알립니다. “현재값 대비”처럼 상대 변화가 명시되면
+  `relative_to_current`로 계산합니다.
+- 공원 면적 변경은 제곱미터 단위만 처리합니다. 다른 단위 또는 필수 값이
+  `unresolved`에 남으면 Tool을 호출하지 않고 누락된 부분만 다시 묻습니다.
 - `park_area_delta`가 음수이면 기존 `/api/simulate`의 `park_area_m2 >= 0`
   규칙과 같이 오류를 반환합니다.
 - 모델·feature metadata·데이터셋 등 필수 파일이 없으면 `missing_files`와
   오류를 반환합니다.
 - 비율 방향과 학습 범위 이탈은 오류가 아니며 기존 `predict()`의 clip과
   `warnings` 처리를 따릅니다.
-- 오류 시 Qwen은 누락 값을 추측하지 않고 도구의 오류만 전달하도록 제한됩니다.
+- 오류 시 서비스는 누락 값을 추측하지 않고 도구의 오류만 전달하도록
+  제한됩니다.
 - 최종 답변이 도구 원본값으로 만든 허용 문장과 일치하지 않으면 답변 후보를
   검증 실패로 표시하고 종료 코드 1로 끝납니다.

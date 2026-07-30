@@ -15,10 +15,7 @@ from typing import Any
 
 from backend.llm_poc.tools import (
     ALLOWED_GRID_FIELDS,
-    DEFAULT_GRID_FIELDS,
-    GET_GRID_DATA_TOOL,
     GRID_FIELD_SPECS,
-    RUN_SIMULATION_TOOL,
     TOOL_FUNCTIONS,
     format_grid_field_value,
 )
@@ -26,31 +23,214 @@ from backend.llm_poc.tools import (
 
 MODEL_NAME = "qwen3:4b"
 DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
-ROUTER_NUM_PREDICT = 3072
+ROUTER_NUM_PREDICT = 768
 MODEL_KEEP_ALIVE = "5m"
-TOOL_SCHEMAS = [GET_GRID_DATA_TOOL, RUN_SIMULATION_TOOL]
 LOGGER = logging.getLogger("uvicorn.error")
 _GRID_FIELD_LABELS = "、".join(
     str(GRID_FIELD_SPECS[field]["label"]) for field in ALLOWED_GRID_FIELDS
 )
+_SIMULATION_FIELDS = (
+    "green_ratio",
+    "impervious_ratio",
+    "park_area_within_500m",
+)
+_SIMULATION_ARGUMENT_BY_FIELD = {
+    "green_ratio": "green_ratio_delta",
+    "impervious_ratio": "impervious_ratio_delta",
+    "park_area_within_500m": "park_area_delta",
+}
+_SIMULATION_FIELD_TERMS = {
+    "green_ratio": ("녹지",),
+    "impervious_ratio": ("불투수",),
+    "park_area_within_500m": ("공원",),
+}
+_SIMULATION_ARGUMENTS = tuple(_SIMULATION_ARGUMENT_BY_FIELD.values())
+_SUPPORTED_INTENTS = {
+    "lookup",
+    "simulation",
+    "unsupported",
+}
+_SUPPORTED_OPERATIONS = {"increase", "decrease"}
+_SUPPORTED_UNITS = {"percent", "percentage_point", "m2"}
+_SUPPORTED_BASES = {"direct", "relative_to_current"}
+_FULL_SCOPE_TERMS = ("전체", "모두", "모든", "전부")
+_EXCLUDED_SCOPE_TERMS = ("말고", "제외", "필요없", "보여주지말고")
+_STANDALONE_ALL_PATTERN = re.compile(
+    r"(?<![가-힣A-Za-z0-9_])다(?![가-힣A-Za-z0-9_])"
+)
+_UNRESOLVED_CODES = {
+    "ambiguous_request",
+    "change_field",
+    "change_operation",
+    "change_source",
+    "change_unit",
+    "change_value",
+    "conflicting_changes",
+    "lookup_field",
+    "park_area_decrease",
+}
+_CLARIFICATION_BY_CODE = {
+    "ambiguous_request": "요청에서 확정되지 않은 부분을 구체적으로 알려주세요.",
+    "change_field": "변경할 지표를 알려주세요.",
+    "change_operation": "증가 또는 감소 방향을 알려주세요.",
+    "change_source": "변경 요청의 원문 근거를 다시 확인해 주세요.",
+    "change_unit": "비율은 % 또는 %p, 공원 면적은 ㎡ 단위로 알려주세요.",
+    "change_value": "변경량을 숫자로 알려주세요.",
+    "conflicting_changes": "같은 지표의 변경값은 하나로 확정해 주세요.",
+    "lookup_field": "조회할 격자 지표를 알려주세요.",
+    "park_area_decrease": "공원 면적 감소는 지원하지 않습니다.",
+}
 SUPPORTED_SCOPE_ANSWER = (
     "현재 GA:ON AI는 선택한 100m 격자의 다음 현재 데이터를 조회할 수 있습니다: "
     f"{_GRID_FIELD_LABELS}. "
     "사용자가 지정한 녹지율·불투수율·공원 면적 변경 시나리오만 지원합니다. "
     "정책 추천, 모델 설명, 문서 검색은 현재 지원하지 않습니다."
 )
-AMBIGUOUS_RATIO_CHANGE_ANSWER = (
-    "비율 변경은 상대 퍼센트(%)가 아니라 퍼센트포인트(%p)로 입력해 주세요."
-)
+ROUTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "intent": {
+            "type": "string",
+            "enum": ["unsupported", "lookup", "simulation"],
+            "description": (
+                "허용된 격자 지표의 현재값 조회와 전체 조회는 lookup, "
+                "지원 정책 변경은 simulation, 그 밖의 요청은 unsupported"
+            ),
+        },
+        "lookup_all": {
+            "type": "boolean",
+            "description": (
+                "전체 격자 데이터 조회면 true. 일부 필드 조회 또는 전체 "
+                "범위를 부정한 요청이면 false"
+            ),
+        },
+        "requested_fields": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": list(ALLOWED_GRID_FIELDS),
+            },
+            "description": (
+                "일부 조회에서 사용자가 요청한 지표만 순서대로 작성한다. "
+                "lookup_all=true, simulation, unsupported에서는 빈 배열이다."
+            ),
+        },
+        "excluded_scope": {
+            "type": "boolean",
+            "description": (
+                "전체·모두·모든·전부·다 같은 전체 범위 표현을 사용자가 "
+                "명시적으로 부정하거나 제외했으면 true"
+            ),
+        },
+        "changes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "type": "string",
+                        "enum": list(_SIMULATION_FIELDS),
+                        "description": (
+                            "green_ratio=녹지 비율, "
+                            "impervious_ratio=불투수 비율, "
+                            "park_area_within_500m=공원 면적"
+                        ),
+                    },
+                    "operation": {
+                        "type": "string",
+                        "enum": sorted(_SUPPORTED_OPERATIONS),
+                    },
+                    "value": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "description": (
+                            "사용자 원문에 표시된 수치 자체. %를 0~1로 "
+                            "미리 환산하지 않는다."
+                        ),
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": sorted(_SUPPORTED_UNITS),
+                    },
+                    "basis": {
+                        "type": "string",
+                        "enum": sorted(_SUPPORTED_BASES),
+                    },
+                    "source_text": {"type": "string"},
+                    "value_text": {
+                        "type": "string",
+                        "description": (
+                            "변경량 숫자와 단위가 실제로 나타난 원문의 가장 "
+                            "짧은 구간"
+                        ),
+                    },
+                },
+                "required": [
+                    "field",
+                    "operation",
+                    "value",
+                    "unit",
+                    "basis",
+                    "source_text",
+                    "value_text",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        "assumptions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "unresolved": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": sorted(_UNRESOLVED_CODES),
+            },
+            "description": (
+                "추측할 수 없는 항목의 코드만 작성한다. 자유 문장이나 내부 "
+                "추론은 작성하지 않는다."
+            ),
+        },
+    },
+    "required": [
+        "intent",
+        "lookup_all",
+        "requested_fields",
+        "excluded_scope",
+        "changes",
+        "assumptions",
+        "unresolved",
+    ],
+    "additionalProperties": False,
+}
 
-SYSTEM_PROMPT = """당신은 GA:ON Tool 라우터다.
-사용자에게 답변 문장을 작성하지 말고, 지원 요청이면 도구를 정확히 한 번 호출한다.
-- 현재 격자 지표·특성·데이터 조회: get_grid_data
-- 녹지율·불투수율·반경 500m 내 공원 면적 변경 후 모델 결과: run_simulation
-- 비율 변화량은 0~1 단위의 부호 있는 delta다. 5%p 증가는 0.05, 감소는 -0.05다.
-- %p가 아닌 % 변경 요청은 모호하므로 도구를 호출하지 않는다.
-- 공원 면적 변화량은 ㎡ 단위다.
-- 지원하지 않는 지표·정책 추천·모델 설명·문서 검색에는 도구를 호출하지 않는다.
+SYSTEM_PROMPT = """사용자 요청의 의미를 JSON schema로만 정규화한다.
+답변 문장이나 실제 실행 인자를 만들지 않는다.
+- 먼저 지원 범위를 판정한다. 요청 지표가 허용된 requested_fields 또는 지원 변경 field와 대응하지 않으면 다른 지표로 대체하지 말고 unsupported다.
+- simulation이면 lookup_all=false, requested_fields=[], excluded_scope=false로 두고 각 변경을 changes에 하나씩 둔다.
+- 녹지·녹지 비중은 green_ratio, 불투수·불투수 비중은 impervious_ratio, 공원 면적은 park_area_within_500m이다.
+- 일반 percent 또는 비율 문맥의 단위 없는 수치는 증감 방향이 명확하면 unit=percent, basis=direct로 두고 해당 해석을 assumptions에 한국어로 쓴다.
+- 명시적 %p는 percentage_point/direct, 현재 값의 일정 비율은 percent/relative_to_current, 공원 면적은 m2/direct다.
+- value는 원문 표면 수치를 그대로 쓴다. 예를 들어 5%와 5%p는 value=5이며 0.05로 환산하지 않는다.
+- 공원과 제곱미터 의미의 수치가 포함된 면적 변경은 simulation이다.
+- direct 변경에는 현재 값이 필요하지 않다.
+- 문맥상 명확한 오타는 assumptions에 남기고 정규화한다.
+- assumptions는 원문을 실제로 다르게 정규화하거나 단위를 가정한 경우에만 쓰며 명확한 현재값 조회에는 비운다.
+- 지시 대상·방향·수치 중 필요한 의미가 불명확할 때는 changes에 추측하지 않는다.
+- unresolved에는 자유 문장 대신 change_field, change_operation, change_value, change_unit, ambiguous_request 중 필요한 코드만 쓴다.
+- 각 source_text는 지표·방향·변경량이 나타난 원문 구간이고, value_text는 변경량 숫자와 단위가 나타난 가장 짧은 원문 구간이다.
+- 현재값 조회를 명시적으로 묻는 경우만 intent=lookup이다. 일부 조회는 lookup_all=false와 요청한 requested_fields를 사용한다.
+- 전체·모두·모든·전부 또는 독립된 "다"로 격자의 전체 데이터나 정보를 요구하면 intent=lookup, lookup_all=true, requested_fields=[]다.
+- 전체 범위 표현 뒤에 말고·제외·필요 없고·보여주지 말고처럼 전체 조회를 부정하면 excluded_scope=true, lookup_all=false이고 실제로 요청한 일부 필드만 requested_fields에 둔다.
+- 식생지수와 NDVI는 ndvi다. 허용 지표가 아닌 요청을 비슷한 requested_fields로 바꾸거나 추측하지 말고 unsupported로 둔다.
+- 인구·인구밀도처럼 허용 목록에 없는 지표는 unsupported다.
+- 조회에서 공원까지 거리는 nearest_park_distance_m, 500m 내 공원 면적은 park_area_within_500m이다.
+- 지원하지 않는 요청은 intent=unsupported, lookup_all=false, requested_fields=[], excluded_scope=false이며 changes를 비운다.
+예: "이 격자 데이터 모두 알려줘"는 intent=lookup, lookup_all=true, requested_fields=[], excluded_scope=false다.
+예: "모든 데이터 말고 녹지율만 알려줘"는 intent=lookup, lookup_all=false, requested_fields=["green_ratio"], excluded_scope=true다.
+예: "인구밀도를 알려줘"는 intent=unsupported, lookup_all=false, requested_fields=[], excluded_scope=false다.
+예: "그거 5플오 해줘"처럼 변경 대상과 방향이 불명확하면 intent=simulation, lookup_all=false, requested_fields=[], excluded_scope=false, changes=[], unresolved=["change_field","change_operation"]이다.
 """
 
 _GRID_ID_PATTERN = re.compile(r"(?<![\d_])\d{5}_\d{5}(?![\d_])")
@@ -59,69 +239,104 @@ _NUMBER_PATTERN = re.compile(
     r"(?P<number>[+\-−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)"
     r"(?![\d.])"
 )
-_ALL_GRID_DATA_PATTERNS = (
-    re.compile(r"(?:전체|모든)\s*(?:격자\s*)?(?:데이터|지표|특성)"),
-    re.compile(r"19\s*개\s*(?:데이터|지표|특성|필드)"),
+_PERCENTAGE_POINT_UNIT_PATTERN = re.compile(r"%\s*[pP]")
+_PERCENT_UNIT_PATTERN = re.compile(r"%(?!\s*[pP])")
+_M2_UNIT_PATTERN = re.compile(
+    r"(?:㎡|m\s*(?:²|\^?2)\b|제곱(?:미터)?)",
+    re.IGNORECASE,
 )
-_AMBIGUOUS_RATIO_CHANGE_PATTERN = re.compile(
-    r"\d+(?:\.\d+)?\s*%(?!\s*[pP])"
-    r".{0,20}(?:올리|높이|늘리|낮추|줄이|증가|감소|변경)",
-)
-_EXPLICIT_SIMULATION_PATTERN = re.compile(
-    r"\d+(?:\.\d+)?\s*(?:%\s*[pP]|㎡)"
-    r".{0,24}(?:올리|높이|늘리|낮추|줄이|증가|감소|변경)",
+_ADJACENT_UNIT_SUFFIX_PATTERN = re.compile(
+    r"^\s*(?:%\s*[pP]?|㎡|m\s*(?:²|\^?2)\b|제곱(?:미터)?)",
+    re.IGNORECASE,
 )
 _REASONING_PATTERNS = (
     re.compile(r"\b(?:okay|wait|let's|i need to|the user|according to rule)\b", re.I),
     re.compile(r"추론\s*과정"),
 )
-_UNSUPPORTED_SCOPE_PATTERNS = (
-    re.compile(
-        r"(?:정책|대책|방안).{0,20}"
-        r"(?:추천|제안|골라|선택|우선|최적|가장\s*(?:좋|효과)|어떤)",
-    ),
-    re.compile(
-        r"(?:추천|제안|최적|가장\s*(?:좋|효과)|어떤).{0,20}"
-        r"(?:정책|대책|방안)",
-    ),
-    re.compile(r"(?:random\s*forest|랜덤\s*포레스트|\bRF\b)", re.IGNORECASE),
-    re.compile(
-        r"(?:문서|자료|가이드|서비스\s*설명).{0,20}(?:검색|찾|조회)"
-        r"|(?:검색|찾|조회).{0,20}(?:문서|자료|가이드|서비스\s*설명)",
-    ),
-    re.compile(r"\bRAG\b", re.IGNORECASE),
-    re.compile(r"(?:인구\s*데이터|인구밀도|인구수)"),
-)
 
 
-def _compact_lookup_text(value: str) -> str:
-    return re.sub(r"\s+", "", value).casefold()
+@dataclass(frozen=True)
+class _NormalizedChange:
+    field: str
+    operation: str
+    value: float
+    unit: str
+    basis: str
+    source_text: str
+    value_text: str
+
+
+@dataclass(frozen=True)
+class _NormalizedRequest:
+    intent: str
+    lookup_all: bool
+    requested_fields: tuple[str, ...]
+    excluded_scope: bool
+    changes: tuple[_NormalizedChange, ...]
+    assumptions: tuple[str, ...]
+    unresolved: tuple[str, ...]
+
+
+def _normalized_router_text(value: Any, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ChatProtocolError(
+            f"Qwen 구조화 출력의 {field_name}이 문자열이 아닙니다."
+        )
+    normalized = " ".join(value.split())
+    if not normalized or len(normalized) > 500:
+        raise ChatProtocolError(
+            f"Qwen 구조화 출력의 {field_name}이 비어 있거나 너무 깁니다."
+        )
+    return normalized
+
+
+def _normalized_router_text_list(value: Any, field_name: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ChatProtocolError(
+            f"Qwen 구조화 출력의 {field_name}이 배열이 아닙니다."
+        )
+    normalized: list[str] = []
+    for item in value:
+        text = _normalized_router_text(item, field_name)
+        if text not in normalized:
+            normalized.append(text)
+    return tuple(normalized)
+
+
+def _lookup_field_is_grounded(message: str, field: str) -> bool:
+    """중앙 필드 메타데이터의 명칭이 사용자 원문에 실제로 있는지 확인한다."""
+
+    compact_message = "".join(message.split()).casefold()
+    spec = GRID_FIELD_SPECS[field]
+    raw_aliases = spec.get("aliases")
+    aliases = raw_aliases if isinstance(raw_aliases, (tuple, list)) else ()
+    terms = (field, str(spec["label"]), *(str(alias) for alias in aliases))
+    return any(
+        compact_term and compact_term in compact_message
+        for term in terms
+        if (compact_term := "".join(term.split()).casefold())
+    )
 
 
 def _recognized_lookup_fields(message: str) -> list[str]:
-    """질문의 확정된 별칭을 긴 표현 우선으로 모델 필드에 연결한다."""
+    """중앙 alias의 최장 비중첩 일치로 요청된 조회 필드를 확정한다."""
 
-    if any(pattern.search(message) for pattern in _ALL_GRID_DATA_PATTERNS):
-        return list(ALLOWED_GRID_FIELDS)
-
-    compact_message = _compact_lookup_text(message)
+    compact_message = "".join(message.split()).casefold()
     candidates: list[tuple[int, int, str]] = []
     for field in ALLOWED_GRID_FIELDS:
         spec = GRID_FIELD_SPECS[field]
-        terms = dict.fromkeys(
-            [
-                field,
-                str(spec["label"]),
-                *(str(alias) for alias in spec["aliases"]),
-            ]
-        )
+        raw_aliases = spec.get("aliases")
+        aliases = raw_aliases if isinstance(raw_aliases, (tuple, list)) else ()
+        terms = (field, str(spec["label"]), *(str(alias) for alias in aliases))
         for term in terms:
-            compact_term = _compact_lookup_text(term)
+            compact_term = "".join(term.split()).casefold()
             if not compact_term:
                 continue
             start = compact_message.find(compact_term)
             while start >= 0:
-                candidates.append((start, start + len(compact_term), field))
+                candidate = (start, start + len(compact_term), field)
+                if candidate not in candidates:
+                    candidates.append(candidate)
                 start = compact_message.find(compact_term, start + 1)
 
     accepted: list[tuple[int, int, str]] = []
@@ -130,15 +345,369 @@ def _recognized_lookup_fields(message: str) -> list[str]:
         key=lambda item: (-(item[1] - item[0]), item[0]),
     ):
         start, end, _ = candidate
-        if any(start < accepted_end and end > accepted_start for accepted_start, accepted_end, _ in accepted):
+        if any(
+            start < accepted_end and end > accepted_start
+            for accepted_start, accepted_end, _ in accepted
+        ):
             continue
         accepted.append(candidate)
 
-    ordered_fields: list[str] = []
+    ordered: list[str] = []
     for _, _, field in sorted(accepted, key=lambda item: item[0]):
-        if field not in ordered_fields:
-            ordered_fields.append(field)
-    return ordered_fields
+        if field not in ordered:
+            ordered.append(field)
+    return ordered
+
+
+def _simulation_field_is_grounded(source_text: str, field: str) -> bool:
+    compact_source = "".join(source_text.split()).casefold()
+    return _lookup_field_is_grounded(source_text, field) or any(
+        "".join(term.split()).casefold() in compact_source
+        for term in _SIMULATION_FIELD_TERMS[field]
+    )
+
+
+def _value_unit_evidence(original_message: str, value_text: str) -> str:
+    """숫자 바로 뒤에 붙은 명백한 단위만 value_text에 보완한다."""
+
+    starts: list[int] = []
+    start = original_message.find(value_text)
+    while start >= 0:
+        starts.append(start)
+        start = original_message.find(value_text, start + 1)
+    if len(starts) != 1:
+        return value_text
+
+    suffix = original_message[starts[0] + len(value_text):]
+    match = _ADJACENT_UNIT_SUFFIX_PATTERN.match(suffix)
+    return value_text + match.group(0) if match is not None else value_text
+
+
+def _scope_signals(message: str) -> tuple[bool, bool]:
+    """소수의 안정적인 전체 범위 표현과 그 부정 여부만 판정한다."""
+
+    normalized_message = " ".join(message.split()).casefold()
+    compact_message = "".join(normalized_message.split())
+    has_full_scope = any(
+        term in compact_message for term in _FULL_SCOPE_TERMS
+    ) or _STANDALONE_ALL_PATTERN.search(normalized_message) is not None
+    has_excluded_scope = has_full_scope and any(
+        term in compact_message for term in _EXCLUDED_SCOPE_TERMS
+    )
+    return has_full_scope, has_excluded_scope
+
+
+def _parse_normalized_request(
+    content: str,
+    original_message: str,
+) -> _NormalizedRequest:
+    """Qwen JSON schema 출력을 다시 엄격하게 검증한다."""
+
+    try:
+        decoded = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ChatProtocolError(
+            "Qwen 구조화 출력이 올바른 JSON이 아닙니다."
+        ) from exc
+    if not isinstance(decoded, Mapping):
+        raise ChatProtocolError("Qwen 구조화 출력이 객체가 아닙니다.")
+
+    required_keys = {
+        "intent",
+        "lookup_all",
+        "requested_fields",
+        "excluded_scope",
+        "changes",
+        "assumptions",
+        "unresolved",
+    }
+    if set(decoded) != required_keys:
+        raise ChatProtocolError(
+            "Qwen 구조화 출력의 최상위 필드가 계약과 일치하지 않습니다."
+        )
+
+    intent = decoded.get("intent")
+    if not isinstance(intent, str) or intent not in _SUPPORTED_INTENTS:
+        raise ChatProtocolError("Qwen 구조화 출력의 intent가 올바르지 않습니다.")
+
+    raw_lookup_all = decoded.get("lookup_all")
+    if not isinstance(raw_lookup_all, bool):
+        raise ChatProtocolError(
+            "Qwen 구조화 출력의 lookup_all이 불리언이 아닙니다."
+        )
+    raw_excluded_scope = decoded.get("excluded_scope")
+    if not isinstance(raw_excluded_scope, bool):
+        raise ChatProtocolError(
+            "Qwen 구조화 출력의 excluded_scope가 불리언이 아닙니다."
+        )
+
+    raw_requested_fields = decoded.get("requested_fields")
+    if not isinstance(raw_requested_fields, list):
+        raise ChatProtocolError(
+            "Qwen 구조화 출력의 requested_fields가 배열이 아닙니다."
+        )
+    requested_fields: list[str] = []
+    for field in raw_requested_fields:
+        if not isinstance(field, str) or field not in ALLOWED_GRID_FIELDS:
+            raise ChatProtocolError(
+                "Qwen 구조화 출력에 지원하지 않는 조회 필드가 있습니다."
+            )
+        if field not in requested_fields:
+            requested_fields.append(field)
+
+    assumptions = list(
+        _normalized_router_text_list(decoded.get("assumptions"), "assumptions")
+    )
+    raw_unresolved = decoded.get("unresolved")
+    if not isinstance(raw_unresolved, list):
+        raise ChatProtocolError(
+            "Qwen 구조화 출력의 unresolved가 배열이 아닙니다."
+        )
+    unresolved: list[str] = []
+    for code in raw_unresolved:
+        if not isinstance(code, str) or code not in _UNRESOLVED_CODES:
+            raise ChatProtocolError(
+                "Qwen 구조화 출력의 unresolved 코드가 올바르지 않습니다."
+            )
+        if code not in unresolved:
+            unresolved.append(code)
+
+    raw_changes = decoded.get("changes")
+    if not isinstance(raw_changes, list):
+        raise ChatProtocolError("Qwen 구조화 출력의 changes가 배열이 아닙니다.")
+
+    change_keys = {
+        "field",
+        "operation",
+        "value",
+        "unit",
+        "basis",
+        "source_text",
+        "value_text",
+    }
+    normalized_original_message = " ".join(original_message.split())
+    changes: list[_NormalizedChange] = []
+    duplicate_fields: set[str] = set()
+    for raw_change in raw_changes:
+        if not isinstance(raw_change, Mapping) or set(raw_change) != change_keys:
+            raise ChatProtocolError(
+                "Qwen 구조화 출력의 change 필드가 계약과 일치하지 않습니다."
+            )
+        field = raw_change.get("field")
+        operation = raw_change.get("operation")
+        unit = raw_change.get("unit")
+        basis = raw_change.get("basis")
+        value = raw_change.get("value")
+        source_text = _normalized_router_text(
+            raw_change.get("source_text"),
+            "source_text",
+        )
+        value_text = _normalized_router_text(
+            raw_change.get("value_text"),
+            "value_text",
+        )
+        if source_text not in normalized_original_message:
+            unresolved.append("change_source")
+            continue
+        if value_text not in normalized_original_message:
+            unresolved.append("change_value")
+            continue
+
+        if not isinstance(field, str) or field not in _SIMULATION_FIELDS:
+            raise ChatProtocolError("Qwen이 지원하지 않는 변경 필드를 반환했습니다.")
+        value_unit_evidence = _value_unit_evidence(
+            normalized_original_message,
+            value_text,
+        )
+        park_value_unit = (
+            _M2_UNIT_PATTERN.search(value_unit_evidence) is not None
+        )
+        field_is_grounded = _simulation_field_is_grounded(source_text, field)
+        if not field_is_grounded or (
+            field != "park_area_within_500m" and park_value_unit
+        ):
+            unresolved.append("change_field")
+            continue
+        if (
+            not isinstance(operation, str)
+            or operation not in _SUPPORTED_OPERATIONS
+        ):
+            raise ChatProtocolError("Qwen이 지원하지 않는 변경 연산을 반환했습니다.")
+        if not isinstance(unit, str) or unit not in _SUPPORTED_UNITS:
+            raise ChatProtocolError("Qwen이 지원하지 않는 변경 단위를 반환했습니다.")
+        if not isinstance(basis, str) or basis not in _SUPPORTED_BASES:
+            raise ChatProtocolError("Qwen이 지원하지 않는 변경 기준을 반환했습니다.")
+        if (
+            not isinstance(value, Real)
+            or isinstance(value, bool)
+            or not math.isfinite(float(value))
+            or float(value) <= 0
+        ):
+            unresolved.append("change_value")
+            continue
+
+        value_matches = list(_NUMBER_PATTERN.finditer(value_text))
+        if len(value_matches) != 1:
+            unresolved.append("change_value")
+            continue
+        value_token = value_matches[0].group("number")
+        normalized_value_token = (
+            value_token.replace("−", "-").replace(",", "")
+        )
+        try:
+            source_value = float(normalized_value_token)
+        except ValueError:
+            unresolved.append("change_value")
+            continue
+        if not math.isclose(
+            float(value),
+            abs(source_value),
+            rel_tol=0,
+            abs_tol=1e-12,
+        ):
+            unresolved.append("change_value")
+            continue
+        if (
+            normalized_value_token.startswith(("-", "−"))
+            and operation != "decrease"
+        ) or (
+            normalized_value_token.startswith("+")
+            and operation != "increase"
+        ):
+            unresolved.append("change_operation")
+            continue
+
+        if field == "park_area_within_500m":
+            if not park_value_unit:
+                unresolved.append("change_unit")
+                continue
+            unit = "m2"
+        elif _PERCENTAGE_POINT_UNIT_PATTERN.search(value_unit_evidence):
+            unit = "percentage_point"
+        elif _PERCENT_UNIT_PATTERN.search(value_unit_evidence):
+            unit = "percent"
+
+        if field == "park_area_within_500m":
+            if unit != "m2" or basis != "direct":
+                unresolved.append("change_unit")
+                continue
+            if operation == "decrease":
+                unresolved.append("park_area_decrease")
+                continue
+        else:
+            if unit not in {"percent", "percentage_point"}:
+                unresolved.append("change_unit")
+                continue
+            if unit == "percentage_point" and basis != "direct":
+                unresolved.append("change_unit")
+                continue
+
+        if field in duplicate_fields or any(
+            change.field == field for change in changes
+        ):
+            duplicate_fields.add(field)
+            changes = [change for change in changes if change.field != field]
+            unresolved.append("conflicting_changes")
+            continue
+
+        changes.append(
+            _NormalizedChange(
+                field=field,
+                operation=operation,
+                value=float(value),
+                unit=unit,
+                basis=basis,
+                source_text=source_text,
+                value_text=value_text,
+            )
+        )
+
+    duplicated_sources = {
+        change.source_text
+        for change in changes
+        if sum(
+            candidate.source_text == change.source_text
+            for candidate in changes
+        )
+        > 1
+    }
+    if duplicated_sources:
+        changes = [
+            change
+            for change in changes
+            if change.source_text not in duplicated_sources
+        ]
+        unresolved.append("conflicting_changes")
+
+    has_full_scope, has_excluded_scope = _scope_signals(original_message)
+    lookup_all = raw_lookup_all
+    excluded_scope = raw_excluded_scope
+
+    if intent == "simulation":
+        if requested_fields or lookup_all or excluded_scope:
+            raise ChatProtocolError(
+                "시뮬레이션 구조화 출력에 조회 정보가 포함되었습니다."
+            )
+        if not changes and not unresolved:
+            unresolved.extend(
+                ("change_field", "change_operation", "change_value")
+            )
+    elif intent == "lookup":
+        if changes:
+            raise ChatProtocolError(
+                "현재값 조회 구조화 출력에 changes가 포함되었습니다."
+            )
+        assumptions = []
+        grounded_fields = _recognized_lookup_fields(original_message)
+        excluded_scope = has_excluded_scope
+
+        if has_full_scope and not has_excluded_scope:
+            lookup_all = True
+            requested_fields = []
+        elif has_excluded_scope:
+            lookup_all = False
+            requested_fields = grounded_fields
+            if not requested_fields and not unresolved:
+                unresolved.append("lookup_field")
+        elif lookup_all:
+            if requested_fields:
+                raise ChatProtocolError(
+                    "전체 조회 구조화 출력에 개별 requested_fields가 포함되었습니다."
+                )
+        else:
+            if grounded_fields:
+                requested_fields = grounded_fields
+            else:
+                requested_fields = []
+                intent = "unsupported"
+    else:
+        if changes or requested_fields or lookup_all:
+            raise ChatProtocolError(
+                "지원하지 않는 요청의 구조화 출력에 실행 정보가 포함되었습니다."
+            )
+        grounded_fields = _recognized_lookup_fields(original_message)
+        if has_full_scope and not has_excluded_scope:
+            intent = "lookup"
+            lookup_all = True
+            requested_fields = []
+            excluded_scope = False
+        elif has_excluded_scope and grounded_fields:
+            intent = "lookup"
+            lookup_all = False
+            requested_fields = grounded_fields
+            excluded_scope = True
+        else:
+            excluded_scope = has_excluded_scope
+
+    return _NormalizedRequest(
+        intent=intent,
+        lookup_all=lookup_all,
+        requested_fields=tuple(requested_fields),
+        excluded_scope=excluded_scope,
+        changes=tuple(changes),
+        assumptions=tuple(dict.fromkeys(assumptions)),
+        unresolved=tuple(dict.fromkeys(unresolved)),
+    )
 
 
 class ChatServiceError(RuntimeError):
@@ -204,6 +773,13 @@ def _new_chat_metrics() -> dict[str, Any]:
         "eval_duration": None,
         "prompt_eval_count": None,
         "eval_count": None,
+        "intent": None,
+        "lookup_all": False,
+        "requested_fields": [],
+        "excluded_scope": False,
+        "validation_result": "not_run",
+        "final_branch": None,
+        "actual_used_tools": [],
         "status": "error",
     }
 
@@ -311,8 +887,8 @@ def _ollama_chat(
         return client.chat(
             model=MODEL_NAME,
             messages=messages,
-            tools=TOOL_SCHEMAS,
-            think=True,
+            format=ROUTER_OUTPUT_SCHEMA,
+            think=False,
             options={
                 "temperature": 0,
                 "num_predict": ROUTER_NUM_PREDICT,
@@ -334,49 +910,6 @@ def _response_message(response: Any) -> Any:
     if message is None:
         raise ChatProtocolError("Qwen 응답에 assistant 메시지가 없습니다.")
     return message
-
-
-def _tool_calls(message: Any) -> list[Any]:
-    if isinstance(message, Mapping):
-        return list(message.get("tool_calls") or [])
-    return list(getattr(message, "tool_calls", None) or [])
-
-
-def _tool_name_and_arguments(tool_call: Any) -> tuple[str, dict[str, Any]]:
-    function = (
-        tool_call.get("function")
-        if isinstance(tool_call, Mapping)
-        else getattr(tool_call, "function", None)
-    )
-    if function is None:
-        raise ChatProtocolError("Qwen이 잘못된 도구 호출 형식을 반환했습니다.")
-
-    if isinstance(function, Mapping):
-        name = function.get("name")
-        raw_arguments = function.get("arguments", {})
-    else:
-        name = getattr(function, "name", None)
-        raw_arguments = getattr(function, "arguments", {})
-
-    if not isinstance(name, str) or not name:
-        raise ChatProtocolError("Qwen의 도구 호출에 도구명이 없습니다.")
-
-    if isinstance(raw_arguments, str):
-        try:
-            decoded_arguments = json.loads(raw_arguments)
-        except json.JSONDecodeError as exc:
-            raise ChatProtocolError(
-                "Qwen의 도구 인자가 올바른 JSON이 아닙니다."
-            ) from exc
-        if not isinstance(decoded_arguments, Mapping):
-            raise ChatProtocolError("Qwen의 도구 인자가 객체 형식이 아닙니다.")
-        arguments = dict(decoded_arguments)
-    elif isinstance(raw_arguments, Mapping):
-        arguments = dict(raw_arguments)
-    else:
-        raise ChatProtocolError("Qwen의 도구 인자가 객체 형식이 아닙니다.")
-
-    return name, arguments
 
 
 def _message_content(message: Any) -> str:
@@ -576,6 +1109,12 @@ def _validate_no_reasoning_trace(answer: str) -> None:
         raise ChatProtocolError("최종 답변에 내부 추론 과정이 포함되었습니다.")
 
 
+def _compact_lookup_text(value: str) -> str:
+    """최종 답변의 등록 필드명 비교를 위한 공백 정리."""
+
+    return re.sub(r"\s+", "", value).casefold()
+
+
 def _field_term_match(answer: str, field: str) -> re.Match[str] | None:
     spec = GRID_FIELD_SPECS[field]
     terms = dict.fromkeys(
@@ -619,7 +1158,7 @@ def _validate_grid_answer(
     requested_fields = [str(field) for field in raw_requested_fields]
     if (
         len(set(requested_fields)) != len(requested_fields)
-        or any(field not in GRID_FIELD_SPECS for field in requested_fields)
+        or any(field not in ALLOWED_GRID_FIELDS for field in requested_fields)
     ):
         raise ChatProtocolError("조회 도구 결과의 requested_fields가 올바르지 않습니다.")
     if set(values) != set(requested_fields):
@@ -1005,10 +1544,6 @@ def _resolved_grid_id(message: str, selected_grid_id: str | None) -> tuple[str, 
     return normalized_message, normalized_selected_grid_id
 
 
-def _is_unsupported_scope(message: str) -> bool:
-    return any(pattern.search(message) for pattern in _UNSUPPORTED_SCOPE_PATTERNS)
-
-
 def _supported_scope_result(
     *,
     answer: str = SUPPORTED_SCOPE_ANSWER,
@@ -1032,34 +1567,163 @@ def _supported_scope_result(
     )
 
 
+def _clarification_answer(unresolved: tuple[str, ...]) -> str:
+    lines = ["다음 내용만 확인해 주세요:"]
+    lines.extend(
+        f"- {_CLARIFICATION_BY_CODE[item]}"
+        for item in unresolved
+    )
+    return "\n".join(lines)
+
+
+def _display_router_number(value: float) -> str:
+    return f"{value:g}"
+
+
+def _append_assumptions(answer: str, assumptions: list[str]) -> str:
+    if not assumptions:
+        return answer
+    lines = [answer, "해석 가정:"]
+    lines.extend(f"- {assumption}" for assumption in assumptions)
+    return "\n".join(lines)
+
+
+def _safe_simulation_assumptions(
+    normalized_request: _NormalizedRequest,
+) -> list[str]:
+    """Qwen의 assumption 신호를 검증된 구조에 기반한 문장으로 재작성한다."""
+
+    if not normalized_request.assumptions:
+        return []
+
+    safe: list[str] = []
+    for change in normalized_request.changes:
+        label = str(GRID_FIELD_SPECS[change.field]["label"])
+        direction = "증가" if change.operation == "increase" else "감소"
+        value = _display_router_number(change.value)
+        if change.field == "park_area_within_500m":
+            normalized_change = f"{value}㎡ {direction}"
+        elif change.basis == "relative_to_current":
+            normalized_change = f"현재값의 {value}% {direction}"
+        else:
+            normalized_change = f"{value}%p {direction}"
+        safe.append(
+            f'"{change.source_text}" 표현을 {label} '
+            f"{normalized_change} 요청으로 정규화했습니다."
+        )
+    return list(dict.fromkeys(safe))
+
+
+def _prepare_simulation_arguments(
+    normalized_request: _NormalizedRequest,
+    grid_id: str,
+) -> tuple[dict[str, Any], list[str], dict[str, Any] | None]:
+    """검증된 의미 구조에서 기존 run_simulation 인자를 계산한다."""
+
+    tool_arguments: dict[str, Any] = {
+        "grid_id": grid_id,
+        "green_ratio_delta": 0.0,
+        "impervious_ratio_delta": 0.0,
+        "park_area_delta": 0.0,
+    }
+    assumptions = _safe_simulation_assumptions(normalized_request)
+    relative_fields = [
+        change.field
+        for change in normalized_request.changes
+        if change.basis == "relative_to_current"
+    ]
+    current_values: Mapping[str, Any] = {}
+    if relative_fields:
+        lookup_function = TOOL_FUNCTIONS["get_grid_data"]
+        try:
+            raw_lookup_result = lookup_function(
+                grid_id=grid_id,
+                fields=list(dict.fromkeys(relative_fields)),
+            )
+        except Exception as exc:
+            raise ChatProtocolError(
+                "상대 변경 계산에 필요한 현재값을 조회할 수 없습니다."
+            ) from exc
+        if not isinstance(raw_lookup_result, Mapping):
+            raise ChatProtocolError(
+                "상대 변경 계산용 조회 결과가 올바른 객체가 아닙니다."
+            )
+        if raw_lookup_result.get("success") is not True:
+            error = raw_lookup_result.get("error")
+            error_text = (
+                str(error).strip()
+                if isinstance(error, str) and error.strip()
+                else "상대 변경 계산에 필요한 현재값을 조회할 수 없습니다."
+            )
+            return (
+                tool_arguments,
+                assumptions,
+                {
+                    "success": False,
+                    "grid_id": grid_id,
+                    "error": error_text,
+                },
+            )
+        raw_values = raw_lookup_result.get("values")
+        if not isinstance(raw_values, Mapping):
+            raise ChatProtocolError(
+                "상대 변경 계산용 조회 결과에 values가 없습니다."
+            )
+        current_values = raw_values
+
+    for change in normalized_request.changes:
+        label = str(GRID_FIELD_SPECS[change.field]["label"])
+        if change.field == "park_area_within_500m":
+            magnitude = change.value
+        elif change.unit == "percentage_point":
+            magnitude = change.value / 100.0
+        elif change.basis == "relative_to_current":
+            raw_current = current_values.get(change.field)
+            if (
+                not isinstance(raw_current, Real)
+                or isinstance(raw_current, bool)
+                or not math.isfinite(float(raw_current))
+            ):
+                raise ChatProtocolError(
+                    f"{label}의 현재값이 유한 숫자가 아닙니다."
+                )
+            magnitude = float(raw_current) * change.value / 100.0
+            assumptions.append(
+                f"현재 {label} 값의 {_display_router_number(change.value)}%에 "
+                "해당하는 상대 변경으로 적용했습니다."
+            )
+        else:
+            magnitude = change.value / 100.0
+            assumptions.append(
+                f"{label}의 {_display_router_number(change.value)}% 표현을 "
+                "동일한 수치의 %p 변경으로 적용했습니다."
+            )
+
+        delta = magnitude if change.operation == "increase" else -magnitude
+        if not math.isfinite(delta):
+            raise ChatProtocolError(
+                f"{label}의 계산된 변경값이 유한 숫자가 아닙니다."
+            )
+        parameter = _SIMULATION_ARGUMENT_BY_FIELD[change.field]
+        tool_arguments[parameter] = delta
+
+    return (
+        tool_arguments,
+        list(dict.fromkeys(assumptions)),
+        None,
+    )
+
+
 def _run_chat_with_client(
     client: Any,
     message: str,
     resolved_grid_id: str,
     metrics: dict[str, Any],
 ) -> ChatResult:
-    recognized_lookup_fields = _recognized_lookup_fields(message)
-    lookup_field_hint = ""
-    if _EXPLICIT_SIMULATION_PATTERN.search(message):
-        lookup_field_hint = (
-            " 이 요청은 정책 변경 시뮬레이션이다. run_simulation을 즉시 "
-            "호출하고 질문에서 변경값의 부호와 크기만 추출한다."
-        )
-    elif recognized_lookup_fields:
-        lookup_field_hint = (
-            " 이 요청은 현재 데이터 조회다. get_grid_data를 즉시 호출하며 "
-            "fields는 정확히 "
-            f"{json.dumps(recognized_lookup_fields, ensure_ascii=False)}로 전달한다."
-        )
-    request_prompt = (
-        f"{SYSTEM_PROMPT}\n"
-        f"사용할 grid_id는 {resolved_grid_id}이다. "
-        "도구 인자에서 이 값을 글자 하나도 변경하거나 생략하지 않는다."
-        f"{lookup_field_hint}"
-    )
+    router_message = _GRID_ID_PATTERN.sub("", message).strip()
     messages: list[Any] = [
-        {"role": "system", "content": request_prompt},
-        {"role": "user", "content": message},
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": router_message},
     ]
 
     router_started = time.perf_counter()
@@ -1075,44 +1739,67 @@ def _run_chat_with_client(
     first_message = _response_message(first_response)
     first_thinking = _message_thinking(first_message)
     first_content = _message_content(first_message)
+    if not first_content:
+        raise ChatProtocolError("Qwen이 구조화 요청을 반환하지 않았습니다.")
+    normalized_request = _parse_normalized_request(
+        first_content,
+        router_message,
+    )
+    metrics.update(
+        {
+            "intent": normalized_request.intent,
+            "lookup_all": normalized_request.lookup_all,
+            "requested_fields": list(normalized_request.requested_fields),
+            "excluded_scope": normalized_request.excluded_scope,
+            "validation_result": "accepted",
+        }
+    )
 
-    calls = _tool_calls(first_message)
-    if not calls:
+    if normalized_request.unresolved:
+        metrics["final_branch"] = "clarification"
+        return _supported_scope_result(
+            answer=_clarification_answer(normalized_request.unresolved),
+            first_thinking=first_thinking,
+            first_content=first_content,
+            metrics=metrics,
+        )
+    if normalized_request.intent == "unsupported":
+        metrics["final_branch"] = "supported_scope"
         return _supported_scope_result(
             first_thinking=first_thinking,
             first_content=first_content,
             metrics=metrics,
         )
-    if len(calls) != 1:
-        raise ChatProtocolError("Qwen은 도구를 정확히 한 번 호출해야 합니다.")
-
-    tool_name, tool_arguments = _tool_name_and_arguments(calls[0])
-    if tool_name not in TOOL_FUNCTIONS:
-        raise ChatProtocolError("Qwen이 허용되지 않은 도구를 호출했습니다.")
-    if tool_arguments.get("grid_id") != resolved_grid_id:
-        raise ChatProtocolError(
-            "Qwen이 확정된 grid_id와 다른 값을 도구에 전달했습니다."
-        )
-    if tool_name == "get_grid_data" and recognized_lookup_fields:
-        raw_fields = tool_arguments.get("fields")
-        if raw_fields is None:
-            actual_fields = list(DEFAULT_GRID_FIELDS)
-        elif isinstance(raw_fields, list) and all(
-            isinstance(field, str) for field in raw_fields
-        ):
-            actual_fields = list(dict.fromkeys(raw_fields))
-        else:
-            actual_fields = []
-        if actual_fields != recognized_lookup_fields:
-            raise ChatProtocolError(
-                "Qwen이 사용자가 요청한 조회 fields를 정확히 전달하지 않았습니다."
-            )
-
+    tool_name = (
+        "get_grid_data"
+        if normalized_request.intent == "lookup"
+        else "run_simulation"
+    )
     metrics["tool_name"] = tool_name
     tool_function = TOOL_FUNCTIONS[tool_name]
     tool_started = time.perf_counter()
+    tool_arguments: dict[str, Any] = {"grid_id": resolved_grid_id}
     try:
-        raw_tool_result = tool_function(**tool_arguments)
+        if normalized_request.intent == "lookup":
+            tool_arguments["fields"] = (
+                list(ALLOWED_GRID_FIELDS)
+                if normalized_request.lookup_all
+                else list(normalized_request.requested_fields)
+            )
+            assumptions = []
+            preparation_error = None
+        else:
+            tool_arguments, assumptions, preparation_error = (
+                _prepare_simulation_arguments(
+                    normalized_request,
+                    resolved_grid_id,
+                )
+            )
+        raw_tool_result = (
+            preparation_error
+            if preparation_error is not None
+            else tool_function(**tool_arguments)
+        )
     except TypeError:
         raw_tool_result = {
             "success": False,
@@ -1133,6 +1820,8 @@ def _run_chat_with_client(
     formatter_started = time.perf_counter()
     try:
         final_content = _format_tool_answer(tool_name, tool_result)
+        if tool_result.get("success") is True:
+            final_content = _append_assumptions(final_content, assumptions)
     finally:
         metrics["answer_format_seconds"] = round(
             time.perf_counter() - formatter_started,
@@ -1152,7 +1841,7 @@ def _run_chat_with_client(
     )
     result = ChatResult(
         answer=final_content,
-        used_tools=[tool_name],
+        used_tools=[tool_name] if tool_result.get("success") is True else [],
         tool_data=tool_result,
         warnings=warnings,
         limitations=limitations,
@@ -1163,9 +1852,17 @@ def _run_chat_with_client(
         final_content=final_content,
         metrics=metrics,
     )
+    metrics["final_branch"] = "tool_result"
+    metrics["actual_used_tools"] = list(result.used_tools)
     validation_started = time.perf_counter()
     try:
-        _validate_final_answer(final_content, tool_name, tool_result)
+        validation_tool_result = dict(tool_result)
+        validation_tool_result["routing_assumptions"] = assumptions
+        _validate_final_answer(
+            final_content,
+            tool_name,
+            validation_tool_result,
+        )
     except ChatProtocolError as exc:
         exc.result = result
         raise
@@ -1196,14 +1893,7 @@ def run_chat(
             message,
             selected_grid_id,
         )
-        if _AMBIGUOUS_RATIO_CHANGE_PATTERN.search(normalized_message):
-            result = _supported_scope_result(
-                answer=AMBIGUOUS_RATIO_CHANGE_ANSWER,
-                metrics=metrics,
-            )
-        elif _is_unsupported_scope(normalized_message):
-            result = _supported_scope_result(metrics=metrics)
-        elif client is not None:
+        if client is not None:
             result = _run_chat_with_client(
                 client,
                 normalized_message,
