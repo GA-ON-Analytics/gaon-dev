@@ -2,11 +2,17 @@ name: CD - Deploy to Oracle
 
 on:
   push:
-    branches: ['feat/#22-github-actions-deploy']
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-oracle
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: 소스 체크아웃
         uses: actions/checkout@v5
