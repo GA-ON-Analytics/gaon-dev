@@ -1,0 +1,99 @@
+name: CD - Deploy to Oracle
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-oracle
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v5
+
+      - name: Node 준비
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 프론트 빌드
+        run: npm run build
+
+      - name: 빌드 결과 확인
+        run: |
+          ls -lh dist
+          ls -lh dist/assets
+          du -sh dist/dashboard
+
+      - name: SSH 키 준비
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "키 파일 권한:"
+          ls -l ~/.ssh/deploy_key
+
+      - name: 서버 접속 테스트
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" 'whoami; hostname; sudo -n systemctl is-active gaon-api; which rsync'
+
+      - name: 서버로 전송
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key"
+          TARGET="${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
+
+          echo "===== ① backend ====="
+          rsync -az --delete --stats \
+            --exclude='__pycache__' --exclude='*.pyc' \
+            -e "$SSH" backend/ "$TARGET:/srv/gaon/backend/"
+
+          echo ""
+          echo "===== ② dist (geojson 제외) ====="
+          rsync -az --delete --stats --exclude='dashboard' \
+            -e "$SSH" dist/ "$TARGET:/srv/gaon/dist/"
+
+          echo ""
+          echo "===== ③ dashboard geojson ====="
+          rsync -az --delete --stats --size-only \
+            -e "$SSH" dist/dashboard/ "$TARGET:/srv/gaon/dist/dashboard/"
+
+      - name: 서비스 재시작 및 검증
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" bash -s <<'REMOTE'
+          set -e
+          echo "--- 재시작 ---"
+          sudo systemctl restart gaon-api
+
+          echo "--- health 대기 ---"
+          for i in $(seq 1 20); do
+              sleep 3
+              if curl -sf http://127.0.0.1/api/health > /dev/null; then
+                  echo "health OK ($((i * 3))초 만에)"
+                  break
+              fi
+              if [ "$i" -eq 20 ]; then
+                  echo "health 실패 — 서비스 로그:"
+                  sudo journalctl -u gaon-api -n 40 --no-pager
+                  exit 1
+              fi
+          done
+
+          echo "--- 모델 검증 ---"
+          RESULT=$(curl -s -X POST http://127.0.0.1/api/simulate \
+            -H 'Content-Type: application/json' \
+            -d '{"grid_id":"11230_00001","changes":{"green_ratio":0.05}}')
+          echo "$RESULT"
+          echo "$RESULT" | grep -q '"delta_c"' || { echo "delta_c 없음 — 모델 이상"; exit 1; }
+          echo "--- 배포 검증 통과 ---"
+          REMOTE
