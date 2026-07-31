@@ -61,3 +61,33 @@ jobs:
           echo "===== ③ dashboard geojson ====="
           rsync -az --delete --stats --size-only \
             -e "$SSH" dist/dashboard/ "$TARGET:/srv/gaon/dist/dashboard/"
+
+      - name: 서비스 재시작 및 검증
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" bash -s <<'REMOTE'
+          set -e
+          echo "--- 재시작 ---"
+          sudo systemctl restart gaon-api
+
+          echo "--- health 대기 ---"
+          for i in $(seq 1 20); do
+              sleep 3
+              if curl -sf http://127.0.0.1/api/health > /dev/null; then
+                  echo "health OK ($((i * 3))초 만에)"
+                  break
+              fi
+              if [ "$i" -eq 20 ]; then
+                  echo "health 실패 — 서비스 로그:"
+                  sudo journalctl -u gaon-api -n 40 --no-pager
+                  exit 1
+              fi
+          done
+
+          echo "--- 모델 검증 ---"
+          RESULT=$(curl -s -X POST http://127.0.0.1/api/simulate \
+            -H 'Content-Type: application/json' \
+            -d '{"grid_id":"11230_00001","changes":{"green_ratio":0.05}}')
+          echo "$RESULT"
+          echo "$RESULT" | grep -q '"delta_c"' || { echo "delta_c 없음 — 모델 이상"; exit 1; }
+          echo "--- 배포 검증 통과 ---"
+          REMOTE
