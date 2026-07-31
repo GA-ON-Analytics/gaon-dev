@@ -41,3 +41,23 @@ jobs:
       - name: 서버 접속 테스트
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" 'whoami; hostname; sudo -n systemctl is-active gaon-api; which rsync'
+
+      - name: 전송 대상 확인 (dry-run)
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key"
+          TARGET="${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
+
+          echo "===== ① backend ====="
+          rsync -azi --delete --dry-run \
+            --exclude='__pycache__' --exclude='*.pyc' \
+            -e "$SSH" backend/ "$TARGET:/srv/gaon/backend/"
+
+          echo ""
+          echo "===== ② dist (geojson 제외) ====="
+          rsync -azi --delete --dry-run --exclude='dashboard' \
+            -e "$SSH" dist/ "$TARGET:/srv/gaon/dist/"
+
+          echo ""
+          echo "===== ③ dashboard geojson (size-only) ====="
+          rsync -azi --delete --dry-run --size-only \
+            -e "$SSH" dist/dashboard/ "$TARGET:/srv/gaon/dist/dashboard/"
