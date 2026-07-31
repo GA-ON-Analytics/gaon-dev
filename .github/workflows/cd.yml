@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 소스 체크아웃
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Node 준비
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -28,3 +28,16 @@ jobs:
           ls -lh dist
           ls -lh dist/assets
           du -sh dist/dashboard
+
+      - name: SSH 키 준비
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "키 파일 권한:"
+          ls -l ~/.ssh/deploy_key
+
+      - name: 서버 접속 테스트
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" 'whoami; hostname; sudo -n systemctl is-active gaon-api; which rsync'
