@@ -8,5 +8,23 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: 인사
-        run: echo "워크플로가 실행됐습니다"
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node 준비
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 프론트 빌드
+        run: npm run build
+
+      - name: 빌드 결과 확인
+        run: |
+          ls -lh dist
+          ls -lh dist/assets
+          du -sh dist/dashboard
