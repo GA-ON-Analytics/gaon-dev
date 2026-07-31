@@ -88,6 +88,19 @@ COMBINED_IMPLICIT_UNIT_QUESTION = (
     "녹지 한 5 정도 높이고 불투수는 3 낮춰봐"
 )
 AMBIGUOUS_PLUS_FIVE_QUESTION = "그거 5플오 해줘"
+SEMANTIC_GREEN_LOOKUP_QUESTION = "녹지가 차지하는 비중 알려줘"
+SEMANTIC_AVG_FLOOR_QUESTION = "건물들이 평균적으로 몇 층이야"
+SEMANTIC_MAX_FLOOR_QUESTION = "가장 높은 건물은 몇 층이야"
+SEMANTIC_ROAD_QUESTION = "도로가 전체 면적에서 차지하는 정도"
+SEMANTIC_IMPERVIOUS_QUESTION = "물이 안 스며드는 땅의 비율"
+SEMANTIC_NDVI_QUESTION = "식생이 얼마나 푸른지"
+SEMANTIC_ALBEDO_QUESTION = "햇빛을 얼마나 반사하는 표면이야"
+AMBIGUOUS_PLANT_QUESTION = "식물이 얼마나 많은지 알려줘"
+AMBIGUOUS_BUILDING_HEIGHT_QUESTION = "건물 높이 알려줘"
+SEMANTIC_GREEN_SIMULATION_QUESTION = "녹지가 차지하는 비율을 5%p 높여줘"
+SEMANTIC_IMPERVIOUS_SIMULATION_QUESTION = (
+    "물이 안 스며드는 면적을 3%p 낮춰줘"
+)
 NO_TOOL_EXPECTED = "__no_tool__"
 DEFAULT_QUESTION = LOOKUP_QUESTION
 
@@ -468,6 +481,156 @@ GENERAL_LOOKUP_ROUTING_CASES = (
     ),
 )
 
+SEMANTIC_ROUTING_CASES = (
+    (
+        SEMANTIC_GREEN_LOOKUP_QUESTION,
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["green_ratio"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        SEMANTIC_AVG_FLOOR_QUESTION,
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["avg_ground_floor_count"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        SEMANTIC_MAX_FLOOR_QUESTION,
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["max_ground_floor_count"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        SEMANTIC_ROAD_QUESTION,
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["road_ratio"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        SEMANTIC_IMPERVIOUS_QUESTION,
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["impervious_ratio"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        SEMANTIC_NDVI_QUESTION,
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["ndvi"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        SEMANTIC_ALBEDO_QUESTION,
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["albedo"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        "녹 지율 알려줘",
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["green_ratio"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        "N D V I 알려줘",
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["ndvi"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        "앤디브이아이 알려줘",
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["ndvi"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        "평균 지상 층수 알려줘",
+        "get_grid_data",
+        {"grid_id": ROUTING_GRID_ID, "fields": ["avg_ground_floor_count"]},
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        AMBIGUOUS_PLANT_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        ("녹지율", "식생지수"),
+        "ambiguous",
+        ("green_ratio", "ndvi"),
+    ),
+    (
+        AMBIGUOUS_BUILDING_HEIGHT_QUESTION,
+        NO_TOOL_EXPECTED,
+        None,
+        ("평균 지상층수", "최대 지상층수"),
+        "ambiguous",
+        ("avg_ground_floor_count", "max_ground_floor_count"),
+    ),
+    (
+        "인구밀도 알려줘",
+        NO_TOOL_EXPECTED,
+        None,
+        "현재 요청은 아직 지원하지 않습니다.",
+        "unsupported",
+        (),
+    ),
+    (
+        "NDVI가 무슨 뜻이야?",
+        NO_TOOL_EXPECTED,
+        None,
+        "현재 요청은 아직 지원하지 않습니다.",
+        "unsupported",
+        (),
+    ),
+    (
+        "녹지율 데이터 출처가 어디야?",
+        NO_TOOL_EXPECTED,
+        None,
+        "현재 요청은 아직 지원하지 않습니다.",
+        "unsupported",
+        (),
+    ),
+    (
+        SEMANTIC_GREEN_SIMULATION_QUESTION,
+        "run_simulation",
+        _simulation_arguments(ROUTING_GRID_ID, green_ratio_delta=0.05),
+        None,
+        "resolved",
+        (),
+    ),
+    (
+        SEMANTIC_IMPERVIOUS_SIMULATION_QUESTION,
+        "run_simulation",
+        _simulation_arguments(
+            ROUTING_GRID_ID,
+            impervious_ratio_delta=-0.03,
+        ),
+        None,
+        "resolved",
+        (),
+    ),
+)
+
 
 def _validate_expected_arguments(
     tool_name: str,
@@ -814,9 +977,11 @@ def run_tool_calling(
     expected_tool_name: str | None = None,
     expected_arguments: Mapping[str, Any] | None = None,
     selected_grid_id: str | None = None,
-    expected_answer_contains: str | None = None,
+    expected_answer_contains: str | tuple[str, ...] | None = None,
     expected_lookup_all: bool | None = None,
     expected_excluded_scope: bool | None = None,
+    expected_resolution: str | None = None,
+    expected_candidate_fields: tuple[str, ...] | None = None,
 ) -> ChatResult:
     """공용 서비스로 질문을 실행하고 도구 호출 추적과 최종 답변을 출력한다."""
 
@@ -888,6 +1053,29 @@ def run_tool_calling(
             "Python 검증 결과의 excluded_scope가 기대값과 다릅니다."
         )
     if (
+        expected_resolution is not None
+        and result.metrics.get("resolution") != expected_resolution
+    ):
+        raise RuntimeError(
+            "Python 검증 결과의 resolution이 기대값과 다릅니다."
+        )
+    if expected_candidate_fields is not None:
+        actual_candidates = result.metrics.get("candidate_fields")
+        resolved_candidates_match_fields = (
+            expected_resolution == "resolved"
+            and expected_candidate_fields == ()
+            and isinstance(actual_candidates, list)
+            and set(actual_candidates)
+            == set(result.metrics.get("requested_fields", []))
+        )
+        if not resolved_candidates_match_fields and (
+            not isinstance(actual_candidates, list)
+            or set(actual_candidates) != set(expected_candidate_fields)
+        ):
+            raise RuntimeError(
+                "Python 검증 결과의 candidate_fields가 기대값과 다릅니다."
+            )
+    if (
         expected_lookup_all is not None
         and expected_arguments is not None
         and expected_tool_name == "get_grid_data"
@@ -899,13 +1087,16 @@ def run_tool_calling(
             raise RuntimeError(
                 "Python 검증 결과의 requested_fields가 기대값과 다릅니다."
             )
-    if (
-        expected_answer_contains is not None
-        and expected_answer_contains not in result.answer
-    ):
-        raise RuntimeError(
-            "최종 답변에 필요한 재질문 안내가 포함되지 않았습니다."
+    if expected_answer_contains is not None:
+        required_answers = (
+            (expected_answer_contains,)
+            if isinstance(expected_answer_contains, str)
+            else expected_answer_contains
         )
+        if any(item not in result.answer for item in required_answers):
+            raise RuntimeError(
+                "최종 답변에 필요한 재질문 안내가 포함되지 않았습니다."
+            )
     if expected_tool_name is not None:
         print("검증 결과: Tool 선택·인자·반환값·최종 답변 검증 통과")
     return result
@@ -951,7 +1142,9 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     if args.question is not None:
-        cases = ((args.question, None, None, None, None, None, None),)
+        cases = (
+            (args.question, None, None, None, None, None, None, None, None),
+        )
     else:
         cases = tuple(
             (
@@ -959,6 +1152,8 @@ def main() -> int:
                 None,
                 expected_tool_name,
                 expected_arguments,
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -971,6 +1166,8 @@ def main() -> int:
                 expected_tool_name,
                 expected_arguments,
                 expected_answer_contains,
+                None,
+                None,
                 None,
                 None,
             )
@@ -992,6 +1189,8 @@ def main() -> int:
                 None,
                 lookup_all,
                 excluded_scope,
+                None,
+                None,
             )
             for (
                 question,
@@ -1008,6 +1207,8 @@ def main() -> int:
                 expected_answer_contains,
                 expected_lookup_all,
                 expected_excluded_scope,
+                None,
+                None,
             )
             for (
                 question,
@@ -1017,16 +1218,39 @@ def main() -> int:
                 expected_lookup_all,
                 expected_excluded_scope,
             ) in GENERAL_LOOKUP_ROUTING_CASES
+        ) + tuple(
+            (
+                question,
+                ROUTING_GRID_ID,
+                expected_tool_name,
+                expected_arguments,
+                expected_answer_contains,
+                None,
+                None,
+                expected_resolution,
+                expected_candidate_fields,
+            )
+            for (
+                question,
+                expected_tool_name,
+                expected_arguments,
+                expected_answer_contains,
+                expected_resolution,
+                expected_candidate_fields,
+            ) in SEMANTIC_ROUTING_CASES
         )
         legacy_case_count = (
             len(DEFAULT_CASES)
             + len(SELECTED_GRID_ROUTING_CASES)
             + len(LOOKUP_SCOPE_CASES)
+            + len(GENERAL_LOOKUP_ROUTING_CASES)
         )
-        if legacy_case_count != 36:
+        if legacy_case_count != 49:
             raise RuntimeError(
-                "기존 qwen3:4b E2E 36개 시나리오 수가 변경되었습니다."
+                "기존 qwen3:4b E2E 49개 시나리오 수가 변경되었습니다."
             )
+        if len(SEMANTIC_ROUTING_CASES) != 18:
+            raise RuntimeError("신규 의미 기반 E2E 18개 시나리오 수가 변경되었습니다.")
 
     failed_cases: list[tuple[int, str]] = []
     for index, (
@@ -1037,6 +1261,8 @@ def main() -> int:
         expected_answer_contains,
         expected_lookup_all,
         expected_excluded_scope,
+        expected_resolution,
+        expected_candidate_fields,
     ) in enumerate(cases, start=1):
         if len(cases) > 1:
             print(f"=== E2E 시나리오 {index}/{len(cases)} ===")
@@ -1049,6 +1275,8 @@ def main() -> int:
                 expected_answer_contains=expected_answer_contains,
                 expected_lookup_all=expected_lookup_all,
                 expected_excluded_scope=expected_excluded_scope,
+                expected_resolution=expected_resolution,
+                expected_candidate_fields=expected_candidate_fields,
             )
         except RuntimeError as exc:
             message = f"실행 오류: {exc}"

@@ -29,6 +29,36 @@ LOGGER = logging.getLogger("uvicorn.error")
 _GRID_FIELD_LABELS = "、".join(
     str(GRID_FIELD_SPECS[field]["label"]) for field in ALLOWED_GRID_FIELDS
 )
+
+
+def _build_router_field_catalog() -> str:
+    """tools.py 중앙 메타데이터에서 Qwen용 의미 카탈로그를 만든다."""
+
+    lines: list[str] = []
+    for field in ALLOWED_GRID_FIELDS:
+        spec = GRID_FIELD_SPECS[field]
+        aliases = "·".join(str(item) for item in spec.get("aliases", ()))
+        examples = " / ".join(str(item) for item in spec.get("examples", ()))
+        confusable = "·".join(
+            f"{candidate}({GRID_FIELD_SPECS[candidate]['label']})"
+            for candidate in spec.get("confusable_with", ())
+            if candidate in GRID_FIELD_SPECS
+        )
+        parts = [
+            f"- {field} | {spec['label']}",
+            str(spec.get("semantic_definition") or spec["description"]),
+        ]
+        if aliases:
+            parts.append(f"명시 표현: {aliases}")
+        if examples:
+            parts.append(f"의미 예시: {examples}")
+        if confusable:
+            parts.append(f"혼동 후보: {confusable}")
+        lines.append(" | ".join(parts))
+    return "\n".join(lines)
+
+
+_ROUTER_FIELD_CATALOG = _build_router_field_catalog()
 _SIMULATION_FIELDS = (
     "green_ratio",
     "impervious_ratio",
@@ -48,10 +78,12 @@ _SIMULATION_FIELD_TERMS = {
     "albedo": ("albedo", "알베도", "반사율", "쿨루프"),
 }
 _SUPPORTED_INTENTS = {
+    "field_list",
     "lookup",
     "simulation",
     "unsupported",
 }
+_SUPPORTED_RESOLUTIONS = {"resolved", "ambiguous", "unsupported"}
 _SUPPORTED_OPERATIONS = {"increase", "decrease"}
 _SUPPORTED_UNITS = {"percent", "percentage_point", "unitless"}
 _SUPPORTED_BASES = {"direct", "relative_to_current"}
@@ -85,6 +117,10 @@ _META_REQUEST_TERMS = (
     "무엇을할수",
 )
 _EXPLICIT_SIMULATION_TERMS = ("시뮬레이션", "정책변경", "예상변화", "예측변화")
+_SIMULATION_ACTION_PATTERN = re.compile(
+    r"(?:높여|높이(?:면|고|기|자)|낮춰|낮추|늘려|늘리|줄여|줄이|"
+    r"올려|올리|내려|내리|증가시|감소시|확대|축소)"
+)
 _STANDALONE_ALL_PATTERN = re.compile(
     r"(?<![가-힣A-Za-z0-9_])다(?![가-힣A-Za-z0-9_])"
 )
@@ -112,20 +148,60 @@ _CLARIFICATION_BY_CODE = {
     "lookup_field": "조회할 격자 지표를 알려주세요.",
 }
 SUPPORTED_SCOPE_ANSWER = (
-    "현재 GA:ON AI는 선택한 100m 격자의 다음 현재 데이터를 조회할 수 있습니다: "
+    "현재 요청은 아직 지원하지 않습니다. "
+    "GA:ON AI에서는 격자 데이터 조회와 정책 시뮬레이션을 사용할 수 있습니다. "
+    "AI 화면의 사용 가이드를 확인하거나 "
+    "“조회 가능한 데이터 목록 보여줘”라고 입력해 주세요."
+)
+FIELD_LIST_ANSWER = (
+    "조회 가능한 데이터는 다음 18개입니다: "
     f"{_GRID_FIELD_LABELS}. "
-    "사용자가 지정한 녹지율·불투수율·NDVI·알베도 변경 시나리오만 지원합니다. "
-    "정책 추천, 모델 설명, 문서 검색은 현재 지원하지 않습니다."
+    "정확한 데이터명을 몰라도 의미가 비슷한 표현으로 질문할 수 있습니다."
 )
 ROUTER_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
         "intent": {
             "type": "string",
-            "enum": ["unsupported", "lookup", "simulation"],
+            "enum": ["unsupported", "field_list", "lookup", "simulation"],
             "description": (
                 "허용된 격자 지표의 현재값 조회와 전체 조회는 lookup, "
-                "지원 정책 변경은 simulation, 그 밖의 요청은 unsupported"
+                "조회 가능한 데이터 목록 요청은 field_list, 지원 정책 변경은 "
+                "simulation, 그 밖의 요청은 unsupported"
+            ),
+        },
+        "resolution": {
+            "type": "string",
+            "enum": ["resolved", "ambiguous", "unsupported"],
+            "description": (
+                "요청 필드 의미가 하나로 확정되면 resolved, 2~3개 후보 중 "
+                "확인이 필요하면 ambiguous, 지원 필드가 아니면 unsupported. "
+                "평균 몇 층=avg_ground_floor_count resolved, 가장 높은 건물의 "
+                "층수=max_ground_floor_count resolved, 식생의 푸르름·활력=ndvi "
+                "resolved이며 단순 식물의 양만 ambiguous"
+            ),
+        },
+        "candidate_fields": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": list(ALLOWED_GRID_FIELDS),
+            },
+            "maxItems": 3,
+            "uniqueItems": True,
+            "description": (
+                "ambiguous일 때만 가능한 후보 2~3개. resolved에서는 비우거나 "
+                "requested_fields와 같게 하고 unsupported에서는 비운다. "
+                "평균·가장 높은·푸르름·활력처럼 구분 기준이 원문에 있으면 "
+                "ambiguous 후보를 만들지 않는다."
+            ),
+        },
+        "lookup_evidence": {
+            "type": "string",
+            "maxLength": 200,
+            "description": (
+                "조회 필드 의미 판단의 근거가 된 사용자 원문의 짧은 문자열. "
+                "전체 조회·field_list·unsupported에서는 빈 문자열을 허용한다."
             ),
         },
         "lookup_all": {
@@ -237,6 +313,9 @@ ROUTER_OUTPUT_SCHEMA = {
     },
     "required": [
         "intent",
+        "resolution",
+        "candidate_fields",
+        "lookup_evidence",
         "lookup_all",
         "requested_fields",
         "excluded_scope",
@@ -247,44 +326,67 @@ ROUTER_OUTPUT_SCHEMA = {
     "additionalProperties": False,
 }
 
-SYSTEM_PROMPT = """사용자 요청의 의미를 JSON schema로만 정규화한다.
+SYSTEM_PROMPT = (
+    """사용자 요청의 의미를 JSON schema로만 정규화한다.
 답변 문장이나 실제 실행 인자를 만들지 않는다.
-- 먼저 지원 범위를 판정한다. 요청 지표가 허용된 requested_fields 또는 지원 변경 field와 대응하지 않으면 다른 지표로 대체하지 말고 unsupported다.
-- simulation이면 lookup_all=false, requested_fields=[], excluded_scope=false로 두고 각 변경을 changes에 하나씩 둔다.
-- 변경 가능한 지표는 녹지·녹지 비중=green_ratio, 불투수·불투수 비중=impervious_ratio, 식생지수·NDVI=ndvi, 알베도·표면 반사율=albedo다.
-- 녹지율·불투수율의 일반 percent 또는 비율 문맥의 단위 없는 수치는 증감 방향이 명확하면 unit=percent, basis=direct로 두고 해당 해석을 assumptions에 한국어로 쓴다.
-- 녹지율·불투수율에서 명시적 %p는 percentage_point/direct, 현재 값의 일정 비율은 percent/relative_to_current다.
-- NDVI와 알베도는 비율이 아닌 무단위 지수다. "0.05 높인다"처럼 지수에 직접 더할 소수가 명시된 경우에만 unit=unitless, basis=direct로 둔다. %·%p 또는 상대 비율 표현은 임의 환산하지 말고 unresolved=["change_unit"]으로 둔다.
-- value는 원문 표면 수치를 그대로 쓴다. 예를 들어 5%와 5%p는 value=5이며 0.05로 환산하지 않는다.
-- 공원 면적은 현재값 조회만 가능하고 정책 변경은 지원하지 않는다.
-- direct 변경에는 현재 값이 필요하지 않다.
-- 문맥상 명확한 오타는 assumptions에 남기고 정규화한다.
-- assumptions는 원문을 실제로 다르게 정규화하거나 단위를 가정한 경우에만 쓰며 명확한 현재값 조회에는 비운다.
-- 각 변경의 증가·감소 방향이 원문에 명시돼야 한다. 여러 지표와 수치만 있고 방향이 없는 복합 요청에는 operation을 추측하지 말고 unresolved=["change_operation"]으로 둔다.
-- "높이면/낮추면 결과가 어떻게 돼?" 같은 조건형 질문도 원문에 증가·감소 방향과 변경량이 명시된 실행 가능한 simulation이다.
-- 지시 대상·방향·수치 중 필요한 의미가 불명확할 때는 changes에 추측하지 않는다.
-- unresolved에는 자유 문장 대신 change_field, change_operation, change_value, change_unit, ambiguous_request 중 필요한 코드만 쓴다.
-- source_text는 변경 지표를 나타낸 가장 짧은 원문 구간이다. operation_text는 증가·감소를 명시한 가장 짧은 원문 구간이고 value_text는 변경량 숫자와 단위가 나타난 가장 짧은 원문 구간이다. 이 세 문자열은 반드시 원문을 그대로 인용한다.
-- 현재값 조회를 명시적으로 묻는 경우만 intent=lookup이다. 일부 조회는 lookup_all=false와 요청한 requested_fields를 사용한다.
-- 선택된 격자의 데이터·정보·현재값·현황을 요청하면서 특정 지표를 지정하지 않으면 intent=lookup, lookup_all=true, requested_fields=[]다. "현재 데이터"처럼 짧은 명사형 요청도 전체 현재값 조회다.
-- 전체·모두·모든·전부 또는 독립된 "다"로 격자의 전체 데이터나 정보를 요구하면 intent=lookup, lookup_all=true, requested_fields=[]다.
-- 전체 범위 표현 뒤에 말고·제외·필요 없고·보여주지 말고처럼 전체 조회를 부정하면 excluded_scope=true, lookup_all=false이고 실제로 요청한 일부 필드만 requested_fields에 둔다.
-- 능력·지원 범위를 묻거나 데이터의 정의·출처·모델 설명을 요구하면 현재값 조회가 아니므로 unsupported다.
-- 데이터 조회를 부정하고 시뮬레이션을 요청하면 simulation을 우선한다.
-- 식생지수와 NDVI는 ndvi다. 허용 지표가 아닌 요청을 비슷한 requested_fields로 바꾸거나 추측하지 말고 unsupported로 둔다.
-- 인구·인구밀도처럼 허용 목록에 없는 지표는 unsupported다.
-- 조회에서 공원까지 거리는 nearest_park_distance_m, 500m 내 공원 면적은 park_area_within_500m이다.
-- 지원하지 않는 요청은 intent=unsupported, lookup_all=false, requested_fields=[], excluded_scope=false이며 changes를 비운다.
-예: "이 격자 데이터 모두 알려줘"는 intent=lookup, lookup_all=true, requested_fields=[], excluded_scope=false다.
-예: "데이터 알려줘", "현재 데이터", "이 격자 정보 보여줘"는 intent=lookup, lookup_all=true, requested_fields=[], excluded_scope=false다.
-예: "모든 데이터 말고 녹지율만 알려줘"는 intent=lookup, lookup_all=false, requested_fields=["green_ratio"], excluded_scope=true다.
-예: "인구밀도를 알려줘"는 intent=unsupported, lookup_all=false, requested_fields=[], excluded_scope=false다.
-예: "어떤 데이터를 지원해?", "데이터의 출처가 뭐야?", "모델 데이터 설명해줘"는 intent=unsupported다.
-예: "그거 5플오 해줘"처럼 변경 대상과 방향이 불명확하면 intent=simulation, lookup_all=false, requested_fields=[], excluded_scope=false, changes=[], unresolved=["change_field","change_operation"]이다.
-예: "녹지율을 올려줘"처럼 대상과 방향은 명확하지만 수치가 없으면 changes=[], unresolved=["change_value"]이다.
-예: "녹지율 5플오 증가"는 문맥상 명확한 오타이므로 changes=[{"field":"green_ratio","operation":"increase","value":5,"unit":"percent","basis":"direct","source_text":"녹지율","operation_text":"증가","value_text":"5플오"}], assumptions=["5플오를 5%로 해석"], unresolved=[]로 정규화한다.
-예: "녹지율 5%p, NDVI 0.05"처럼 각 변경 방향이 없으면 changes를 실행 가능한 것으로 만들지 않고 unresolved=["change_operation"]이다.
+
+조회 가능한 공식 필드 의미 카탈로그:
 """
+    + _ROUTER_FIELD_CATALOG
+    + """
+
+의미 판정:
+- exact 단어 일치만 찾지 말고 카탈로그 정의와 예시를 이용해 자유로운 한국어 표현의 의미를 판정한다.
+- 한 필드로 확정되면 resolution=resolved이고 일부 조회는 requested_fields에 공식 필드를 둔다.
+- 두 필드 이상의 의미가 실제로 가능하면 resolution=ambiguous, requested_fields=[], candidate_fields에 가장 가까운 2~3개만 둔다.
+- 지원 필드와 대응하지 않으면 resolution=unsupported, intent=unsupported이고 candidate_fields, requested_fields, changes를 비운다. 비슷한 다른 필드로 대체하지 않는다.
+- resolved의 candidate_fields는 비우거나 requested_fields와 같아야 한다.
+- lookup_evidence는 의미 판정 근거가 된 사용자 원문의 가장 짧은 실제 문자열이다. 전체 조회·field_list·unsupported이면 빈 문자열을 쓸 수 있다.
+- "식물이 얼마나 많은지"는 면적 비율인 green_ratio와 푸르름·활력 지수인 ndvi 중 뜻이 불명확하므로 ambiguous다.
+- "건물 높이"는 평균층수와 최대층수 중 기준이 없으면 avg_ground_floor_count와 max_ground_floor_count 사이의 ambiguous다.
+- "평균적으로 몇 층"은 avg_ground_floor_count, "가장 높은 건물이 몇 층"은 max_ground_floor_count로 확정한다. 둘 다 building_ratio가 아니다.
+- 식생이 얼마나 "푸른지·건강한지·활력이 있는지"는 ndvi로 확정한다. 단순히 식물이 "얼마나 많은지"만 물으면 green_ratio와 ndvi 사이의 ambiguous다.
+- "앤디브이아이"와 글자 사이가 벌어진 "N D V I"는 ndvi다.
+- 녹지지역으로 지정된 비율은 zoning_green_ratio, 실제 녹지 토지피복 비율은 green_ratio다.
+- 건물이 땅을 덮은 비율은 building_ratio, 총 연면적 수준은 floor_area_ratio_proxy다.
+- 가장 가까운 공원까지 거리는 nearest_park_distance_m, 반경 500m 내 공원 총면적은 park_area_within_500m다.
+
+의도 판정:
+- 현재값 조회만 intent=lookup이다. 일부 조회는 lookup_all=false와 requested_fields를 사용한다.
+- 선택 격자의 데이터·정보·현재값·현황을 특정 지표 없이 요청하면 intent=lookup, resolution=resolved, lookup_all=true다.
+- 전체·모두·모든·전부 또는 독립된 "다"로 전체 데이터를 요구하면 lookup_all=true다.
+- 전체 범위를 말고·제외·필요 없고·보여주지 말고 등으로 부정하면 excluded_scope=true, lookup_all=false이고 실제 요청 필드만 requested_fields에 둔다.
+- "조회 가능한 데이터 목록"처럼 지원 조회 필드 목록 자체를 요구하면 intent=field_list, resolution=resolved다. 실제 격자 Tool 조회는 아니다.
+- 데이터 정의·뜻·출처·모델 설명·정책 추천·문서 질문은 아직 지원하지 않으므로 intent=unsupported, resolution=unsupported다.
+- 인구·인구밀도처럼 카탈로그에 없는 지표는 unsupported다.
+- 데이터 조회를 부정하고 정책 변경을 요청하면 simulation을 우선한다.
+
+시뮬레이션:
+- simulation이면 lookup_all=false, requested_fields=[], excluded_scope=false이고 각 변경을 changes에 하나씩 둔다.
+- 변경 가능한 정책 레버는 green_ratio, impervious_ratio, ndvi, albedo 네 개뿐이다. 카탈로그의 의미 표현으로도 매핑한다.
+- 녹지율·불투수율의 일반 percent 또는 비율 문맥의 단위 없는 수치는 증감 방향이 명확하면 unit=percent, basis=direct로 두고 해석을 assumptions에 쓴다.
+- 녹지율·불투수율의 명시적 %p는 percentage_point/direct, 현재 값의 일정 비율은 percent/relative_to_current다.
+- NDVI와 알베도는 무단위 지수다. "0.05 높인다"처럼 직접 더할 소수만 unit=unitless, basis=direct다. %·%p 또는 상대 비율은 unresolved=["change_unit"]이다.
+- value는 원문 수치 자체다. 5%와 5%p는 value=5이며 0.05로 미리 환산하지 않는다.
+- 공원 면적 등 다른 필드는 조회만 가능하고 정책 변경은 지원하지 않는다.
+- 각 변경의 증가·감소 방향과 수치가 원문에 명시돼야 한다. 필요한 의미를 추측하지 않는다.
+- source_text, operation_text, value_text는 각각 지표·방향·수치와 단위를 나타낸 원문의 가장 짧은 실제 문자열이다.
+- 방향 없는 복합 변경은 changes를 실행 가능하게 만들지 말고 unresolved=["change_operation"]이다.
+- 문맥상 명확한 오타나 단위 가정만 assumptions에 남긴다. 명확한 조회에는 assumptions=[]다.
+- "높이면/낮추면 결과가 어떻게 돼?"도 방향과 변경량이 명시된 simulation이다.
+
+대표 판정:
+- "녹지가 이 지역에서 차지하는 비중 알려줘" → lookup/resolved, requested_fields=["green_ratio"].
+- "건물들이 평균적으로 몇 층이야" → lookup/resolved, requested_fields=["avg_ground_floor_count"].
+- "가장 높은 건물이 몇 층이야" → lookup/resolved, requested_fields=["max_ground_floor_count"].
+- "물이 스며들지 않는 땅의 비율" → lookup/resolved, requested_fields=["impervious_ratio"].
+- "표면이 햇빛을 얼마나 반사해" → lookup/resolved, requested_fields=["albedo"].
+- "NDVI가 무슨 뜻이야?"와 "녹지율의 출처가 어디야?" → unsupported/unsupported.
+- "녹지가 차지하는 비율을 5%p 높여줘" → simulation/resolved, green_ratio increase 5 percentage_point.
+- "그거 5플오 해줘"처럼 변경 대상과 방향이 불명확하면 changes=[]와 unresolved=["change_field","change_operation"]을 사용한다.
+- "녹지율을 올려줘"처럼 수치만 없으면 changes=[]와 unresolved=["change_value"]을 사용한다.
+"""
+)
 
 _GRID_ID_PATTERN = re.compile(r"(?<![\d_])\d{5}_\d{5}(?![\d_])")
 _NUMBER_PATTERN = re.compile(
@@ -327,6 +429,9 @@ class _NormalizedChange:
 @dataclass(frozen=True)
 class _NormalizedRequest:
     intent: str
+    resolution: str
+    candidate_fields: tuple[str, ...]
+    lookup_evidence: str
     lookup_all: bool
     requested_fields: tuple[str, ...]
     excluded_scope: bool
@@ -361,8 +466,21 @@ def _normalized_router_text_list(value: Any, field_name: str) -> tuple[str, ...]
     return tuple(normalized)
 
 
+def _normalized_router_optional_text(value: Any, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ChatProtocolError(
+            f"Qwen 구조화 출력의 {field_name}이 문자열이 아닙니다."
+        )
+    normalized = " ".join(value.split())
+    if len(normalized) > 200:
+        raise ChatProtocolError(
+            f"Qwen 구조화 출력의 {field_name}이 너무 깁니다."
+        )
+    return normalized
+
+
 def _recognized_lookup_fields(message: str) -> list[str]:
-    """중앙 alias의 최장 비중첩 일치로 요청된 조회 필드를 확정한다."""
+    """명시 필드명·label·alias의 고정밀 보조 신호를 반환한다."""
 
     compact_message = "".join(message.split()).casefold()
     candidates: list[tuple[int, int, str]] = []
@@ -402,15 +520,32 @@ def _recognized_lookup_fields(message: str) -> list[str]:
     return ordered
 
 
+def _high_precision_candidate_resolution(
+    message: str,
+    candidate_fields: list[str],
+) -> str | None:
+    """LLM이 좁힌 후보에 중앙 메타데이터의 결정적 구분 표현을 적용한다."""
+
+    compact_message = _compact_routing_text(message)
+    matched: list[str] = []
+    for field in candidate_fields:
+        cues = GRID_FIELD_SPECS[field].get("disambiguation_cues", ())
+        if any(
+            _compact_routing_text(str(cue)) in compact_message
+            for cue in cues
+        ):
+            matched.append(field)
+    return matched[0] if len(matched) == 1 else None
+
+
 def _simulation_field_is_grounded(source_text: str, field: str) -> bool:
-    compact_source = "".join(source_text.split()).casefold()
     recognized_fields = _recognized_lookup_fields(source_text)
     if recognized_fields:
         return recognized_fields == [field]
-    return any(
-        "".join(term.split()).casefold() in compact_source
-        for term in _SIMULATION_FIELD_TERMS[field]
-    )
+    # exact 표현이 없을 때는 Qwen의 의미 매핑을 허용한다. source_text가 실제
+    # 원문인지, field가 정책 레버인지, 방향·수치·단위가 원문에 있는지는
+    # 별도 Python 검증이 계속 담당한다.
+    return field in _SIMULATION_FIELDS
 
 
 def _simulation_operation_is_grounded(
@@ -519,9 +654,27 @@ def _has_lookup_negation(message: str) -> bool:
     return any(term in compact_message for term in _EXCLUDED_SCOPE_TERMS)
 
 
+def _has_explicit_current_lookup_intent(message: str) -> bool:
+    compact_message = _compact_routing_text(message)
+    return any(
+        term in compact_message
+        for term in ("현재", "현재값", "알려", "보여", "조회", "확인")
+    )
+
+
 def _is_meta_request(message: str) -> bool:
     compact_message = _compact_routing_text(message)
     return any(term in compact_message for term in _META_REQUEST_TERMS)
+
+
+def _is_field_list_request(message: str) -> bool:
+    compact_message = _compact_routing_text(message)
+    has_data_target = "데이터" in compact_message or "지표" in compact_message
+    has_list_request = any(
+        term in compact_message
+        for term in ("조회가능", "어떤데이터", "지원데이터", "데이터목록", "지표목록")
+    )
+    return has_data_target and has_list_request
 
 
 def _has_simulation_intent(message: str) -> bool:
@@ -539,10 +692,14 @@ def _has_simulation_intent(message: str) -> bool:
         for terms in _DIRECTION_TERMS.values()
         for term in terms
     )
+    has_number = _NUMBER_PATTERN.search(message) is not None
     return bool(
-        simulation_fields
-        and has_direction
-        and _NUMBER_PATTERN.search(message) is not None
+        has_direction
+        and has_number
+        and (
+            simulation_fields
+            or _SIMULATION_ACTION_PATTERN.search(compact_message) is not None
+        )
     )
 
 
@@ -680,6 +837,9 @@ def _parse_normalized_request(
 
     required_keys = {
         "intent",
+        "resolution",
+        "candidate_fields",
+        "lookup_evidence",
         "lookup_all",
         "requested_fields",
         "excluded_scope",
@@ -695,6 +855,46 @@ def _parse_normalized_request(
     intent = decoded.get("intent")
     if not isinstance(intent, str) or intent not in _SUPPORTED_INTENTS:
         raise ChatProtocolError("Qwen 구조화 출력의 intent가 올바르지 않습니다.")
+
+    resolution = decoded.get("resolution")
+    if (
+        not isinstance(resolution, str)
+        or resolution not in _SUPPORTED_RESOLUTIONS
+    ):
+        raise ChatProtocolError(
+            "Qwen 구조화 출력의 resolution이 올바르지 않습니다."
+        )
+
+    raw_candidate_fields = decoded.get("candidate_fields")
+    if not isinstance(raw_candidate_fields, list):
+        raise ChatProtocolError(
+            "Qwen 구조화 출력의 candidate_fields가 배열이 아닙니다."
+        )
+    candidate_fields: list[str] = []
+    for field in raw_candidate_fields:
+        if not isinstance(field, str) or field not in ALLOWED_GRID_FIELDS:
+            raise ChatProtocolError(
+                "Qwen 구조화 출력에 지원하지 않는 후보 필드가 있습니다."
+            )
+        if field not in candidate_fields:
+            candidate_fields.append(field)
+    if len(candidate_fields) > 3:
+        raise ChatProtocolError(
+            "Qwen 구조화 출력의 후보 필드가 3개를 초과합니다."
+        )
+
+    lookup_evidence = _normalized_router_optional_text(
+        decoded.get("lookup_evidence"),
+        "lookup_evidence",
+    )
+    normalized_original_message = " ".join(original_message.split())
+    if lookup_evidence and lookup_evidence not in normalized_original_message:
+        if _is_meta_request(original_message):
+            lookup_evidence = ""
+        else:
+            raise ChatProtocolError(
+                "Qwen 조회 의미 근거가 사용자 원문에 존재하지 않습니다."
+            )
 
     raw_lookup_all = decoded.get("lookup_all")
     if not isinstance(raw_lookup_all, bool):
@@ -752,7 +952,6 @@ def _parse_normalized_request(
         "operation_text",
         "value_text",
     }
-    normalized_original_message = " ".join(original_message.split())
     changes: list[_NormalizedChange] = []
     duplicate_fields: set[str] = set()
     for raw_change in raw_changes:
@@ -961,6 +1160,7 @@ def _parse_normalized_request(
 
     has_full_scope, has_excluded_scope = _scope_signals(original_message)
     has_meta_request = _is_meta_request(original_message)
+    has_field_list_request = _is_field_list_request(original_message)
     has_simulation_intent = _has_simulation_intent(original_message)
     has_generic_full_lookup = _is_generic_full_lookup_request(original_message)
     has_safe_explicit_full_lookup = _is_safe_explicit_full_lookup_request(
@@ -970,91 +1170,266 @@ def _parse_normalized_request(
     )
     lookup_all = raw_lookup_all
     excluded_scope = raw_excluded_scope
+    grounded_fields = _recognized_lookup_fields(original_message)
 
-    if intent == "simulation":
+    if resolution == "unsupported":
+        if intent == "simulation" and unresolved and not changes:
+            # 변경 요청임은 알지만 대상·방향 등이 미완성인 기존 재질문
+            # 계약은 유지한다. resolution은 필드 의미 판정용이고 실행은
+            # unresolved 분기에서 계속 차단된다.
+            resolution = "resolved"
+            candidate_fields = []
+            requested_fields = []
+            lookup_all = False
+            excluded_scope = False
+        else:
+            # unsupported가 한 축에서라도 판정되면 Qwen이 함께 채운 실행
+            # 정보는 신뢰하지 않고 모두 폐기한다.
+            intent = "unsupported"
+            candidate_fields = []
+            requested_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            lookup_all = False
+            excluded_scope = False
+    elif resolution == "ambiguous":
+        if (
+            intent != "lookup"
+            or len(candidate_fields) not in {2, 3}
+            or requested_fields
+            or changes
+            or lookup_all
+        ):
+            raise ChatProtocolError(
+                "ambiguous 의미 판정의 후보 또는 실행 정보가 올바르지 않습니다."
+            )
+        decisive_field = (
+            None
+            if has_meta_request or has_simulation_intent
+            else _high_precision_candidate_resolution(
+                original_message,
+                candidate_fields,
+            )
+        )
+        if decisive_field is not None:
+            resolution = "resolved"
+            requested_fields = [decisive_field]
+            candidate_fields = []
+            unresolved = []
+        excluded_scope = False
+
+    if intent == "field_list":
+        if not has_field_list_request:
+            intent = "unsupported"
+            resolution = "unsupported"
+        requested_fields = []
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
+    elif intent == "simulation":
+        if resolution != "resolved":
+            raise ChatProtocolError(
+                "시뮬레이션 필드 의미가 확정되지 않았습니다."
+            )
+        if (
+            (unresolved or not _has_explicit_current_lookup_intent(original_message))
+            and all(field in _SIMULATION_FIELDS for field in requested_fields)
+        ):
+            # 실행 불가능한 미완성 변경에서 Qwen이 정책 후보를
+            # requested_fields에 중복한 경우 Tool은 unresolved로 차단하고
+            # 조회 신호만 폐기한다.
+            requested_fields = []
+            lookup_all = False
+            excluded_scope = False
         if requested_fields or lookup_all or excluded_scope:
             raise ChatProtocolError(
                 "시뮬레이션 구조화 출력에 조회 정보가 포함되었습니다."
             )
+        if candidate_fields and any(
+            field not in _SIMULATION_FIELDS for field in candidate_fields
+        ):
+            raise ChatProtocolError(
+                "시뮬레이션 구조화 출력에 정책 레버가 아닌 후보가 포함되었습니다."
+            )
+        candidate_fields = []
         if not changes and not unresolved:
             unresolved.extend(
                 ("change_field", "change_operation", "change_value")
             )
     elif intent == "lookup":
-        if changes:
+        if has_field_list_request:
+            intent = "field_list"
+            resolution = "resolved"
+            lookup_all = False
+            requested_fields = []
+            candidate_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            excluded_scope = False
+            lookup_evidence = ""
+        elif changes:
             raise ChatProtocolError(
                 "현재값 조회 구조화 출력에 changes가 포함되었습니다."
             )
-        assumptions = []
-        grounded_fields = _recognized_lookup_fields(original_message)
-        excluded_scope = has_excluded_scope
+        else:
+            assumptions = []
+            excluded_scope = has_excluded_scope
 
-        if has_meta_request:
+        if intent == "field_list":
+            pass
+        elif has_meta_request:
             intent = "unsupported"
+            resolution = "unsupported"
             lookup_all = False
             requested_fields = []
+            candidate_fields = []
             excluded_scope = False
+        elif resolution == "ambiguous":
+            lookup_all = False
+            requested_fields = []
         elif has_simulation_intent:
             intent = "simulation"
+            resolution = "resolved"
             lookup_all = False
             requested_fields = []
+            candidate_fields = []
             excluded_scope = False
             unresolved.append("ambiguous_request")
         elif has_excluded_scope:
             lookup_all = False
-            requested_fields = grounded_fields
+            if not requested_fields and grounded_fields:
+                requested_fields = grounded_fields
             if not requested_fields and not unresolved:
                 unresolved.append("lookup_field")
         elif has_safe_explicit_full_lookup:
             lookup_all = True
             requested_fields = []
-        elif grounded_fields:
-            # 전체 범위 표현이 없으면 Qwen의 lookup_all 신호보다 원문에
-            # 실제로 나타난 조회 필드를 우선한다.
-            lookup_all = False
-            requested_fields = grounded_fields
+            candidate_fields = []
         elif has_generic_full_lookup:
             lookup_all = True
             requested_fields = []
+            candidate_fields = []
             excluded_scope = False
         else:
             lookup_all = False
-            requested_fields = []
-            intent = "unsupported"
+            if not requested_fields and grounded_fields:
+                # 명시 필드명·label·alias는 Qwen 누락 시에만 고정밀 보조
+                # 신호로 사용한다. exact 일치가 없다는 이유로 의미 결과를
+                # 거절하거나 덮어쓰지는 않는다.
+                requested_fields = grounded_fields
+            if not requested_fields:
+                intent = "unsupported"
+                resolution = "unsupported"
+                candidate_fields = []
+                lookup_evidence = ""
+            elif (
+                candidate_fields
+                and set(candidate_fields) != set(requested_fields)
+            ):
+                semantic_candidates = list(
+                    dict.fromkeys((*candidate_fields, *requested_fields))
+                )
+                if len(semantic_candidates) not in {2, 3}:
+                    raise ChatProtocolError(
+                        "resolved 의미 판정의 후보와 조회 필드가 충돌합니다."
+                    )
+                resolution = "ambiguous"
+                candidate_fields = semantic_candidates
+                requested_fields = []
+            elif grounded_fields and set(grounded_fields) != set(requested_fields):
+                conflict_candidates = list(
+                    dict.fromkeys((*grounded_fields, *requested_fields))
+                )
+                if len(conflict_candidates) not in {2, 3}:
+                    raise ChatProtocolError(
+                        "명시 조회 필드와 의미 조회 결과가 충돌합니다."
+                    )
+                resolution = "ambiguous"
+                candidate_fields = conflict_candidates
+                requested_fields = []
     else:
-        if changes or requested_fields or lookup_all:
+        if has_field_list_request:
+            intent = "field_list"
+            resolution = "resolved"
+            requested_fields = []
+            candidate_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            lookup_all = False
+            excluded_scope = False
+            lookup_evidence = ""
+        elif has_meta_request:
+            intent = "unsupported"
+            resolution = "unsupported"
+            requested_fields = []
+            candidate_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            lookup_all = False
+            excluded_scope = False
+            lookup_evidence = ""
+        elif changes or requested_fields or lookup_all:
             raise ChatProtocolError(
                 "지원하지 않는 요청의 구조화 출력에 실행 정보가 포함되었습니다."
             )
-        grounded_fields = _recognized_lookup_fields(original_message)
-        if has_meta_request:
-            excluded_scope = False
         elif has_simulation_intent:
             intent = "simulation"
+            resolution = "resolved"
             lookup_all = False
             requested_fields = []
+            candidate_fields = []
             excluded_scope = False
             unresolved.append("ambiguous_request")
         elif has_excluded_scope and grounded_fields:
             intent = "lookup"
+            resolution = "resolved"
             lookup_all = False
             requested_fields = grounded_fields
+            candidate_fields = []
             excluded_scope = True
         elif has_safe_explicit_full_lookup:
             intent = "lookup"
+            resolution = "resolved"
             lookup_all = True
             requested_fields = []
+            candidate_fields = []
             excluded_scope = False
         elif has_generic_full_lookup:
             intent = "lookup"
+            resolution = "resolved"
             lookup_all = True
             requested_fields = []
+            candidate_fields = []
+            excluded_scope = False
+        elif (
+            grounded_fields
+            and any(
+                term in _compact_routing_text(original_message)
+                for term in _GENERIC_LOOKUP_REQUEST_TERMS
+            )
+        ):
+            intent = "lookup"
+            resolution = "resolved"
+            lookup_all = False
+            requested_fields = grounded_fields
+            candidate_fields = []
             excluded_scope = False
         else:
             excluded_scope = has_excluded_scope
 
     return _NormalizedRequest(
         intent=intent,
+        resolution=resolution,
+        candidate_fields=tuple(candidate_fields),
+        lookup_evidence=lookup_evidence,
         lookup_all=lookup_all,
         requested_fields=tuple(requested_fields),
         excluded_scope=excluded_scope,
@@ -1128,6 +1503,9 @@ def _new_chat_metrics() -> dict[str, Any]:
         "prompt_eval_count": None,
         "eval_count": None,
         "intent": None,
+        "resolution": None,
+        "candidate_fields": [],
+        "lookup_evidence": "",
         "lookup_all": False,
         "requested_fields": [],
         "excluded_scope": False,
@@ -2132,6 +2510,17 @@ def _clarification_answer(unresolved: tuple[str, ...]) -> str:
     return "\n".join(lines)
 
 
+def _field_clarification_answer(candidate_fields: tuple[str, ...]) -> str:
+    lines = ["어느 데이터를 확인할까요?"]
+    for field in candidate_fields:
+        spec = GRID_FIELD_SPECS[field]
+        definition = str(
+            spec.get("semantic_definition") or spec["description"]
+        )
+        lines.append(f"- {spec['label']}: {definition}")
+    return "\n".join(lines)
+
+
 def _display_router_number(value: float) -> str:
     return f"{value:g}"
 
@@ -2305,6 +2694,9 @@ def _run_chat_with_client(
     metrics.update(
         {
             "intent": normalized_request.intent,
+            "resolution": normalized_request.resolution,
+            "candidate_fields": list(normalized_request.candidate_fields),
+            "lookup_evidence": normalized_request.lookup_evidence,
             "lookup_all": normalized_request.lookup_all,
             "requested_fields": list(normalized_request.requested_fields),
             "excluded_scope": normalized_request.excluded_scope,
@@ -2312,10 +2704,28 @@ def _run_chat_with_client(
         }
     )
 
+    if normalized_request.resolution == "ambiguous":
+        metrics["final_branch"] = "field_clarification"
+        return _supported_scope_result(
+            answer=_field_clarification_answer(
+                normalized_request.candidate_fields
+            ),
+            first_thinking=first_thinking,
+            first_content=first_content,
+            metrics=metrics,
+        )
     if normalized_request.unresolved:
         metrics["final_branch"] = "clarification"
         return _supported_scope_result(
             answer=_clarification_answer(normalized_request.unresolved),
+            first_thinking=first_thinking,
+            first_content=first_content,
+            metrics=metrics,
+        )
+    if normalized_request.intent == "field_list":
+        metrics["final_branch"] = "field_list"
+        return _supported_scope_result(
+            answer=FIELD_LIST_ANSWER,
             first_thinking=first_thinking,
             first_content=first_content,
             metrics=metrics,

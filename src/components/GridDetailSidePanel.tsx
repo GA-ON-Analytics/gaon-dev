@@ -259,7 +259,13 @@ function GridDetailSidePanel({
   const maxShap = shapItems.reduce((m, it) => Math.max(m, Math.abs(it.v)), 0) || 1;
 
   return (
-    <aside className={isOpen ? 'gridDetailSidePanel' : 'gridDetailSidePanel collapsed'}>
+    <aside
+      className={[
+        'gridDetailSidePanel',
+        rightPanelMode === 'chat' ? 'chatMode' : '',
+        isOpen ? '' : 'collapsed'
+      ].filter(Boolean).join(' ')}
+    >
       <button type="button" className="sidePanelToggle" onClick={onToggle}>
         {isOpen ? '›' : '‹'}
       </button>

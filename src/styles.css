@@ -2522,3 +2522,506 @@ td {
   outline:3px solid rgba(18,135,106,.28);
   outline-offset:2px;
 }
+
+.gridDetailSidePanel.chatMode{
+  width:min(700px, calc(100vw - 24px));
+  transition:width .24s ease, transform .3s ease;
+}
+.gridDetailSidePanel .gdpAiWorkspace{
+  position:relative;
+  height:100%;
+  min-height:0;
+  display:grid;
+  grid-template-columns:280px minmax(0,1fr);
+  overflow:hidden;
+  background:var(--gdp-sub);
+}
+.gridDetailSidePanel .gdpAiWorkspace.guideCollapsed{
+  grid-template-columns:0 minmax(0,1fr);
+}
+.gridDetailSidePanel .gdpAiWorkspace.guideCollapsed .gdpAiGuide{
+  display:none;
+}
+.gridDetailSidePanel .gdpAiGuide{
+  min-width:0;
+  min-height:0;
+  border-right:1px solid var(--gdp-line);
+  background:#f6faf8;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  z-index:3;
+}
+.gridDetailSidePanel .gdpAiGuideHeader{
+  min-height:72px;
+  padding:13px 14px;
+  border-bottom:1px solid var(--gdp-line);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  box-sizing:border-box;
+}
+.gridDetailSidePanel .gdpAiGuideHeader > div{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.gridDetailSidePanel .gdpAiGuideHeader span{
+  color:var(--gdp-green);
+  font-size:10px;
+  font-weight:800;
+}
+.gridDetailSidePanel .gdpAiGuideHeader strong{
+  color:var(--gdp-ink);
+  font-size:16px;
+}
+.gridDetailSidePanel .gdpAiGuideHeader button{
+  width:32px;
+  height:32px;
+  flex:none;
+  border:1px solid var(--gdp-line);
+  border-radius:10px;
+  background:var(--gdp-card);
+  color:var(--gdp-ink2);
+  font-size:19px;
+  cursor:pointer;
+}
+.gridDetailSidePanel .gdpAiGuideBody{
+  min-height:0;
+  flex:1;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:14px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  box-sizing:border-box;
+}
+.gridDetailSidePanel .gdpGuideContext,
+.gridDetailSidePanel .gdpGuideFeature,
+.gridDetailSidePanel .gdpGuideComing,
+.gridDetailSidePanel .gdpGuideCatalog{
+  border:1px solid rgba(13,87,67,.12);
+  border-radius:14px;
+  background:var(--gdp-card);
+  box-shadow:0 4px 14px rgba(24,49,40,.05);
+}
+.gridDetailSidePanel .gdpGuideContext{
+  padding:12px;
+}
+.gridDetailSidePanel .gdpGuideContext > strong{
+  color:var(--gdp-green);
+  font-size:11px;
+}
+.gridDetailSidePanel .gdpGuideContext p{
+  margin:7px 0 0;
+  color:var(--gdp-ink2);
+  font-size:11px;
+  line-height:1.55;
+  overflow-wrap:anywhere;
+}
+.gridDetailSidePanel .gdpGuideContext p span,
+.gridDetailSidePanel .gdpGuideContext p b{
+  display:block;
+}
+.gridDetailSidePanel .gdpGuideContext p b{
+  margin-top:2px;
+  color:var(--gdp-ink);
+  font-size:12px;
+}
+.gridDetailSidePanel .gdpGuideFeature{
+  padding:13px;
+}
+.gridDetailSidePanel .gdpGuideFeatureTitle{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.gridDetailSidePanel .gdpGuideFeatureTitle span,
+.gridDetailSidePanel .gdpGuideComing > div span{
+  color:var(--gdp-green);
+  font-size:10px;
+  font-weight:800;
+}
+.gridDetailSidePanel .gdpGuideFeatureTitle strong,
+.gridDetailSidePanel .gdpGuideComing > div strong{
+  color:var(--gdp-ink);
+  font-size:13px;
+}
+.gridDetailSidePanel .gdpGuideFeature > p{
+  margin:8px 0 10px;
+  color:var(--gdp-ink2);
+  font-size:11px;
+  line-height:1.55;
+}
+.gridDetailSidePanel .gdpGuideExamples{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.gridDetailSidePanel .gdpGuideExamples button{
+  width:100%;
+  padding:8px 9px;
+  border:1px solid rgba(13,87,67,.14);
+  border-radius:9px;
+  background:var(--gdp-green-soft);
+  color:var(--gdp-green);
+  font-size:10.5px;
+  font-weight:700;
+  line-height:1.4;
+  text-align:left;
+  cursor:pointer;
+}
+.gridDetailSidePanel .gdpGuideExamples button:hover{
+  border-color:rgba(13,87,67,.32);
+  background:#e6f5ef;
+}
+.gridDetailSidePanel .gdpGuideLeverList{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-bottom:9px;
+}
+.gridDetailSidePanel .gdpGuideLeverList span{
+  padding:4px 7px;
+  border-radius:999px;
+  background:var(--gdp-sub);
+  color:var(--gdp-ink2);
+  font-size:10px;
+  font-weight:700;
+}
+.gridDetailSidePanel .gdpGuideComing{
+  padding:11px 12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.gridDetailSidePanel .gdpGuideComing > div{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.gridDetailSidePanel .gdpGuideComing > b{
+  flex:none;
+  padding:4px 7px;
+  border-radius:999px;
+  background:var(--gdp-sub2);
+  color:var(--gdp-ink3);
+  font-size:9px;
+}
+.gridDetailSidePanel .gdpGuideCatalog{
+  overflow:hidden;
+}
+.gridDetailSidePanel .gdpGuideCatalog summary{
+  padding:12px 13px;
+  color:var(--gdp-ink);
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+}
+.gridDetailSidePanel .gdpGuideCatalog > p{
+  margin:0;
+  padding:0 13px 12px;
+  color:var(--gdp-ink3);
+  font-size:10px;
+}
+.gridDetailSidePanel .gdpGuideCatalog .gdpGuideCatalogError{
+  color:var(--gdp-danger);
+}
+.gridDetailSidePanel .gdpGuideCatalog > section{
+  padding:0 13px 12px;
+}
+.gridDetailSidePanel .gdpGuideCatalog > section > strong{
+  color:var(--gdp-green);
+  font-size:10px;
+}
+.gridDetailSidePanel .gdpGuideCatalog ul{
+  margin:6px 0 0;
+  padding:0;
+  list-style:none;
+}
+.gridDetailSidePanel .gdpGuideCatalog li{
+  padding:7px 0;
+  border-top:1px solid var(--gdp-line);
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.gridDetailSidePanel .gdpGuideCatalog li span{
+  color:var(--gdp-ink);
+  font-size:10.5px;
+  font-weight:700;
+}
+.gridDetailSidePanel .gdpGuideCatalog li small{
+  color:var(--gdp-ink3);
+  font-size:9.5px;
+  line-height:1.4;
+}
+.gridDetailSidePanel .gdpGuideToggle{
+  min-height:34px;
+  padding:7px 9px;
+  flex:none;
+  border:1px solid var(--gdp-line);
+  border-radius:10px;
+  background:var(--gdp-card);
+  color:var(--gdp-green);
+  font-size:10px;
+  font-weight:800;
+  white-space:nowrap;
+  cursor:pointer;
+}
+.gridDetailSidePanel .gdpDraftNotice{
+  flex:none;
+  margin:0;
+  padding:8px 14px;
+  border-top:1px solid #f0dfb7;
+  background:#fff9e9;
+  color:#855217;
+  font-size:10px;
+  line-height:1.4;
+}
+.gridDetailSidePanel .gdpAiGuideBackdrop{
+  display:none;
+}
+.gridDetailSidePanel .gdpAiGuideHeader button:focus-visible,
+.gridDetailSidePanel .gdpGuideToggle:focus-visible,
+.gridDetailSidePanel .gdpGuideExamples button:focus-visible,
+.gridDetailSidePanel .gdpGuideCatalog summary:focus-visible{
+  outline:3px solid rgba(18,135,106,.28);
+  outline-offset:2px;
+}
+
+
+
+
+/* =========================================================
+   GA:ON AI 사용 가이드 레이아웃 최종 수정
+   - 채팅 패널 너비는 항상 고정
+   - 가이드는 채팅 패널 왼쪽에 별도 배치
+   - X로 닫아도 채팅 위치가 움직이지 않음
+   ========================================================= */
+
+.gridDetailSidePanel.chatMode,
+.gridDetailSidePanel.chatMode:has(.gdpAiWorkspace.guideCollapsed),
+.gridDetailSidePanel.chatMode:has(.gdpAiWorkspace:not(.guideCollapsed)) {
+  width: min(380px, 100vw);
+}
+/* 가이드가 패널 바깥 왼쪽으로 나갈 수 있도록 허용 */
+.gridDetailSidePanel.chatMode .sidePanelBody,
+.gridDetailSidePanel.chatMode .rightPanelChat {
+  overflow: visible;
+}
+
+.gridDetailSidePanel .gdpAiWorkspace,
+.gridDetailSidePanel .gdpAiWorkspace.guideCollapsed {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: visible;
+}
+
+/* 채팅 영역은 가이드 상태와 관계없이 항상 전체 700px 사용 */
+.gridDetailSidePanel .gdpChat {
+  width: 100%;
+  height: 100%;
+}
+
+/* 데스크톱 가이드: 채팅 패널의 바로 왼쪽에 배치 */
+.gridDetailSidePanel .gdpAiGuide,
+.gridDetailSidePanel
+  .gdpAiWorkspace.guideCollapsed
+  .gdpAiGuide {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  bottom: 0;
+  left: auto;
+
+  display: flex;
+  width: 280px;
+  min-width: 280px;
+
+  transform: translateX(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease,
+    visibility 0s linear 0s;
+}
+
+/* X를 누르면 가이드만 사라지고 채팅 위치는 그대로 */
+.gridDetailSidePanel
+  .gdpAiWorkspace.guideCollapsed
+  .gdpAiGuide {
+  display: flex;
+  transform: translateX(18px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease,
+    visibility 0s linear 0.2s;
+}
+
+/*
+  가이드가 열려 있을 때는 상단의 '가이드 닫기' 버튼을 숨긴다.
+  왼쪽 X만 닫기 버튼으로 사용한다.
+*/
+.gridDetailSidePanel
+  .gdpAiWorkspace:not(.guideCollapsed)
+  .gdpGuideToggle {
+  display: none;
+}
+
+/*
+  바깥 패널 접기 버튼은 가이드의 왼쪽 끝으로 이동한다.
+  280px 가이드 + 20px 버튼 너비
+*/
+.gridDetailSidePanel.chatMode:
+has(.gdpAiWorkspace:not(.guideCollapsed))
+.sidePanelToggle {
+  left: -300px;
+  transition: left 0.2s ease;
+}
+
+/*
+  가이드가 열린 채로 전체 우측 패널을 접으면
+  채팅 700px뿐 아니라 가이드 280px까지 함께 이동한다.
+*/
+.gridDetailSidePanel.chatMode.collapsed:
+has(.gdpAiWorkspace:not(.guideCollapsed)) {
+  transform: translateX(calc(100% + 280px));
+}
+
+
+
+
+
+/* 조회 가능한 데이터 카드 내부만 스크롤 */
+.gridDetailSidePanel .gdpGuideCatalog[open] {
+  max-height: min(52vh, 430px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+/* 스크롤해도 제목은 위에 고정 */
+.gridDetailSidePanel .gdpGuideCatalog[open] > summary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid var(--gdp-line);
+  background: var(--gdp-card);
+}
+.gridDetailSidePanel .gdpGuideCatalog[open] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gdp-ink3) transparent;
+}
+
+.gridDetailSidePanel .gdpGuideCatalog[open]::-webkit-scrollbar {
+  width: 6px;
+}
+
+.gridDetailSidePanel .gdpGuideCatalog[open]::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--gdp-ink3);
+}
+
+
+
+
+/* 태블릿·모바일에서는 왼쪽 외부 배치 대신 내부 drawer */
+@media (max-width: 820px) {
+  .gridDetailSidePanel.chatMode,
+  .gridDetailSidePanel.chatMode:
+  has(.gdpAiWorkspace.guideCollapsed),
+  .gridDetailSidePanel.chatMode:
+  has(.gdpAiWorkspace:not(.guideCollapsed)) {
+    width: min(430px, 100vw);
+  }
+
+  .gridDetailSidePanel.chatMode .sidePanelBody,
+  .gridDetailSidePanel.chatMode .rightPanelChat,
+  .gridDetailSidePanel .gdpAiWorkspace,
+  .gridDetailSidePanel .gdpAiWorkspace.guideCollapsed {
+    overflow: hidden;
+  }
+
+  .gridDetailSidePanel .gdpAiGuide,
+  .gridDetailSidePanel
+    .gdpAiWorkspace.guideCollapsed
+    .gdpAiGuide {
+    position: absolute;
+    inset: 0 auto 0 0;
+    right: auto;
+
+    display: none;
+    width: min(300px, calc(100% - 38px));
+    min-width: 0;
+
+    transform: translateX(-100%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .gridDetailSidePanel .gdpAiGuide.mobileOpen,
+  .gridDetailSidePanel
+    .gdpAiWorkspace.guideCollapsed
+    .gdpAiGuide.mobileOpen {
+    display: flex;
+    transform: translateX(0);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.2);
+    z-index: 6;
+  }
+
+  /*
+    모바일에서는 guideCollapsed가 아니라 mobileOpen으로 표시하므로
+    평상시 사용 가이드 버튼은 다시 표시한다.
+  */
+  .gridDetailSidePanel
+    .gdpAiWorkspace:not(.guideCollapsed)
+    .gdpGuideToggle {
+    display: inline-flex;
+  }
+
+  /* 모바일 가이드가 열린 동안에는 상단 버튼 숨김 */
+  .gridDetailSidePanel
+    .gdpAiGuide.mobileOpen
+    ~ .gdpChat
+    .gdpGuideToggle {
+    display: none;
+  }
+
+  /* 모바일에서는 가이드가 내부 drawer이므로 기본 접기 위치 사용 */
+  .gridDetailSidePanel.chatMode:
+  has(.gdpAiWorkspace:not(.guideCollapsed))
+  .sidePanelToggle {
+    left: -20px;
+  }
+
+  .gridDetailSidePanel.chatMode.collapsed:
+  has(.gdpAiWorkspace:not(.guideCollapsed)) {
+    transform: translateX(100%);
+  }
+}
+
+

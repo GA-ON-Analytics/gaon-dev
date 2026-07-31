@@ -119,6 +119,9 @@ Qwen의 내부 구조화 결과는 다음 계약을 사용합니다.
 ```json
 {
   "intent": "simulation",
+  "resolution": "resolved",
+  "candidate_fields": [],
+  "lookup_evidence": "녹지율 5프로 올려줘",
   "lookup_all": false,
   "requested_fields": [],
   "excluded_scope": false,
@@ -141,8 +144,12 @@ Qwen의 내부 구조화 결과는 다음 계약을 사용합니다.
 }
 ```
 
-- `intent`: 현재 데이터 조회(`lookup`), 시뮬레이션 또는 미지원 요청을
+- `intent`: 현재 데이터 조회(`lookup`), 조회 필드 목록(`field_list`),
+  시뮬레이션 또는 미지원 요청을 구분합니다.
+- `resolution`: 필드 의미를 `resolved`, `ambiguous`, `unsupported`로
   구분합니다.
+- `candidate_fields`: 모호할 때 사용자 확인이 필요한 공식 필드 2~3개입니다.
+- `lookup_evidence`: 의미 판정의 근거가 된 짧은 사용자 원문 구간입니다.
 - `lookup_all`: 전체 격자 데이터 조회인지 나타냅니다.
 - `requested_fields`: 일부 조회에서 사용자가 요청한 지표를 정식 영문
   필드명으로 담습니다. 전체 조회에서는 빈 배열입니다.
@@ -158,10 +165,13 @@ Qwen의 내부 구조화 결과는 다음 계약을 사용합니다.
 - `unresolved`: 값이나 단위처럼 확정하지 못한 항목을 제한된 코드로
   기록합니다. Qwen의 자유 문장을 사용자 답변에 그대로 노출하지 않습니다.
 
-Python은 `intent`, 허용 필드, 원문 alias 근거, 원문 수치와 구조화 수치의
-일치, `value_text`에 연결된 단일 변경 수치, 수치의 유한성, 단위와 방향의
-원문 근거를 다시 검증합니다. 여러 변경이 한 질문에 있어도 각 변경마다 대상,
-수치와 증가·감소 방향이 확인되어야 합니다.
+Qwen은 `GRID_FIELD_SPECS`에서 자동 생성한 18개 의미 카탈로그를 보고 자유로운
+한국어 표현을 공식 필드로 해석합니다. Python은 허용 필드, 의도 충돌,
+`lookup_evidence`, 원문 수치와 구조화 수치의 일치, 수치의 유한성, 단위와
+방향의 원문 근거를 다시 검증합니다. 명시 필드명·label·alias 일치는 고정밀
+보조 신호이며, exact 일치가 없다는 이유로 Qwen의 resolved 의미 결과를
+거절하지 않습니다. 반대로 명시 표현과 의미 결과가 충돌하면 Tool을 실행하지
+않고 후보 확인 질문을 반환합니다.
 `unresolved`가 하나라도 있으면 Tool을 실행하지 않고 해당 항목만 묻는 부분
 재질문을 반환합니다. Qwen이 생성한 delta를 신뢰하거나 정규식으로 Tool을
 결정하지 않으며, 검증을 통과한 의미 정보로 Python이 실제 Tool 인자를
@@ -194,7 +204,8 @@ Python이 `lookup_all=true`로 보정합니다.
 - `ollama_call_count`
 - `load_duration`, `prompt_eval_duration`, `eval_duration`
 - `prompt_eval_count`, `eval_count`
-- `intent`, `lookup_all`, `requested_fields`, `excluded_scope`
+- `intent`, `resolution`, `candidate_fields`, `lookup_evidence`
+- `lookup_all`, `requested_fields`, `excluded_scope`
 - `validation_result`, `final_branch`, `actual_used_tools`
 
 질문 원문과 추론 내용은 로그에 포함하지 않습니다. `keep_alive="5m"`는 연속
@@ -214,7 +225,13 @@ uvicorn backend.main:app --reload --port 8000
 npm run dev
 ```
 
-대시보드의 단일 우측 패널에서 `GA:ON AI`를 선택하면 채팅 화면으로 전환됩니다.
+대시보드의 단일 우측 패널에서 `GA:ON AI`를 선택하면 AI 화면으로 전환됩니다.
+데스크톱에서는 왼쪽 사용 가이드와 오른쪽 채팅으로 나뉘며, 좁은 화면에서는
+가이드가 닫을 수 있는 drawer로 열립니다. 가이드 접힘 상태는
+`gaon_ai_usage_guide_collapsed`라는 `localStorage` 키에 저장됩니다.
+조회 가능한 데이터 accordion은 `GET /api/features`가
+`GRID_FIELD_SPECS`에서 보강한 `label`, `unit`, `description`, `category`를
+사용하므로 JSX에 18개 목록을 복사하지 않습니다.
 현재 선택한 100m 격자의 실제 `grid_id`만 문맥으로 사용하며, 250m/500m의
 표시용 ID는 Tool에 전달하지 않습니다.
 
@@ -479,6 +496,7 @@ curl -sS -X POST http://127.0.0.1:8000/api/chat \
 
 회귀 테스트는 다음을 함께 확인합니다.
 
+- 기존 qwen3:4b 조회·시뮬레이션 49개와 의미·표기·모호성 신규 18개
 - 전체·부분 격자 조회가 18개 조회 계약을 유지하는지
 - 녹지율·불투수율·NDVI·albedo Tool 인자와 부호·단위가 정확한지
 - 녹지율 단독 변경에서 불투수율 자동 연동과 경고가 표시되는지

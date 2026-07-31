@@ -5,7 +5,11 @@ import type {
   SimulationRequest,
   SimulationResponse
 } from '../types/dashboard';
-import type { AiChatRequest, AiChatResponse } from '../types/aiChat';
+import type {
+  AiChatRequest,
+  AiChatResponse,
+  AiFeatureCatalogResponse
+} from '../types/aiChat';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -132,6 +136,10 @@ export function sendChatMessage(
   signal?: AbortSignal
 ): Promise<AiChatResponse> {
   return postJson<AiChatResponse, AiChatRequest>('/api/chat', payload, signal);
+}
+
+export function getAiFeatureCatalog(): Promise<AiFeatureCatalogResponse> {
+  return fetchJson<AiFeatureCatalogResponse>('/api/features');
 }
 
 // 여러 100m 격자에 같은 정책을 적용해 평균 저감을 구한다 (250/500m 집계 격자 시뮬레이션용).
