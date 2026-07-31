@@ -1,0 +1,12 @@
+name: CD - Deploy to Oracle
+
+on:
+  push:
+    branches: ['feat/#22-github-actions-deploy']
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 인사
+        run: echo "워크플로가 실행됐습니다"
