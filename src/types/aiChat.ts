@@ -5,6 +5,20 @@ export interface AiChatRequest {
   selected_grid_id: string | null;
 }
 
+export interface AiFeatureCatalogItem {
+  name: string;
+  label: string;
+  description: string;
+  semantic_definition: string;
+  unit: string;
+  category: string;
+}
+
+export interface AiFeatureCatalogResponse {
+  count: number;
+  features: AiFeatureCatalogItem[];
+}
+
 export interface AiChatChangedFeature {
   before: number;
   after: number;

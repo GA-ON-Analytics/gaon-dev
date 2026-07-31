@@ -6,9 +6,14 @@ import {
   useRef,
   useState
 } from 'react';
-import { ApiRequestError, sendChatMessage } from '../services/api';
+import {
+  ApiRequestError,
+  getAiFeatureCatalog,
+  sendChatMessage
+} from '../services/api';
 import type {
   AiChatChangedFeature,
+  AiFeatureCatalogItem,
   AiChatMessage,
   AiChatResponse,
   AiChatToolData,
@@ -16,6 +21,7 @@ import type {
 } from '../types/aiChat';
 
 const CHAT_STORAGE_KEY = 'gaon_ai_chat_messages';
+const GUIDE_COLLAPSED_STORAGE_KEY = 'gaon_ai_usage_guide_collapsed';
 const TOOL_NAMES: readonly AiChatToolName[] = ['get_grid_data', 'run_simulation'];
 const CHANGE_FIELDS = [
   'green_ratio',
@@ -37,11 +43,18 @@ const UNSAFE_LOOKUP_FIELDS = new Set([
   'raw_response'
 ]);
 
-const QUICK_QUESTIONS = [
-  '이 격자의 녹지율과 불투수율을 알려줘.',
-  '이 격자의 녹지율을 5%p 높이면 모델 기준 예상 변화량이 어떻게 돼?',
-  '이 격자의 불투수율을 5%p 낮추면 모델 기준 예상 변화량이 어떻게 돼?'
+const LOOKUP_EXAMPLES = [
+  '현재 데이터 전부 알려줘',
+  '녹지가 차지하는 비율 알려줘',
+  '건물들이 평균적으로 몇 층이야',
+  '도로가 차지하는 정도 보여줘'
 ] as const;
+const SIMULATION_EXAMPLES = [
+  '녹지율을 5%p 높여줘',
+  'NDVI를 0.05 높이면 어떻게 돼?',
+  '불투수율을 3%p 낮추고 알베도를 0.02 높여줘'
+] as const;
+const FEATURE_CATEGORY_ORDER = ['건축', '토지·용도', '녹지·피복', '공원·지형'] as const;
 
 export interface AiChatViewProps {
   isActive: boolean;
@@ -261,6 +274,58 @@ function storeMessages(messages: AiChatMessage[]): void {
   }
 }
 
+function restoreGuideCollapsed(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(GUIDE_COLLAPSED_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function storeGuideCollapsed(collapsed: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      GUIDE_COLLAPSED_STORAGE_KEY,
+      collapsed ? 'true' : 'false'
+    );
+  } catch {
+    // 저장소가 차단돼도 현재 화면의 접기/펼치기는 유지한다.
+  }
+}
+
+function usesMobileGuideLayout(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.matchMedia('(max-width: 820px)').matches
+  );
+}
+
+function sanitizeFeatureCatalog(value: unknown): AiFeatureCatalogItem[] {
+  if (!isRecord(value) || !Array.isArray(value.features)) return [];
+
+  const features: AiFeatureCatalogItem[] = [];
+  for (const item of value.features) {
+    if (!isRecord(item)) continue;
+    const name = nonEmptyString(item.name);
+    const label = nonEmptyString(item.label);
+    const description = nonEmptyString(item.description);
+    const semanticDefinition = nonEmptyString(item.semantic_definition);
+    const category = nonEmptyString(item.category);
+    if (!name || !label || !description || !semanticDefinition || !category) continue;
+    features.push({
+      name,
+      label,
+      description,
+      semantic_definition: semanticDefinition,
+      unit: typeof item.unit === 'string' ? item.unit : '',
+      category
+    });
+  }
+  return features;
+}
+
 function sanitizeResponse(response: AiChatResponse): AiChatMessage {
   const answer = nonEmptyString(response.answer);
   if (answer === undefined) {
@@ -469,6 +534,146 @@ function ChatNotices({ message }: { message: AiChatMessage }) {
   );
 }
 
+function AiUsageGuide({
+  features,
+  loading,
+  error,
+  selectedGridId,
+  selectedGuName,
+  mobileOpen,
+  onClose,
+  onExample
+}: {
+  features: AiFeatureCatalogItem[];
+  loading: boolean;
+  error: string | null;
+  selectedGridId: string | null;
+  selectedGuName: string | null;
+  mobileOpen: boolean;
+  onClose: () => void;
+  onExample: (question: string) => void;
+}) {
+  return (
+    <aside
+      className={`gdpAiGuide${mobileOpen ? ' mobileOpen' : ''}`}
+      aria-label="GA:ON AI 사용 가이드"
+      role={mobileOpen ? 'dialog' : undefined}
+      aria-modal={mobileOpen || undefined}
+    >
+      <div className="gdpAiGuideHeader">
+        <div>
+          <span>GA:ON AI</span>
+          <strong>사용 가이드</strong>
+        </div>
+        <button type="button" onClick={onClose} aria-label="사용 가이드 닫기">
+          ×
+        </button>
+      </div>
+
+      <div className="gdpAiGuideBody">
+        <section className="gdpGuideContext" aria-live="polite">
+          <strong>선택 격자</strong>
+          {selectedGridId ? (
+            <p>
+              {selectedGuName && <span>{selectedGuName}</span>}
+              <b>{selectedGridId}</b>
+            </p>
+          ) : (
+            <p>
+              선택된 격자가 없습니다.
+              <br />
+              대시보드에서 100m 격자를 먼저 선택해 주세요.
+            </p>
+          )}
+        </section>
+
+        <section className="gdpGuideFeature">
+          <div className="gdpGuideFeatureTitle">
+            <span>기능 1</span>
+            <strong>현재 데이터 조회</strong>
+          </div>
+          <p>
+            선택한 격자의 도시환경 데이터를 조회합니다. 정확한 데이터명을 몰라도 의미가
+            비슷한 표현으로 질문할 수 있습니다.
+          </p>
+          <div className="gdpGuideExamples">
+            {LOOKUP_EXAMPLES.map((question) => (
+              <button type="button" key={question} onClick={() => onExample(question)}>
+                {question}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="gdpGuideFeature">
+          <div className="gdpGuideFeatureTitle">
+            <span>기능 2</span>
+            <strong>정책 시뮬레이션</strong>
+          </div>
+          <p>변경할 지표, 증가·감소 방향, 수치를 함께 입력해 주세요.</p>
+          <div className="gdpGuideLeverList" aria-label="지원 정책 레버">
+            {['녹지율', '불투수율', 'NDVI', '알베도'].map((lever) => (
+              <span key={lever}>{lever}</span>
+            ))}
+          </div>
+          <div className="gdpGuideExamples">
+            {SIMULATION_EXAMPLES.map((question) => (
+              <button type="button" key={question} onClick={() => onExample(question)}>
+                {question}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="gdpGuideComing">
+          <div>
+            <span>기능 3</span>
+            <strong>정책 우선순위 추천</strong>
+          </div>
+          <b>준비 중</b>
+        </section>
+        <section className="gdpGuideComing">
+          <div>
+            <span>기능 4</span>
+            <strong>모델·데이터 문서 질문</strong>
+          </div>
+          <b>준비 중</b>
+        </section>
+
+        <details className="gdpGuideCatalog">
+          <summary>
+            조회 가능한 데이터 {features.length || 18}개
+          </summary>
+          {loading && <p role="status">데이터 목록을 불러오는 중입니다…</p>}
+          {error && <p className="gdpGuideCatalogError">{error}</p>}
+          {!loading &&
+            !error &&
+            FEATURE_CATEGORY_ORDER.map((category) => {
+              const items = features.filter((feature) => feature.category === category);
+              if (items.length === 0) return null;
+              return (
+                <section key={category}>
+                  <strong>{category}</strong>
+                  <ul>
+                    {items.map((feature) => (
+                      <li key={feature.name}>
+                        <span>
+                          {feature.label}
+                          {feature.unit ? ` (${feature.unit})` : ''}
+                        </span>
+                        <small>{feature.description}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+        </details>
+      </div>
+    </aside>
+  );
+}
+
 export default function AiChatView({
   isActive,
   selectedGridId,
@@ -480,6 +685,12 @@ export default function AiChatView({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  const [guideCollapsed, setGuideCollapsed] = useState(restoreGuideCollapsed);
+  const [mobileGuideOpen, setMobileGuideOpen] = useState(false);
+  const [features, setFeatures] = useState<AiFeatureCatalogItem[]>([]);
+  const [featuresLoading, setFeaturesLoading] = useState(false);
+  const [featuresError, setFeaturesError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const inFlightRef = useRef(false);
@@ -493,6 +704,37 @@ export default function AiChatView({
   }, [messages]);
 
   useEffect(() => {
+    storeGuideCollapsed(guideCollapsed);
+  }, [guideCollapsed]);
+
+  useEffect(() => {
+    if (!isActive || features.length > 0) return;
+    let active = true;
+    setFeaturesLoading(true);
+    setFeaturesError(null);
+    getAiFeatureCatalog()
+      .then((response) => {
+        if (!active) return;
+        const sanitized = sanitizeFeatureCatalog(response);
+        if (sanitized.length === 0) {
+          throw new Error('조회 데이터 목록이 비어 있습니다.');
+        }
+        setFeatures(sanitized);
+      })
+      .catch(() => {
+        if (active) {
+          setFeaturesError('조회 데이터 목록을 불러오지 못했습니다.');
+        }
+      })
+      .finally(() => {
+        if (active) setFeaturesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [features.length, isActive]);
+
+  useEffect(() => {
     if (!isActive) {
       textareaRef.current?.blur();
       requestSequenceRef.current += 1;
@@ -500,10 +742,20 @@ export default function AiChatView({
       activeControllerRef.current = null;
       inFlightRef.current = false;
       setLoading(false);
+      setMobileGuideOpen(false);
       return;
     }
     messagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive || !mobileGuideOpen) return;
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileGuideOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isActive, mobileGuideOpen]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -518,6 +770,39 @@ export default function AiChatView({
     []
   );
 
+  function focusComposer(): void {
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function fillExample(question: string): void {
+    const currentDraft = input.trim();
+    if (currentDraft && currentDraft !== question) {
+      setDraftNotice('작성 중인 질문이 있어 예시로 덮어쓰지 않았습니다.');
+      focusComposer();
+      return;
+    }
+    setInput(question);
+    setDraftNotice(null);
+    setMobileGuideOpen(false);
+    focusComposer();
+  }
+
+  function toggleGuide(): void {
+    if (usesMobileGuideLayout()) {
+      setMobileGuideOpen(true);
+      return;
+    }
+    setGuideCollapsed((current) => !current);
+  }
+
+  function closeGuide(): void {
+    if (usesMobileGuideLayout()) {
+      setMobileGuideOpen(false);
+      return;
+    }
+    setGuideCollapsed(true);
+  }
+
   async function submitMessage(rawMessage: string): Promise<void> {
     const message = rawMessage.trim();
     if (!isActive || !message || inFlightRef.current) return;
@@ -529,6 +814,7 @@ export default function AiChatView({
     inFlightRef.current = true;
     setLoading(true);
     setError(null);
+    setDraftNotice(null);
     setInput('');
     setMessages((current) => [...current, { role: 'user', text: message }]);
 
@@ -570,6 +856,7 @@ export default function AiChatView({
     setMessages([]);
     setInput('');
     setError(null);
+    setDraftNotice(null);
     removeStoredMessages();
     textareaRef.current?.focus();
   }
@@ -597,10 +884,32 @@ export default function AiChatView({
     : displayGridId
       ? `${selectedGuName ? `${selectedGuName} · ` : ''}${displayGridId} · 100m 격자를 선택해 주세요`
       : '100m 격자를 선택해 주세요';
-  const quickQuestionsDisabled = !isActive || loading || contextGridId === null;
-
   return (
-    <section className="gdpChat" hidden={!isActive} aria-hidden={!isActive}>
+    <section
+      className={`gdpAiWorkspace${guideCollapsed ? ' guideCollapsed' : ''}`}
+      hidden={!isActive}
+      aria-hidden={!isActive}
+    >
+      {mobileGuideOpen && (
+        <button
+          className="gdpAiGuideBackdrop"
+          type="button"
+          aria-label="사용 가이드 닫기"
+          onClick={() => setMobileGuideOpen(false)}
+        />
+      )}
+      <AiUsageGuide
+        features={features}
+        loading={featuresLoading}
+        error={featuresError}
+        selectedGridId={contextGridId}
+        selectedGuName={selectedGuName}
+        mobileOpen={mobileGuideOpen}
+        onClose={closeGuide}
+        onExample={fillExample}
+      />
+
+      <section className="gdpChat">
       <header className="gdpChatHeader">
         <button
           className="gdpChatBack"
@@ -614,6 +923,9 @@ export default function AiChatView({
           <strong>GA:ON AI</strong>
           <p className="gdpChatContext">{selectedContext}</p>
         </div>
+        <button className="gdpGuideToggle" type="button" onClick={toggleGuide}>
+          사용 가이드
+        </button>
         <button className="gdpChatReset" type="button" onClick={resetChat}>
           새 대화
         </button>
@@ -625,22 +937,10 @@ export default function AiChatView({
             <p>격자 데이터를 조회하거나 정책 변경 시나리오를 질문해 보세요.</p>
             {!contextGridId && (
               <p>
-                빠른 질문을 사용하려면 지도에서 분석 가능한 100m 격자를 먼저 선택해 주세요.
+                질문을 실행하려면 지도에서 분석 가능한 100m 격자를 먼저 선택해 주세요.
               </p>
             )}
-            <div className="gdpQuickQuestions">
-              {QUICK_QUESTIONS.map((question) => (
-                <button
-                  className="gdpQuickButton"
-                  type="button"
-                  key={question}
-                  disabled={quickQuestionsDisabled}
-                  onClick={() => void submitMessage(question)}
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
+            <p>사용 가이드의 예시는 자동 전송 없이 입력창에 채워집니다.</p>
           </div>
         )}
 
@@ -675,6 +975,11 @@ export default function AiChatView({
         )}
       </div>
 
+      {draftNotice && (
+        <p className="gdpDraftNotice" role="status">
+          {draftNotice}
+        </p>
+      )}
       <form className="gdpChatComposer" onSubmit={handleSubmit}>
         <textarea
           className="gdpChatTextarea"
@@ -695,6 +1000,7 @@ export default function AiChatView({
           {loading ? '응답 중…' : '전송'}
         </button>
       </form>
+      </section>
     </section>
   );
 }

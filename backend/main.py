@@ -15,6 +15,7 @@ from backend.llm_poc.chat_service import (
     OllamaTimeoutError,
     run_chat,
 )
+from backend.llm_poc.tools import ALLOWED_GRID_FIELDS, GRID_FIELD_SPECS
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -311,7 +312,28 @@ def features() -> Any:
         return _simulation_not_connected_response()
 
     predict_core = _load_predict_core()
-    feature_meta = predict_core.feature_meta()
+    model_meta = {
+        item["name"]: item
+        for item in predict_core.feature_meta()
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    feature_meta = []
+    for field in ALLOWED_GRID_FIELDS:
+        spec = GRID_FIELD_SPECS[field]
+        feature_meta.append(
+            {
+                **model_meta.get(field, {}),
+                "name": field,
+                "label": spec["label"],
+                "description": spec["description"],
+                "semantic_definition": spec.get(
+                    "semantic_definition",
+                    spec["description"],
+                ),
+                "unit": spec["unit"],
+                "category": spec["category"],
+            }
+        )
     return {
         "count": len(feature_meta),
         "features": feature_meta,
