@@ -21,7 +21,8 @@ from backend.llm_poc.tools import (
 )
 
 
-MODEL_NAME = "qwen3:4b"
+DEFAULT_MODEL_NAME = "qwen3:4b"
+MODEL_NAME = os.getenv("GAON_LLM_MODEL") or DEFAULT_MODEL_NAME
 DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
 ROUTER_NUM_PREDICT = 768
 MODEL_KEEP_ALIVE = "5m"
