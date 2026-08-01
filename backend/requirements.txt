@@ -7,3 +7,4 @@ pandas<3
 numpy<2.5
 joblib
 scikit-learn==1.9.0
+ollama==0.6.2
