@@ -19,24 +19,10 @@ export interface AiChatLauncherProps {
   selectedGuName: string | null;
 }
 
-/** 로고의 새싹 — 잎 2장 + 줄기. 56px에서 형태가 읽히도록 단순화했다. */
-function SproutMark() {
+/** 마스코트 얼굴. 전신 SVG는 56px에서 몸통·나무가 뭉개져 머리만 잘라낸 파일을 쓴다. */
+function MascotFace() {
   return (
-    <svg viewBox="0 0 28 28" width="27" height="27" aria-hidden="true" focusable="false">
-      <path
-        d="M14 24.5V12.2"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-      />
-      <path
-        d="M14 13.4C14 8.9 10.5 6.1 5 6c-.4 5.3 2.6 8.9 9 8.9z"
-        fill="currentColor"
-        opacity="0.72"
-      />
-      <path d="M14 16.2c0-4.2 3.3-7 8.4-7.2.4 5.1-2.4 8.4-8.4 8.4z" fill="currentColor" />
-    </svg>
+    <img className="aiChatFabMascot" src="/mascot-face.svg" alt="" aria-hidden="true" />
   );
 }
 
@@ -74,6 +60,8 @@ export default function AiChatLauncher({
   selectedGuName
 }: AiChatLauncherProps) {
   const [isOpen, setIsOpen] = useState(false);
+  // 창을 닫아둔 사이에 답변이 도착했는지. 요청은 창을 닫아도 계속 진행된다.
+  const [hasUnread, setHasUnread] = useState(false);
   const fabRef = useRef<HTMLButtonElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
 
@@ -118,6 +106,7 @@ export default function AiChatLauncher({
           selectedDisplayGridId={selectedDisplayGridId}
           selectedGuName={selectedGuName}
           onBack={close}
+          onBackgroundReply={() => setHasUnread(true)}
         />
       </div>
 
@@ -125,20 +114,34 @@ export default function AiChatLauncher({
         ref={fabRef}
         type="button"
         className={`aiChatFab${isOpen ? ' isOpen' : ''}`}
-        aria-label={isOpen ? 'GA:ON AI 챗봇 닫기' : 'GA:ON AI 챗봇 열기'}
+        aria-label={
+          isOpen
+            ? 'GA:ON AI 챗봇 닫기'
+            : hasUnread
+              ? 'GA:ON AI 챗봇 열기 — 새 답변 있음'
+              : 'GA:ON AI 챗봇 열기'
+        }
         aria-expanded={isOpen}
-        onClick={() => (isOpen ? close() : setIsOpen(true))}
+        onClick={() => {
+          if (isOpen) {
+            close();
+          } else {
+            setIsOpen(true);
+            setHasUnread(false);
+          }
+        }}
       >
         {isOpen ? (
           <CloseIcon />
         ) : (
           <>
-            <SproutMark />
+            <MascotFace />
             <ChatBadge />
+            {hasUnread && <span className="aiChatFabUnread" aria-hidden="true" />}
             {/* 마우스를 올리면 이름이 뜬다. 터치 기기에서는 안 뜨므로
                 aria-label이 본 이름이고 이건 보조 수단이다. */}
             <span className="aiChatFabTip" aria-hidden="true">
-              GA:ON AI 챗봇
+              {hasUnread ? '새 답변이 도착했어요' : 'GA:ON AI 챗봇'}
             </span>
           </>
         )}

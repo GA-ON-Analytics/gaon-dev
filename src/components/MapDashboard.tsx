@@ -1479,8 +1479,11 @@ function SearchPanel({
   return (
     <aside className="gisLeftPanel heatIslandPanel">
       <div className="heatPanelHeader">
-        <p>Urban Heat Island</p>
-        <h1>도시 열섬 해결 대시보드</h1>
+        <img className="heatPanelLogo" src="/logo-avatar.svg" alt="GA:ON" />
+        <div>
+          <p>Urban Heat Island</p>
+          <h1>도시 열섬 해결 대시보드</h1>
+        </div>
       </div>
 
       <div className="heatControlBlock">
