@@ -237,8 +237,37 @@ function getLayerLabel(layer: LayerKey) {
   return HEAT_ISLAND_INDICATORS.find((indicator) => indicator.key === layer)?.label ?? layer;
 }
 
-function getNumericProperty(properties: GridAnalysisProperties, key: LayerKey) {
-  const value: unknown = properties[key];   // geojson 값은 문자열일 수도 있어 unknown으로 받는다
+/* 구 단위는 같은 개념을 다른 필드에 담는다.
+   격자의 mean_actual_anomaly 는 '그 구 평균 대비' 편차라, 구 전체를 평균하면
+   정의상 0이 된다. 그래서 ML(aggregate_dashboard_resolution.py)이 의도적으로 제외하고
+   대신 gu_anomaly_vs_seoul('서울 평균 대비')을 넣어두었다.
+   → 프론트가 구 단위에서는 이 필드를 읽어야 한다. */
+const DISTRICT_FIELD_BY_LAYER: Partial<Record<LayerKey, string>> = {
+  mean_actual_anomaly: 'gu_anomaly_vs_seoul',
+  // 격자의 priority_score는 '그 구 안에서의 백분위'라 구끼리 비교할 수 없고,
+  // 백분위의 평균은 정의상 50이라 구 평균도 의미가 없다.
+  // 그래서 ML이 같은 가중치로 '서울 25개 구 안에서' 다시 매긴 값을 쓴다.
+  priority_score: 'gu_priority_score'
+};
+
+function districtFieldOf(layer: LayerKey) {
+  return DISTRICT_FIELD_BY_LAYER[layer] ?? layer;
+}
+
+/** 해상도에 맞는 필드에서 값을 읽는다. 구 단위에서는 별칭이 있으면 그쪽을 본다. */
+function getLayerValue(
+  properties: GridAnalysisProperties,
+  layer: LayerKey,
+  isDistrictOverview: boolean
+) {
+  return getNumericProperty(
+    properties,
+    isDistrictOverview ? districtFieldOf(layer) : layer
+  );
+}
+
+function getNumericProperty(properties: GridAnalysisProperties, key: string) {
+  const value: unknown = properties[key as keyof GridAnalysisProperties];   // geojson 값은 문자열일 수도 있어 unknown으로 받는다
 
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -429,7 +458,8 @@ export function computeQuantileBreaks(
   layer: LayerKey
 ): QuantileBreaks | null {
   const values = features
-    .map((feature) => getNumericProperty(getFeatureProperties(feature), layer))
+    // 구 단위 features이므로 별칭 필드를 본다
+    .map((feature) => getLayerValue(getFeatureProperties(feature), layer, true))
     .filter((value): value is number => value !== null)
     .sort((a, b) => a - b);
 
@@ -461,7 +491,7 @@ function getBoundaryStyle(
   const districtName = feature ? getDistrictName(feature) : '';
   const isSelected = districtName === selectedDistrict;
   const properties = feature ? getFeatureProperties(feature) : {};
-  const layerValue = getNumericProperty(properties, selectedLayer);
+  const layerValue = getLayerValue(properties, selectedLayer, isDistrictOverview);
   const hasLayerValue = layerValue !== null;
 
   if (isDistrictOverview) {
@@ -543,11 +573,21 @@ function buildDistrictTooltip(feature: Feature<Geometry>, selectedLayer: LayerKe
   const properties = getFeatureProperties(feature);
   const district = getDistrictName(feature);
 
+  // 구 단위 별칭 필드를 읽는다(예: 현재 열 위험 → gu_anomaly_vs_seoul)
+  const value = formatAnyProperty(
+    properties,
+    districtFieldOf(selectedLayer) as keyof GridAnalysisProperties
+  );
+  const note =
+    selectedLayer === 'mean_actual_anomaly'
+      ? '서울 평균 대비 (격자 단위는 구 평균 대비)'
+      : '구 25개 안에서의 상대 위치로 색을 매깁니다';
+
   return `
     <div class="districtTempTooltipBody">
       <strong>${district}</strong>
-      <span>${getLayerLabel(selectedLayer)} ${formatLayerProperty(properties, selectedLayer)}</span>
-      <small>구 단위 ML 속성은 향후 GeoJSON properties로 제공 예정</small>
+      <span>${getLayerLabel(selectedLayer)} ${value}</span>
+      <small>${note}</small>
     </div>
   `;
 }

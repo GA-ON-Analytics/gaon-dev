@@ -91,6 +91,14 @@ const SPECS: Partial<Record<LayerKey, LegendSpec>> = {
   }
 };
 
+/* 구 단위에서 의미가 달라지는 지표는 설명 문구도 바꾼다.
+   현재 열 위험은 격자에서 '구 평균 대비'지만 구 단위에서는 '서울 평균 대비'다
+   (구 평균 대비 값을 구 전체로 평균하면 정의상 0이 되므로 다른 필드를 쓴다). */
+const DISTRICT_HINT: Partial<Record<LayerKey, string>> = {
+  mean_actual_anomaly: '서울 평균 대비 온도차',
+  priority_score: '서울 25개 구 기준 종합 점수'
+};
+
 /** 사분위 경계값을 사람이 읽는 문자열로. 지표마다 단위가 다르다. */
 function formatBreak(layer: LayerKey, value: number) {
   switch (layer) {
@@ -131,7 +139,8 @@ export default function MapLegend({
   const ticks = quantile
     ? quantile.breaks.map((value) => formatBreak(layer, value))
     : spec.ticks;
-  const hint = quantile ? `${spec.hint} · 구 ${quantile.count}개 사분위` : spec.hint;
+  const baseHint = (quantile && DISTRICT_HINT[layer]) || spec.hint;
+  const hint = quantile ? `${baseHint} · 구 ${quantile.count}개 사분위` : spec.hint;
 
   return (
     <section className="mapLegend" aria-label={`${layerLabel} 색상 범례`}>
