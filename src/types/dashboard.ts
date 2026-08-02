@@ -9,7 +9,8 @@ export type LayerKey =
   | 'impervious_ratio'
   | 'nearest_shelter_distance_m';
 
-export type GridResolution = '100m' | '250m' | '500m';
+/** 'gu' = 격자 대신 자치구 경계 단위로 본다 */
+export type GridResolution = '100m' | '250m' | '500m' | 'gu';
 
 export type PolicyOptionKey =
   | 'green_ratio_increase'
