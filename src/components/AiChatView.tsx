@@ -914,10 +914,10 @@ export default function AiChatView({
         <button
           className="gdpChatBack"
           type="button"
-          aria-label="대시보드로 돌아가기"
+          aria-label="채팅 닫기"
           onClick={onBack}
         >
-          ←
+          ✕
         </button>
         <div className="gdpChatTitle">
           <strong>GA:ON AI</strong>
@@ -934,6 +934,19 @@ export default function AiChatView({
       <div className="gdpChatBody">
         {messages.length === 0 && (
           <div className="gdpChatIntro">
+            {/* 마스코트는 대화 시작 전에만 보여준다. 대화가 쌓인 뒤에도 남겨두면
+                읽어야 할 내용을 밀어내기만 한다.
+                장식 이미지라 alt=""·aria-hidden으로 스크린리더에서 제외한다.
+                파일(public/mascot.png)이 없으면 조용히 숨긴다. */}
+            <img
+              className="gdpChatMascot"
+              src="/mascot.png"
+              alt=""
+              aria-hidden="true"
+              onError={(event) => {
+                event.currentTarget.style.display = 'none';
+              }}
+            />
             <p>격자 데이터를 조회하거나 정책 변경 시나리오를 질문해 보세요.</p>
             {!contextGridId && (
               <p>
