@@ -126,7 +126,11 @@ const HEAT_ISLAND_INDICATORS: LayerOption[] = [
 const GRID_RESOLUTION_OPTIONS: GridResolutionOption[] = [
   { key: '100m', label: '100M' },
   { key: '250m', label: '250M' },
-  { key: '500m', label: '500M' }
+  { key: '500m', label: '500M' },
+  // 격자가 아니라 자치구 경계 단위. 예전에는 '전체 선택 + 낮은 줌'이면 암묵적으로
+  // 구 단위로 칠했는데, 격자와 겹쳐 그려져 무엇을 보고 있는지 알 수 없었다.
+  // 명시적 선택지로 올려 "지금 무엇을 보고 있는가"를 사용자가 정하게 한다.
+  { key: 'gu', label: '구' }
 ];
 
 const DISTRICT_LABEL_CENTER_OVERRIDES: Record<string, [number, number]> = {
@@ -154,7 +158,13 @@ function getDistrictCode(feature: Feature<Geometry>) {
 }
 
 function getResolutionMeters(resolution: GridResolution) {
+  if (resolution === 'gu') return 0;   // 격자가 아니다
   return Number(resolution.replace('m', ''));
+}
+
+/** 격자 대신 자치구 경계를 칠하는 모드인가 */
+function isGuResolution(resolution: GridResolution) {
+  return resolution === 'gu';
 }
 
 function getFeatureGuCode(feature: Feature<Geometry>) {
@@ -355,32 +365,42 @@ function formatLayerProperty(properties: GridAnalysisProperties | null, layer: L
   return formatAnyProperty(properties, layer);
 }
 
-function colorByScore(value: number, highIsRisk = true) {
-  if (highIsRisk) {
-    if (value >= 80) return '#cf3f3f';
-    if (value >= 60) return '#f29a4b';
-    if (value >= 40) return '#f2cf5b';
-    return '#6fbf73';
-  }
+/* ─────────────────────────────────────────────────────────────────────────
+   지도 색 램프 — 모든 레이어가 이 한 벌만 쓴다.
 
-  if (value >= 80) return '#2f855a';
-  if (value >= 60) return '#78b66a';
-  if (value >= 40) return '#f2cf5b';
-  return '#cf3f3f';
+   예전에는 램프가 두 벌이었고 서로 대칭이 아니었다.
+     위험형: #6fbf73(L59) → #f2cf5b → #f29a4b → #cf3f3f
+     이득형: #cf3f3f → #f2cf5b → #78b66a(L56) → #2f855a(L35)
+   '가장 좋음'이 한쪽은 밝은 초록(L59), 다른 쪽은 진한 초록(L35)이라 밝기가 24%p
+   차이 났고, 이득형에는 주황 단계가 아예 없었다. 그래서 레이어를 바꿀 때마다
+   같은 등급이 다른 색으로 보였다.
+
+   이제 한 벌을 두고 방향만 뒤집는다. 같은 등급 = 항상 같은 색.
+   ───────────────────────────────────────────────────────────────────────── */
+const HEAT_RAMP = ['#6fbf73', '#f2cf5b', '#f29a4b', '#cf3f3f'] as const;   // 좋음 → 나쁨
+
+/** 값이 클수록 나쁘면 그대로, 값이 클수록 좋으면 뒤집는다 */
+function rampFor(highIsRisk: boolean) {
+  return highIsRisk ? [...HEAT_RAMP] : [...HEAT_RAMP].reverse();
+}
+
+/** 낮은 값 → 높은 값 순서의 경계로 구간 색을 고른다 */
+function pickByBreaks(value: number, breaks: readonly number[], highIsRisk: boolean) {
+  const ramp = rampFor(highIsRisk);
+  for (let i = 0; i < breaks.length; i += 1) {
+    if (value < breaks[i]) return ramp[i];
+  }
+  return ramp[breaks.length];
+}
+
+function colorByScore(value: number, highIsRisk = true) {
+  return pickByBreaks(value, [40, 60, 80], highIsRisk);
 }
 
 function colorByRatio(value: number, highIsRisk: boolean) {
-  if (highIsRisk) {
-    if (value >= 0.7) return '#cf3f3f';
-    if (value >= 0.5) return '#f29a4b';
-    if (value >= 0.3) return '#f2cf5b';
-    return '#6fbf73';
-  }
-
-  if (value >= 0.35) return '#2f855a';
-  if (value >= 0.22) return '#78b66a';
-  if (value >= 0.12) return '#f2cf5b';
-  return '#cf3f3f';
+  return highIsRisk
+    ? pickByBreaks(value, [0.3, 0.5, 0.7], true)
+    : pickByBreaks(value, [0.12, 0.22, 0.35], false);
 }
 
 function colorByLayerValue(properties: GridAnalysisProperties, layer: LayerKey) {
@@ -391,25 +411,13 @@ function colorByLayerValue(properties: GridAnalysisProperties, layer: LayerKey) 
   }
 
   if (layer === 'priority_score') return colorByScore(value);
-  if (layer === 'mean_actual_lst') {
-    if (value >= 41) return '#cf3f3f';
-    if (value >= 38) return '#f29a4b';
-    if (value >= 35) return '#f2cf5b';
-    return '#6fbf73';
-  }
-  if (layer === 'mean_actual_anomaly') {
-    if (value >= 3) return '#cf3f3f';
-    if (value >= 1.5) return '#f29a4b';
-    if (value >= 0) return '#f2cf5b';
-    return '#6fbf73';
-  }
+  if (layer === 'mean_actual_lst') return pickByBreaks(value, [35, 38, 41], true);
+  if (layer === 'mean_actual_anomaly') return pickByBreaks(value, [0, 1.5, 3], true);
   if (layer === 'green_ratio' || layer === 'ndvi') return colorByRatio(value, false);
   if (layer === 'building_ratio' || layer === 'impervious_ratio') return colorByRatio(value, true);
+  // 쉼터는 가까울수록 좋다 = 값이 작을수록 좋다 → 위험형(값 클수록 나쁨)과 같은 방향
   if (layer === 'nearest_shelter_distance_m') {
-    if (value <= 250) return '#2f855a';
-    if (value <= 500) return '#78b66a';
-    if (value <= 1000) return '#f2cf5b';
-    return '#cf3f3f';
+    return pickByBreaks(value, [250, 500, 1000], true);
   }
 
   return NEUTRAL_COLOR;
@@ -426,10 +434,6 @@ function colorByLayerValue(properties: GridAnalysisProperties, layer: LayerKey) 
    코로플레스 지도의 표준 분류 방식(quantile classification)이고,
    데이터가 바뀌어도 사람이 임계값을 다시 만질 필요가 없다.
    ───────────────────────────────────────────────────────────────────────── */
-
-// 낮은 값 → 높은 값 순서. 기존 격자 팔레트와 같은 색을 쓴다.
-const RISK_RAMP = ['#6fbf73', '#f2cf5b', '#f29a4b', '#cf3f3f'];      // 높을수록 나쁨
-const BENEFIT_RAMP = ['#cf3f3f', '#f2cf5b', '#78b66a', '#2f855a'];   // 높을수록 좋음
 
 /** 값이 클수록 '좋은' 지표인지 */
 const HIGHER_IS_BETTER: ReadonlySet<LayerKey> = new Set<LayerKey>([
@@ -468,7 +472,8 @@ export function computeQuantileBreaks(
 
   return {
     breaks: [quantile(values, 0.25), quantile(values, 0.5), quantile(values, 0.75)],
-    ramp: HIGHER_IS_BETTER.has(layer) ? BENEFIT_RAMP : RISK_RAMP,
+    // 격자와 같은 램프를 쓴다. 값이 클수록 좋은 지표만 방향을 뒤집는다.
+    ramp: rampFor(!HIGHER_IS_BETTER.has(layer)),
     count: values.length
   };
 }
@@ -485,16 +490,16 @@ function getBoundaryStyle(
   feature: Feature<Geometry> | undefined,
   selectedDistrict: string,
   selectedLayer: LayerKey,
-  isDistrictOverview: boolean,
+  isGuMode: boolean,
   quantileSpec: QuantileBreaks | null
 ): PathOptions {
   const districtName = feature ? getDistrictName(feature) : '';
   const isSelected = districtName === selectedDistrict;
   const properties = feature ? getFeatureProperties(feature) : {};
-  const layerValue = getLayerValue(properties, selectedLayer, isDistrictOverview);
+  const layerValue = getLayerValue(properties, selectedLayer, isGuMode);
   const hasLayerValue = layerValue !== null;
 
-  if (isDistrictOverview) {
+  if (isGuMode) {
     // 구 단위는 사분위 분류를 쓴다. 사분위를 못 만들면(값이 4개 미만) 격자 규칙으로 내려간다.
     const fillColor =
       hasLayerValue && quantileSpec
@@ -503,8 +508,10 @@ function getBoundaryStyle(
     return {
       color: isSelected ? '#063f25' : '#1f2933',
       fillColor,
-      fillOpacity: hasLayerValue ? (isSelected ? 0.68 : 0.5) : 0.18,
-      opacity: isSelected ? 1 : 0.72,
+      // 구 모드에서는 이 폴리곤이 유일한 데이터 표현이므로 진하게 칠한다.
+      // (격자와 겹쳐 그리던 시절에는 아래가 비쳐야 해서 0.5였다)
+      fillOpacity: hasLayerValue ? (isSelected ? 0.92 : 0.82) : 0.2,
+      opacity: 1,
       weight: isSelected ? 3.2 : 1.4
     };
   }
@@ -856,6 +863,13 @@ export function MapDashboard() {
     setSelected100mPopupPosition(null);
     setSelectedGridProperties(null);
 
+    // 구 모드는 격자를 쓰지 않는다. 남아 있던 격자를 비워야 지도에 겹쳐 그려지지 않는다.
+    if (isGuResolution(selectedGridResolution)) {
+      setGridGeoJson(null);
+      setGridLoading(false);
+      return;
+    }
+
     if (isAllDistricts) {
       let isActive = true;
 
@@ -928,6 +942,11 @@ export function MapDashboard() {
   const center = selectedDistrictMeta?.center ?? DEFAULT_CENTER;
   const targetZoom = isAllDistricts ? SEOUL_OVERVIEW_ZOOM : DISTRICT_DETAIL_ZOOM;
   const isDistrictOverview = isAllDistricts || zoomLevel <= DISTRICT_OVERVIEW_ZOOM;
+
+  // ★ 구 경계를 '칠하는' 판단은 줌이 아니라 해상도 선택으로만 한다.
+  //   예전에는 isDistrictOverview(전체 선택 또는 낮은 줌)로 결정해서 격자와 동시에
+  //   그려졌고, 화면에 보이는 색이 격자인지 구인지 구분할 수 없었다.
+  const isGuMode = isGuResolution(selectedGridResolution);
 
   // 구 단위 사분위 경계. 지금 화면에 그려지는 구들의 값에서 직접 뽑는다.
   const districtQuantiles = useMemo(
@@ -1225,7 +1244,13 @@ export function MapDashboard() {
           className="gisMap"
           zoomControl={false}
           scrollWheelZoom
-          preferCanvas
+          /* preferCanvas 를 켜지 않는다.
+             켜면 Leaflet이 <GeoJSON> 같은 벡터 레이어를 공용 캔버스 렌더러로 그리는데,
+             이 앱에서는 그 렌더러가 지도에 붙지 않아 구 경계·250m/500m 격자가
+             통째로 안 그려졌다(캔버스 draw 호출 0회. 레이어와 style 함수는 정상 동작해서
+             로그만으로는 정상으로 보였다).
+             64,574개짜리 100m 격자는 CanvasGridLayer가 따로 캔버스로 그리므로
+             preferCanvas 없이도 성능 문제가 없다. */
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -1235,15 +1260,15 @@ export function MapDashboard() {
           <MapFocus center={center} zoom={targetZoom} />
           <RightDragPan />
           <GeoJSON
-            key={`${selectedDistrict}-${selectedLayer}-${isDistrictOverview}`}
+            key={`${selectedDistrict}-${selectedLayer}-${isGuMode}`}
             data={geoJson}
-            interactive={selectedGridResolution !== '100m' && isDistrictOverview}
+            interactive={isGuMode}
             style={(feature) =>
               getBoundaryStyle(
                 feature as Feature<Geometry>,
                 selectedDistrict,
                 selectedLayer,
-                isDistrictOverview,
+                isGuMode,
                 districtQuantiles
               )
             }
@@ -1251,7 +1276,7 @@ export function MapDashboard() {
               const typedFeature = feature as Feature<Geometry>;
               const districtName = getDistrictName(typedFeature);
 
-              if (isDistrictOverview) {
+              if (isGuMode) {
                 layer.bindTooltip(buildDistrictTooltip(typedFeature, selectedLayer), {
                   className: 'districtTempTooltip',
                   direction: 'top',
@@ -1263,22 +1288,22 @@ export function MapDashboard() {
               layer.on({
                 click: () => setSelectedDistrict(districtName),
                 mouseover: () => {
-                  if (isDistrictOverview) {
+                  if (isGuMode) {
                     (layer as L.Path).setStyle({
-                    fillOpacity: 0.32,
+                      fillOpacity: 0.9,
                       opacity: 1,
                       weight: 3.4
                     });
                   }
                 },
                 mouseout: () => {
-                  if (isDistrictOverview) {
+                  if (isGuMode) {
                     (layer as L.Path).setStyle(
                       getBoundaryStyle(
                         typedFeature,
                         selectedDistrict,
                         selectedLayer,
-                        isDistrictOverview,
+                        isGuMode,
                         districtQuantiles
                       )
                     );
@@ -1298,7 +1323,7 @@ export function MapDashboard() {
               onFeatureClick={handle100mFeatureClick}
             />
           )}
-          {gridGeoJson && selectedGridResolution !== '100m' && (
+          {gridGeoJson && selectedGridResolution !== '100m' && !isGuMode && (
             <GeoJSON
               key={gridLayerKey}
               data={gridGeoJson}
@@ -1462,7 +1487,7 @@ export function MapDashboard() {
           layerLabel={getLayerLabel(selectedLayer)}
           colorOf={colorByLayerValue}
           neutralColor={NEUTRAL_COLOR}
-          quantile={isDistrictOverview ? districtQuantiles : null}
+          quantile={isGuMode ? districtQuantiles : null}
         />
       )}
       <AiChatLauncher
