@@ -32,6 +32,8 @@ import type {
   LayerKey
 } from '../types/dashboard';
 import GridDetailSidePanel from './GridDetailSidePanel';
+import AiChatLauncher from './AiChatLauncher';
+import MapLegend from './MapLegend';
 import CanvasGridLayer from './CanvasGridLayer';
 
 const ALL_DISTRICTS = '전체';
@@ -384,19 +386,90 @@ function colorByLayerValue(properties: GridAnalysisProperties, layer: LayerKey) 
   return NEUTRAL_COLOR;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   구(區) 단위 채색은 격자용 고정 임계값을 쓰지 않는다.
+
+   colorByScore·colorByRatio의 경계값(0.3 / 0.5 / 0.7 등)은 100m 격자 분포를 보고
+   정한 값이다. 구 단위는 격자 평균이라 극단값이 상쇄돼 범위가 훨씬 좁다.
+   예: 건물비율 구 범위는 0.124~0.298인데 첫 경계가 0.3 → 25개 구가 전부 같은 색.
+
+   그래서 구 단위는 '그 화면에 실제로 그려지는 값들'에서 사분위 경계를 뽑아 쓴다.
+   코로플레스 지도의 표준 분류 방식(quantile classification)이고,
+   데이터가 바뀌어도 사람이 임계값을 다시 만질 필요가 없다.
+   ───────────────────────────────────────────────────────────────────────── */
+
+// 낮은 값 → 높은 값 순서. 기존 격자 팔레트와 같은 색을 쓴다.
+const RISK_RAMP = ['#6fbf73', '#f2cf5b', '#f29a4b', '#cf3f3f'];      // 높을수록 나쁨
+const BENEFIT_RAMP = ['#cf3f3f', '#f2cf5b', '#78b66a', '#2f855a'];   // 높을수록 좋음
+
+/** 값이 클수록 '좋은' 지표인지 */
+const HIGHER_IS_BETTER: ReadonlySet<LayerKey> = new Set<LayerKey>([
+  'green_ratio',
+  'ndvi'
+]);
+
+export interface QuantileBreaks {
+  /** 25% / 50% / 75% 지점의 값 */
+  breaks: number[];
+  ramp: string[];
+  /** 분류에 쓴 구의 개수 */
+  count: number;
+}
+
+function quantile(sorted: number[], p: number) {
+  if (sorted.length === 0) return NaN;
+  const pos = (sorted.length - 1) * p;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+export function computeQuantileBreaks(
+  features: Feature<Geometry>[],
+  layer: LayerKey
+): QuantileBreaks | null {
+  const values = features
+    .map((feature) => getNumericProperty(getFeatureProperties(feature), layer))
+    .filter((value): value is number => value !== null)
+    .sort((a, b) => a - b);
+
+  // 표본이 너무 적으면 사분위가 의미 없다
+  if (values.length < 4) return null;
+
+  return {
+    breaks: [quantile(values, 0.25), quantile(values, 0.5), quantile(values, 0.75)],
+    ramp: HIGHER_IS_BETTER.has(layer) ? BENEFIT_RAMP : RISK_RAMP,
+    count: values.length
+  };
+}
+
+export function colorByQuantile(value: number, spec: QuantileBreaks) {
+  const [q1, q2, q3] = spec.breaks;
+  if (value < q1) return spec.ramp[0];
+  if (value < q2) return spec.ramp[1];
+  if (value < q3) return spec.ramp[2];
+  return spec.ramp[3];
+}
+
 function getBoundaryStyle(
   feature: Feature<Geometry> | undefined,
   selectedDistrict: string,
   selectedLayer: LayerKey,
-  isDistrictOverview: boolean
+  isDistrictOverview: boolean,
+  quantileSpec: QuantileBreaks | null
 ): PathOptions {
   const districtName = feature ? getDistrictName(feature) : '';
   const isSelected = districtName === selectedDistrict;
   const properties = feature ? getFeatureProperties(feature) : {};
-  const fillColor = colorByLayerValue(properties, selectedLayer);
-  const hasLayerValue = getNumericProperty(properties, selectedLayer) !== null;
+  const layerValue = getNumericProperty(properties, selectedLayer);
+  const hasLayerValue = layerValue !== null;
 
   if (isDistrictOverview) {
+    // 구 단위는 사분위 분류를 쓴다. 사분위를 못 만들면(값이 4개 미만) 격자 규칙으로 내려간다.
+    const fillColor =
+      hasLayerValue && quantileSpec
+        ? colorByQuantile(layerValue, quantileSpec)
+        : colorByLayerValue(properties, selectedLayer);
     return {
       color: isSelected ? '#063f25' : '#1f2933',
       fillColor,
@@ -815,6 +888,16 @@ export function MapDashboard() {
   const center = selectedDistrictMeta?.center ?? DEFAULT_CENTER;
   const targetZoom = isAllDistricts ? SEOUL_OVERVIEW_ZOOM : DISTRICT_DETAIL_ZOOM;
   const isDistrictOverview = isAllDistricts || zoomLevel <= DISTRICT_OVERVIEW_ZOOM;
+
+  // 구 단위 사분위 경계. 지금 화면에 그려지는 구들의 값에서 직접 뽑는다.
+  const districtQuantiles = useMemo(
+    () =>
+      geoJson
+        ? computeQuantileBreaks(geoJson.features as Feature<Geometry>[], selectedLayer)
+        : null,
+    [geoJson, selectedLayer]
+  );
+
   const gridCount = gridGeoJson?.features.length ?? 0;
   const gridMeters = getResolutionMeters(selectedGridResolution);
   const gridLayerKey =
@@ -1067,6 +1150,25 @@ export function MapDashboard() {
     setIsPickingCompare(false);
   }, []);
 
+  // AI 채팅 문맥. 상세 패널 안에 있던 계산을 여기로 올렸다(#26).
+  // AI Tool 문맥에는 ML 데이터셋의 실제 100m grid_id만 전달한다.
+  // display_grid_id는 헤더 표시용이며 API 문맥으로 승격하지 않는다.
+  const chatGridId =
+    selectedGridResolution === '100m' &&
+    typeof selectedGridProperties?.grid_id === 'string' &&
+    selectedGridProperties.grid_id.trim()
+      ? selectedGridProperties.grid_id.trim()
+      : null;
+  const chatDisplayGridId =
+    (selectedGridProperties?.display_grid_id ??
+      selectedGridProperties?.grid_id ??
+      '') || null;
+  const chatGuName =
+    typeof selectedGridProperties?.gu_name === 'string' &&
+    selectedGridProperties.gu_name.trim()
+      ? selectedGridProperties.gu_name.trim()
+      : null;
+
   return (
     <div className={isPanelOpen ? 'gisShell panelOpen' : 'gisShell'}>
       {loading && (
@@ -1101,7 +1203,8 @@ export function MapDashboard() {
                 feature as Feature<Geometry>,
                 selectedDistrict,
                 selectedLayer,
-                isDistrictOverview
+                isDistrictOverview,
+                districtQuantiles
               )
             }
             onEachFeature={(feature, layer) => {
@@ -1135,7 +1238,8 @@ export function MapDashboard() {
                         typedFeature,
                         selectedDistrict,
                         selectedLayer,
-                        isDistrictOverview
+                        isDistrictOverview,
+                        districtQuantiles
                       )
                     );
                   }
@@ -1272,8 +1376,12 @@ export function MapDashboard() {
               </Marker>
             );
           })()}
-          <ZoomControl position="bottomright" />
-          <ScaleControl position="bottomright" metric imperial={false} />
+          {/* 줌·축척을 우측 상단 도구 팔레트(.rightToolbar) 옆으로 모았다.
+              지도 조작 컨트롤이 화면 양 끝에 흩어져 있으면 시선이 두 번 움직인다. */}
+          <ZoomControl position="topright" />
+          {/* 카드 안쪽 폭이 50px이라 maxWidth를 40으로 둔다.
+              50으로 맞추면 막대가 좌우 여백 없이 꽉 차서 넘친 것처럼 보인다. */}
+          <ScaleControl position="topright" metric imperial={false} maxWidth={40} />
         </MapContainer>
       )}
       {!loading && !error && gridLoading && (
@@ -1306,6 +1414,21 @@ export function MapDashboard() {
         isPickingCompare={isPickingCompare}
         onStartCompare={handleStartCompare}
         onClearCompare={handleClearCompare}
+      />
+      {/* 색 범례. colorByLayerValue를 그대로 넘겨 범례가 지도와 같은 색을 쓰게 한다. */}
+      {!loading && !error && (
+        <MapLegend
+          layer={selectedLayer}
+          layerLabel={getLayerLabel(selectedLayer)}
+          colorOf={colorByLayerValue}
+          neutralColor={NEUTRAL_COLOR}
+          quantile={isDistrictOverview ? districtQuantiles : null}
+        />
+      )}
+      <AiChatLauncher
+        selectedGridId={chatGridId}
+        selectedDisplayGridId={chatDisplayGridId}
+        selectedGuName={chatGuName}
       />
     </div>
   );
@@ -1356,8 +1479,11 @@ function SearchPanel({
   return (
     <aside className="gisLeftPanel heatIslandPanel">
       <div className="heatPanelHeader">
-        <p>Urban Heat Island</p>
-        <h1>도시 열섬 해결 대시보드</h1>
+        <img className="heatPanelLogo" src="/logo-avatar.svg" alt="GA:ON" />
+        <div>
+          <p>Urban Heat Island</p>
+          <h1>도시 열섬 해결 대시보드</h1>
+        </div>
       </div>
 
       <div className="heatControlBlock">
