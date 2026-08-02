@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="50 30 200 200" width="200" height="200">
+  <title>GA:ON 마스코트 얼굴</title>
+  <!-- GAON-mascot.svg에서 머리 부분만 잘라낸 아바타.
+       FAB(56px)에서는 몸통·나무까지 들어가면 형태가 뭉개져 얼굴만 남겼다. -->
+  <ellipse cx="100" cy="60" rx="22" ry="28" fill="#C79A67"></ellipse>
+  <ellipse cx="200" cy="60" rx="22" ry="28" fill="#C79A67"></ellipse>
+  <ellipse cx="100" cy="58" rx="11" ry="15" fill="#EAD3B0"></ellipse>
+  <ellipse cx="200" cy="58" rx="11" ry="15" fill="#EAD3B0"></ellipse>
+  <circle cx="150" cy="140" r="88" fill="#F1DFBF"></circle>
+  <path d="M80 104 C88 62 116 44 150 44 C184 44 212 62 220 104 C198 92 172 100 150 116 C128 100 102 92 80 104 Z" fill="#C79A67"></path>
+  <ellipse cx="96" cy="176" rx="15" ry="9" fill="#E9B48C" opacity="0.55"></ellipse>
+  <ellipse cx="204" cy="176" rx="15" ry="9" fill="#E9B48C" opacity="0.55"></ellipse>
+  <ellipse cx="121" cy="151" rx="11" ry="12.5" fill="#4A3524"></ellipse>
+  <ellipse cx="179" cy="151" rx="11" ry="12.5" fill="#4A3524"></ellipse>
+  <circle cx="124.5" cy="146" r="3" fill="#fff" opacity="0.9"></circle>
+  <circle cx="182.5" cy="146" r="3" fill="#fff" opacity="0.9"></circle>
+  <ellipse cx="150" cy="172" rx="9" ry="7" fill="#7A5238"></ellipse>
+  <path d="M150 179 L150 185 M133 188 Q150 202 167 188" stroke="#7A5238" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
