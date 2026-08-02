@@ -62,6 +62,8 @@ export interface AiChatViewProps {
   selectedDisplayGridId: string | null;
   selectedGuName: string | null;
   onBack: () => void;
+  /** 창이 닫힌 사이에 답변이 도착했을 때. 런처가 알림 점을 띄우는 데 쓴다. */
+  onBackgroundReply?: () => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -679,7 +681,8 @@ export default function AiChatView({
   selectedGridId,
   selectedDisplayGridId,
   selectedGuName,
-  onBack
+  onBack,
+  onBackgroundReply
 }: AiChatViewProps) {
   const [messages, setMessages] = useState<AiChatMessage[]>(restoreMessages);
   const [input, setInput] = useState('');
@@ -696,6 +699,12 @@ export default function AiChatView({
   const inFlightRef = useRef(false);
   const requestSequenceRef = useRef(0);
   const activeControllerRef = useRef<AbortController | null>(null);
+  // 응답이 돌아오는 시점의 열림/닫힘 상태를 알아야 한다.
+  // submitMessage의 클로저에 갇힌 isActive는 '보낼 때' 값이라 항상 true다.
+  const isActiveRef = useRef(isActive);
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
   const contextGridId = nonEmptyString(selectedGridId) ?? null;
   const displayGridId = nonEmptyString(selectedDisplayGridId) ?? null;
 
@@ -736,12 +745,12 @@ export default function AiChatView({
 
   useEffect(() => {
     if (!isActive) {
+      // ★ 창을 닫아도 진행 중인 요청은 건드리지 않는다.
+      //   예전에는 여기서 abort + requestSequence 증가로 응답을 버렸다. 그때는 채팅이
+      //   상세 패널의 '탭'이라 다른 탭으로 넘어가는 것 = 화면을 떠나는 것이었기 때문이다.
+      //   지금은 떠 있는 창을 잠시 접는 것뿐이라, 답이 도착하면 목록에 쌓여 있어야 한다.
+      //   (요청 취소는 '대화 초기화'와 언마운트에서만 한다)
       textareaRef.current?.blur();
-      requestSequenceRef.current += 1;
-      activeControllerRef.current?.abort();
-      activeControllerRef.current = null;
-      inFlightRef.current = false;
-      setLoading(false);
       setMobileGuideOpen(false);
       return;
     }
@@ -830,6 +839,7 @@ export default function AiChatView({
       if (requestSequence !== requestSequenceRef.current) return;
       const assistantMessage = sanitizeResponse(response);
       setMessages((current) => [...current, assistantMessage]);
+      if (!isActiveRef.current) onBackgroundReply?.();
     } catch (requestError) {
       if (
         requestSequence !== requestSequenceRef.current ||
@@ -838,6 +848,7 @@ export default function AiChatView({
         return;
       }
       setError(userFacingError(requestError));
+      if (!isActiveRef.current) onBackgroundReply?.();
     } finally {
       if (requestSequence === requestSequenceRef.current) {
         inFlightRef.current = false;
@@ -934,19 +945,6 @@ export default function AiChatView({
       <div className="gdpChatBody">
         {messages.length === 0 && (
           <div className="gdpChatIntro">
-            {/* 마스코트는 대화 시작 전에만 보여준다. 대화가 쌓인 뒤에도 남겨두면
-                읽어야 할 내용을 밀어내기만 한다.
-                장식 이미지라 alt=""·aria-hidden으로 스크린리더에서 제외한다.
-                파일(public/mascot.png)이 없으면 조용히 숨긴다. */}
-            <img
-              className="gdpChatMascot"
-              src="/mascot.png"
-              alt=""
-              aria-hidden="true"
-              onError={(event) => {
-                event.currentTarget.style.display = 'none';
-              }}
-            />
             <p>격자 데이터를 조회하거나 정책 변경 시나리오를 질문해 보세요.</p>
             {!contextGridId && (
               <p>

@@ -10,7 +10,7 @@
   --line: #d9e1e5;
   --muted: #64717f;
   --heat: #cf3f3f;
-  --green: #2f855a;
+  --green: #318136;
   --ink: #172033;
   --water: #2b6cb0;
 }
@@ -423,7 +423,7 @@ button {
   display: block;
   height: 100%;
   border-radius: 8px;
-  background: linear-gradient(90deg, #2b6cb0, #2f855a);
+  background: linear-gradient(90deg, #2b6cb0, #318136);
 }
 
 .tableScroll {
@@ -625,8 +625,8 @@ td {
   --gdp-ink2: #4e5968;
   --gdp-ink3: #8b95a1;
   --gdp-line: #eceef1;
-  --gdp-green: #0d5743;
-  --gdp-green-soft: #e5f1ec;
+  --gdp-green: #1f5121;
+  --gdp-green-soft: #e4f1e5;
   position: absolute;
   top: 18px;
   left: 16px;
@@ -649,6 +649,17 @@ td {
 
 .heatPanelHeader {
   padding: 18px 20px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 브랜드 로고 마크. 대시보드에서 GA:ON을 알아볼 수 있는 유일한 지점이라 헤더에 둔다. */
+.heatPanelLogo {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 11px;   /* 원본 avatar의 라운드 사각과 맞춤 */
 }
 
 .heatPanelHeader p {
@@ -852,7 +863,7 @@ td {
 .indicatorList button.active {
   background: var(--gdp-green);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(13, 87, 67, 0.28);
+  box-shadow: 0 4px 12px rgba(31, 81, 33, 0.28);
 }
 
 .indicatorList button.active:hover {
@@ -1471,7 +1482,7 @@ td {
   height: 28px;
   border-radius: 999px 999px 999px 2px;
   transform: rotate(-45deg);
-  background: #0d5743;
+  background: #1f5121;
   box-shadow: 0 2px 6px rgba(20, 30, 45, 0.35);
 }
 
@@ -1491,7 +1502,7 @@ td {
 }
 
 .shelterPopup .leaflet-popup-content strong {
-  color: #0d5743;
+  color: #1f5121;
   font-size: 13px;
 }
 
@@ -1506,12 +1517,12 @@ td {
   padding: 7px 10px;
   border: 0;
   border-radius: 9px;
-  background: #0d5743;
+  background: #1f5121;
   color: #fff;
   font-size: 11.5px;
   line-height: 1.4;
   white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(13, 87, 67, 0.28);
+  box-shadow: 0 4px 14px rgba(31, 81, 33, 0.28);
 }
 
 .leaflet-tooltip.shelterTip b {
@@ -1528,7 +1539,7 @@ td {
 
 /* 말풍선 꼬리도 배경색에 맞춘다 (기본값은 흰색이라 튄다) */
 .leaflet-tooltip.shelterTip.leaflet-tooltip-top::before {
-  border-top-color: #0d5743;
+  border-top-color: #1f5121;
 }
 
 .districtLabelIconWithValue {
@@ -1715,13 +1726,13 @@ td {
 }
 
 .rightToolbar button.active {
-  background: #0d5743;   /* 앱 초록색 (gdp green) */
+  background: #1f5121;   /* 앱 초록색 (gdp green) */
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(13, 87, 67, 0.28);
+  box-shadow: 0 4px 12px rgba(31, 81, 33, 0.28);
 }
 
 .rightToolbar button.active:hover {
-  background: #0d5743;
+  background: #1f5121;
 }
 
 /* 격자 선택 팝업 — 예전 툴팁 색감 그대로 */
@@ -1786,7 +1797,7 @@ td {
   font-size: 30px;
   font-weight: 800;
   line-height: 1;
-  color: #0d5743;
+  color: #1f5121;
 }
 
 .gridReportPriority span {
@@ -1799,7 +1810,7 @@ td {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #0d5743;
+  color: #1f5121;
 }
 
 .gridReportSection dl {
@@ -1897,7 +1908,7 @@ td {
 .aiChatFab {
   --gdp-page:#eef1f4; --gdp-card:#ffffff; --gdp-sub:#f5f7f9; --gdp-sub2:#eaedf0;
   --gdp-ink:#191f28; --gdp-ink2:#4e5968; --gdp-ink3:#8b95a1; --gdp-line:#eceef1;
-  --gdp-green:#0d5743; --gdp-green2:#12876a; --gdp-green-soft:#e5f1ec;
+  --gdp-green:#1f5121; --gdp-green2:#367836; --gdp-green-soft:#e4f1e5;
   --gdp-hot:#e8590c; --gdp-hot-soft:#fceadd; --gdp-cool:#1c7ed6; --gdp-cool-soft:#e2effb;
   --gdp-danger:#e03131; --gdp-danger-soft:#fbe3e3;   /* 지도 빨강(≥3℃) 티어 */
   --gdp-shadow:0 1px 2px rgba(20,30,45,.04), 0 8px 24px rgba(20,30,45,.05);
@@ -2089,7 +2100,7 @@ td {
 .gridDetailSidePanel .sr-lab{ color:var(--gdp-ink2); }
 .gridDetailSidePanel .sr-val{ font-weight:700; color:var(--gdp-green); }
 .gridDetailSidePanel .gdpSim input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:3px; background:var(--gdp-sub2); outline:none; margin:0; }
-.gridDetailSidePanel .gdpSim input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); box-shadow:0 1px 4px rgba(13,87,67,.35); }
+.gridDetailSidePanel .gdpSim input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); box-shadow:0 1px 4px rgba(31, 81, 33,.35); }
 .gridDetailSidePanel .gdpSim input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); }
 /* 라벨 바로 아래 한 줄 설명이 붙으므로 sr-top의 아래 여백은 줄인다 */
 .gridDetailSidePanel .sr-top{ margin-bottom:2px; }
@@ -2272,7 +2283,7 @@ td {
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatIntro{
   margin-bottom:14px;
   padding:14px 15px;
-  border:1px solid rgba(13,87,67,.12);
+  border:1px solid rgba(31, 81, 33,.12);
   border-radius:15px;
   background:var(--gdp-green-soft);
   color:var(--gdp-ink2);
@@ -2293,7 +2304,7 @@ td {
 .gridDetailSidePanel .gdpQuickButton{
   min-height:34px;
   padding:8px 10px;
-  border:1px solid rgba(13,87,67,.18);
+  border:1px solid rgba(31, 81, 33,.18);
   border-radius:11px;
   background:var(--gdp-card);
   color:var(--gdp-green);
@@ -2305,7 +2316,7 @@ td {
 }
 .gridDetailSidePanel .gdpQuickButton:hover:not(:disabled){
   background:var(--gdp-green-soft);
-  border-color:rgba(13,87,67,.32);
+  border-color:rgba(31, 81, 33,.32);
 }
 .gridDetailSidePanel .gdpQuickButton:disabled,
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatSend:disabled,
@@ -2347,7 +2358,7 @@ td {
   width:100%;
   margin-top:8px;
   padding:14px;
-  border:1px solid rgba(13,87,67,.12);
+  border:1px solid rgba(31, 81, 33,.12);
   border-radius:14px;
   background:var(--gdp-card);
   box-shadow:var(--gdp-shadow);
@@ -2475,7 +2486,7 @@ td {
 .gridDetailSidePanel .gdpQuickButton:focus-visible,
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatTextarea:focus-visible,
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatSend:focus-visible{
-  outline:3px solid rgba(18,135,106,.28);
+  outline:3px solid rgba(54, 120, 54,.28);
   outline-offset:2px;
 }
 
@@ -2555,7 +2566,7 @@ td {
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideFeature,
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideComing,
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog{
-  border:1px solid rgba(13,87,67,.12);
+  border:1px solid rgba(31, 81, 33,.12);
   border-radius:14px;
   background:var(--gdp-card);
   box-shadow:0 4px 14px rgba(24,49,40,.05);
@@ -2616,7 +2627,7 @@ td {
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideExamples button{
   width:100%;
   padding:8px 9px;
-  border:1px solid rgba(13,87,67,.14);
+  border:1px solid rgba(31, 81, 33,.14);
   border-radius:9px;
   background:var(--gdp-green-soft);
   color:var(--gdp-green);
@@ -2627,7 +2638,7 @@ td {
   cursor:pointer;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideExamples button:hover{
-  border-color:rgba(13,87,67,.32);
+  border-color:rgba(31, 81, 33,.32);
   background:#e6f5ef;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideLeverList{
@@ -2743,7 +2754,7 @@ td {
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideToggle:focus-visible,
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideExamples button:focus-visible,
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog summary:focus-visible{
-  outline:3px solid rgba(18,135,106,.28);
+  outline:3px solid rgba(54, 120, 54,.28);
   outline-offset:2px;
 }
 
@@ -2978,11 +2989,11 @@ td {
   /* background-color를 먼저 따로 준다. 그래디언트(background-image) 한 줄이
      어떤 이유로든 무효가 돼도 단색 초록은 남아 버튼이 사라지지 않는다.
      var()에도 폴백값을 넣어 이중으로 막는다. */
-  background-color: var(--gdp-green, #0d5743);
+  background-color: var(--gdp-green, #1f5121);
   background-image: linear-gradient(
     140deg,
-    var(--gdp-green2, #12876a),
-    var(--gdp-green, #0d5743)
+    var(--gdp-green2, #367836),
+    var(--gdp-green, #1f5121)
   );
   color: #fff;
   cursor: pointer;
@@ -2991,7 +3002,7 @@ td {
      흰 링을 둘러 어떤 배경에서도 버튼 경계가 끊기지 않게 한다. */
   box-shadow:
     0 0 0 3px rgba(255, 255, 255, 0.92),
-    0 4px 12px rgba(13, 87, 67, 0.34),
+    0 4px 12px rgba(31, 81, 33, 0.34),
     0 12px 32px rgba(20, 30, 45, 0.22);
 
   transition:
@@ -3003,7 +3014,7 @@ td {
   transform: translateY(-2px);
   box-shadow:
     0 0 0 3px rgba(255, 255, 255, 0.96),
-    0 6px 16px rgba(13, 87, 67, 0.4),
+    0 6px 16px rgba(31, 81, 33, 0.4),
     0 16px 40px rgba(20, 30, 45, 0.26);
 }
 
@@ -3012,7 +3023,7 @@ td {
 }
 
 .aiChatFab:focus-visible {
-  outline: 3px solid rgba(18, 135, 106, 0.5);
+  outline: 3px solid rgba(54, 120, 54, 0.5);
   outline-offset: 3px;
 }
 
@@ -3028,8 +3039,21 @@ td {
   display: grid;
   place-items: center;
   background: #ffffff;
-  color: var(--gdp-green, #0d5743);
+  color: var(--gdp-green, #1f5121);
   box-shadow: 0 1px 3px rgba(20, 30, 45, 0.28);
+}
+
+/* 닫아둔 사이에 답변이 도착했다는 표시. 색만으로 전달하지 않도록
+   aria-label과 툴팁 문구도 함께 바뀐다. */
+.aiChatFabUnread {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #e8590c;
+  box-shadow: 0 0 0 2.5px #ffffff;
 }
 
 /* 마우스를 올리면 뜨는 이름표. 터치 기기에서는 뜨지 않으므로
@@ -3166,13 +3190,12 @@ td {
     transition: none;
   }
 }
-/* 대화 시작 전 인트로의 마스코트. public/mascot.png 가 없으면
-   AiChatView의 onError가 숨기므로 깨진 이미지 아이콘은 뜨지 않는다. */
-:is(.gridDetailSidePanel,.aiChatDock) .gdpChatMascot {
+/* FAB 안의 마스코트 얼굴. 초록 배경 위에 크림색 얼굴이 올라간다.
+   전신 SVG는 56px에서 몸통·나무가 뭉개져 머리만 잘라낸 mascot-face.svg를 쓴다. */
+.aiChatFabMascot {
+  width: 42px;
+  height: 42px;
   display: block;
-  width: 96px;
-  height: auto;
-  margin: 0 auto 10px;
   user-select: none;
   -webkit-user-drag: none;
 }
@@ -3255,7 +3278,7 @@ td {
 }
 
 .leaflet-top.leaflet-right .leaflet-control-zoom a:focus-visible {
-  outline: 3px solid rgba(18, 135, 106, 0.45);
+  outline: 3px solid rgba(54, 120, 54, 0.45);
   outline-offset: -3px;
 }
 
@@ -3272,7 +3295,7 @@ td {
 .leaflet-top.leaflet-right .leaflet-control-scale-line {
   padding: 3px 0 0;
   border: 0;
-  border-top: 2px solid #0d5743;
+  border-top: 2px solid #1f5121;
   background: none;
   box-shadow: none;
   color: #4e5968;
