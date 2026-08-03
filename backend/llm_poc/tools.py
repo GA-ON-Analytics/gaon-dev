@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from functools import lru_cache
 from numbers import Real
 from typing import Any
 
 from backend.ml import predict_core
 
+
+# 문서 검색은 "지금 사실"을 답하지 않는다. 문서 수치는 작성 시점 값이라
+# 지금 모델과 다르다(07.11 문서의 R² 0.832가 지금 0.7861인 것이 그 예다).
+DOC_SEARCH_LIMITATIONS = [
+    "문서에 적힌 수치는 작성 시점 값이라 현재 모델·데이터와 다를 수 있습니다.",
+    "현재값이 필요하면 격자 데이터 조회나 시뮬레이션을 사용해 주세요.",
+]
 
 INTERPRETATION_BASIS = (
     "before_anomaly와 after_anomaly는 절대온도가 아니라 "
@@ -947,8 +955,85 @@ def rank_policies(grid_id: str) -> dict[str, Any]:
     return result
 
 
+@lru_cache(maxsize=1)
+def _document_index() -> Any:
+    """하이브리드 색인을 한 번만 만들어 재사용한다.
+
+    임베딩은 ``corpus_embeddings.npz``에 캐시돼 있어 재계산하지 않는다.
+    코퍼스가 바뀌면 지문이 달라져 자동으로 다시 만든다.
+    """
+
+    from backend.llm_poc import doc_search
+
+    chunks = doc_search.load_corpus()
+    keyword = doc_search.KeywordIndex(chunks)
+    dense = doc_search.DenseIndex(chunks, doc_search.build_embeddings(chunks))
+    return doc_search.HybridIndex(keyword, dense)
+
+
+def search_docs(question: str) -> dict[str, Any]:
+    """서비스·모델 문서에서 질문과 관련된 발췌를 찾는다. LLM은 호출하지 않는다.
+
+    낱말 검색과 임베딩을 합친 하이브리드다. 질문 20개 실측 Recall@4는
+    낱말만 0.65, 임베딩만 0.85, 합치면 0.90이다. 고유명사는 낱말 검색이,
+    에두른 표현은 임베딩이 잡는다.
+    """
+
+    result: dict[str, Any] = {
+        "success": False,
+        "question": question if isinstance(question, str) else None,
+        "hits": [],
+        "retrieval": "hybrid(bm25+bge-m3, RRF)",
+        "limitations": list(DOC_SEARCH_LIMITATIONS),
+        "error": None,
+    }
+    if not isinstance(question, str) or not question.strip():
+        result["error"] = "질문이 필요합니다."
+        return result
+
+    from backend.llm_poc import doc_search
+
+    try:
+        index = _document_index()
+    except Exception as exc:
+        result["error"] = f"문서 색인을 준비하지 못했습니다: {exc}"
+        return result
+
+    try:
+        hits = index.search(question.strip(), top_k=doc_search.DEFAULT_TOP_K)
+    except Exception as exc:
+        result["error"] = f"문서 검색에 실패했습니다: {exc}"
+        return result
+
+    # 개수가 아니라 글자 예산으로 끊는다. 표 청크가 1,200자를 넘어 "상위 4개"가
+    # 컨텍스트를 넘기는 경우가 있다.
+    kept = doc_search.fit_context_budget(hits)
+    if not kept:
+        result["success"] = True
+        result["error"] = None
+        return result
+
+    result.update(
+        {
+            "success": True,
+            "hits": [
+                {
+                    "doc": hit.chunk.doc,
+                    "heading_path": hit.chunk.heading_path,
+                    "text": hit.chunk.text,
+                    "char_count": hit.chunk.char_count,
+                    "score": round(float(hit.score), 6),
+                }
+                for hit in kept
+            ],
+        }
+    )
+    return result
+
+
 TOOL_FUNCTIONS = {
     "get_grid_data": get_grid_data,
     "run_simulation": run_simulation,
     "rank_policies": rank_policies,
+    "search_docs": search_docs,
 }
