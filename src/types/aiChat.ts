@@ -12,6 +12,12 @@ export interface AiFeatureCatalogItem {
   semantic_definition: string;
   unit: string;
   category: string;
+  /**
+   * 모델 학습범위. 이 밖의 값은 predict_core가 경계로 clip하므로 요청량 != 적용량이 된다.
+   * predict_core.feature_meta()가 채운다 — 모델에 안 쓰이는 항목엔 없을 수 있다.
+   */
+  min?: number;
+  max?: number;
 }
 
 export interface AiFeatureCatalogResponse {
