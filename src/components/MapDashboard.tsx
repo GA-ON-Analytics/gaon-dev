@@ -72,24 +72,35 @@ interface GridResolutionOption {
   label: string;
 }
 
+// 지표 설명 끝에 출처·기준 시점을 붙인다. "이 숫자를 어디서 가져왔나"에 답할 수 없으면
+// 위성 추정값을 실측처럼 읽는다. 출처는 GAON/docs/GAON_ML_전과정_정리_ko.md §4.2 기준.
+const SAT_PERIOD = '\n기준 · 2023~2025년 여름(6~8월) 관측 평균';
+const LST_SOURCE = '\n\n출처 · 위성 Landsat 8/9 열적외 밴드(ST_B10)' + SAT_PERIOD;
+const DW_SOURCE = '\n\n출처 · 위성 Dynamic World (Google Earth Engine)' + SAT_PERIOD;
+
 const HEAT_ISLAND_INDICATORS: LayerOption[] = [
   {
     key: 'priority_score',
     label: '개선 우선순위',
     help: '종합 점수 0~100',
-    desc: '녹지·불투수면·온도 등을 종합해 개선이 시급한 정도를 0~100으로 매긴 점수예요. 높을수록 우선 대상.'
+    desc:
+      '녹지·불투수면·온도 등을 종합해 개선이 시급한 정도를 0~100으로 매긴 점수예요. 높을수록 우선 대상.' +
+      '\n\n열 위험·냉각 여지·녹지 부족·포장면·취약계층·쉼터 접근성을 합쳐 구 안에서 매긴 백분위라, ' +
+      '구가 다르면 직접 비교할 수 없어요.'
   },
   {
     key: 'mean_actual_anomaly',
     label: '현재 열 위험',
     help: '구 평균 대비 온도차',
-    desc: '같은 자치구 평균보다 이 격자가 얼마나 더 뜨거운지(℃)를 보여줘요. 양수일수록 더 더운 지역.'
+    desc:
+      '같은 자치구 평균보다 이 격자가 얼마나 더 뜨거운지(℃)를 보여줘요. 양수일수록 더 더운 지역.' +
+      LST_SOURCE
   },
   {
     key: 'mean_actual_lst',
     label: '실제 지표면온도',
     help: '위성 관측 지표온도',
-    desc: '위성으로 관측한 지표면 온도(℃)예요. 2023~2025년 여름철 평균 기준.'
+    desc: '위성으로 관측한 지표면 온도(℃)예요.' + LST_SOURCE
   },
   // '시나리오 저감효과'(green_delta_c) 레이어는 뺐다. 단일 고정 시나리오(녹지+5%p·NDVI+0.03·
   // 불투수-5%p) 하나만 지도 전체에 칠하는 방식이라, 우측 패널의 시뮬레이션 값과 어긋나 혼란을
@@ -99,31 +110,40 @@ const HEAT_ISLAND_INDICATORS: LayerOption[] = [
     key: 'green_ratio',
     label: '녹지율',
     help: '식생이 덮은 비율',
-    desc: '격자 면적 중 식생(풀·나무 등)이 덮은 비율이에요. 높을수록 시원한 편.'
+    desc: '격자 면적 중 식생(풀·나무 등)이 덮은 비율이에요. 높을수록 시원한 편.' + DW_SOURCE
   },
   {
     key: 'ndvi',
     label: '식생지수(NDVI)',
     help: '식생 활력 지수',
-    desc: '위성 기반 식생 활력도(−1~1)예요. 값이 클수록 초록이 무성합니다.'
+    desc:
+      '위성 기반 식생 활력도(−1~1)예요. 값이 클수록 초록이 무성합니다.' +
+      '\n\n출처 · 위성 Sentinel-2 (Google Earth Engine)' +
+      SAT_PERIOD
   },
   {
     key: 'building_ratio',
     label: '건물 비율',
     help: '건물이 덮은 비율',
-    desc: '격자 면적 중 건물이 차지하는 비율이에요. 높을수록 열이 쌓이기 쉬움.'
+    desc:
+      '격자 면적 중 건물이 차지하는 비율이에요. 높을수록 열이 쌓이기 쉬움.' +
+      '\n\n출처 · 국토부 VWorld 건물 도형 (lt_c_spbd)'
   },
   {
     key: 'impervious_ratio',
     label: '불투수면 비율',
     help: '아스팔트·콘크리트 비율',
-    desc: '물이 스며들지 못하는 포장면(아스팔트·콘크리트) 비율이에요. 높을수록 더 뜨거움.'
+    desc:
+      '물이 스며들지 못하는 포장면(아스팔트·콘크리트) 비율이에요. 높을수록 더 뜨거움.' + DW_SOURCE
   },
   {
     key: 'nearest_shelter_distance_m',
     label: '쉼터 접근성',
     help: '가장 가까운 쉼터 거리',
-    desc: '가장 가까운 무더위쉼터까지의 거리(m)예요. 가까울수록 폭염 대응에 유리합니다.'
+    desc:
+      '가장 가까운 무더위쉼터까지의 거리(m)예요. 가까울수록 폭염 대응에 유리합니다.' +
+      '\n\n격자 중심에서 잰 직선거리라 실제 도보 거리와 다를 수 있어요.' +
+      '\n\n출처 · 서울 열린데이터 무더위쉼터 4,088개'
   }
 ];
 

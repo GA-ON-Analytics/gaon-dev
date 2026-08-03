@@ -84,6 +84,29 @@ _SUPPORTED_INTENTS = {
     "simulation",
     "unsupported",
 }
+# Tool을 부르지 않고 앞 단계에서 곧바로 답을 만드는 intent.
+_TOOLLESS_INTENTS = {"field_list", "unsupported"}
+# intent → 실행할 Tool. intent가 늘어날 때 고칠 곳을 이 표 하나로 모은다.
+# 예전에는 "lookup이면 get_grid_data, 아니면 run_simulation" 삼항식이라 매핑이 코드 흐름에
+# 숨어 있었고, 새 intent가 조용히 run_simulation으로 새도 아무도 몰랐다.
+_INTENT_TOOL = {
+    "lookup": "get_grid_data",
+    "simulation": "run_simulation",
+}
+# 표가 어긋나는 두 방향을 모두 import 시점에 잡는다.
+#   - 라우터가 낼 수 있는 intent인데 실행할 Tool이 없다  → 예전 삼항식이 조용히 삼키던 경우
+#   - 라우터가 낼 수 없는 intent를 매핑해 뒀다            → 죽은 표
+if _INTENT_TOOL.keys() | _TOOLLESS_INTENTS != _SUPPORTED_INTENTS:
+    raise RuntimeError(
+        "intent 표가 _SUPPORTED_INTENTS와 어긋났습니다. "
+        f"지원={sorted(_SUPPORTED_INTENTS)} "
+        f"Tool연결={sorted(_INTENT_TOOL)} Tool없음={sorted(_TOOLLESS_INTENTS)}"
+    )
+if not set(_INTENT_TOOL.values()) <= TOOL_FUNCTIONS.keys():
+    raise RuntimeError(
+        "_INTENT_TOOL이 TOOL_FUNCTIONS에 없는 Tool을 가리킵니다: "
+        f"{sorted(set(_INTENT_TOOL.values()) - TOOL_FUNCTIONS.keys())}"
+    )
 _SUPPORTED_RESOLUTIONS = {"resolved", "ambiguous", "unsupported"}
 _SUPPORTED_OPERATIONS = {"increase", "decrease"}
 _SUPPORTED_UNITS = {"percent", "percentage_point", "unitless"}
@@ -2738,11 +2761,9 @@ def _run_chat_with_client(
             first_content=first_content,
             metrics=metrics,
         )
-    tool_name = (
-        "get_grid_data"
-        if normalized_request.intent == "lookup"
-        else "run_simulation"
-    )
+    # 위에서 _TOOLLESS_INTENTS를 모두 걸러냈고, 남은 intent에 Tool이 있다는 건 import 시점에
+    # 검증했다. 그래서 직접 조회한다 — 표가 깨지면 서비스가 뜨기 전에 터진다.
+    tool_name = _INTENT_TOOL[normalized_request.intent]
     metrics["tool_name"] = tool_name
     tool_function = TOOL_FUNCTIONS[tool_name]
     tool_started = time.perf_counter()
