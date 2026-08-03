@@ -84,6 +84,7 @@ _SIMULATION_FIELD_TERMS = {
     "albedo": ("albedo", "알베도", "반사율", "쿨루프"),
 }
 _SUPPORTED_INTENTS = {
+    "doc_search",
     "field_list",
     "lookup",
     "policy_ranking",
@@ -96,6 +97,7 @@ _TOOLLESS_INTENTS = {"field_list", "unsupported"}
 # 예전에는 "lookup이면 get_grid_data, 아니면 run_simulation" 삼항식이라 매핑이 코드 흐름에
 # 숨어 있었고, 새 intent가 조용히 run_simulation으로 새도 아무도 몰랐다.
 _INTENT_TOOL = {
+    "doc_search": "search_docs",
     "lookup": "get_grid_data",
     "policy_ranking": "rank_policies",
     "simulation": "run_simulation",
@@ -165,6 +167,16 @@ _UNRESOLVED_CODES = {
     "conflicting_changes",
     "lookup_field",
 }
+# 정책 변경 요청이 미완성일 때만 나오는 코드들. 이 코드가 있으면 라우터가
+# intent를 뭐라고 찍었든 "바꾸려던 요청인데 정보가 모자라다"는 뜻이다.
+_CHANGE_UNRESOLVED_CODES = {
+    "change_field",
+    "change_operation",
+    "change_source",
+    "change_unit",
+    "change_value",
+    "conflicting_changes",
+}
 _CLARIFICATION_BY_CODE = {
     "ambiguous_request": "요청에서 확정되지 않은 부분을 구체적으로 알려주세요.",
     "change_field": "변경할 지표를 알려주세요.",
@@ -201,12 +213,14 @@ ROUTER_OUTPUT_SCHEMA = {
                 "lookup",
                 "simulation",
                 "policy_ranking",
+                "doc_search",
             ],
             "description": (
                 "허용된 격자 지표의 현재값 조회와 전체 조회는 lookup, "
                 "조회 가능한 데이터 목록 요청은 field_list, 지원 정책 변경은 "
                 "simulation, 어떤 정책이 효과적인지 우선순위를 묻는 요청은 "
-                "policy_ranking, 그 밖의 요청은 unsupported"
+                "policy_ranking, 데이터 정의·뜻·출처·모델 설명 같은 문서 질문은 "
+                "doc_search, 그 밖의 요청은 unsupported"
             ),
         },
         "resolution": {
@@ -396,8 +410,10 @@ SYSTEM_PROMPT = (
 - 전체·모두·모든·전부 또는 독립된 "다"로 전체 데이터를 요구하면 lookup_all=true다.
 - 전체 범위를 말고·제외·필요 없고·보여주지 말고 등으로 부정하면 excluded_scope=true, lookup_all=false이고 실제 요청 필드만 requested_fields에 둔다.
 - "조회 가능한 데이터 목록"처럼 지원 조회 필드 목록 자체를 요구하면 intent=field_list, resolution=resolved다. 실제 격자 Tool 조회는 아니다.
-- 특정 지표를 지정하지 않고 어떤 정책이 효과적인지·무엇부터 해야 하는지 우선순위를 물으면 intent=policy_ranking, resolution=resolved이고 requested_fields, candidate_fields, changes를 비운다.
-- 데이터 정의·뜻·출처·모델 설명·문서 질문은 아직 지원하지 않으므로 intent=unsupported, resolution=unsupported다.
+- 지표를 지정하지 않고 어떤 정책이 효과적인지·무엇부터 할지 우선순위를 물으면 intent=policy_ranking, resolution=resolved다.
+- 데이터 정의·뜻·계산식·출처, 모델 학습·성능·한계, API 사용법을 물으면 intent=doc_search, resolution=resolved다.
+- 격자의 현재 수치를 묻는 것은 doc_search가 아니라 lookup이다.
+- 위 어디에도 없는 요청만 intent=unsupported, resolution=unsupported다.
 - 인구·인구밀도처럼 카탈로그에 없는 지표는 unsupported다.
 - 데이터 조회를 부정하고 정책 변경을 요청하면 simulation을 우선한다.
 
@@ -421,7 +437,7 @@ SYSTEM_PROMPT = (
 - "가장 높은 건물이 몇 층이야" → lookup/resolved, requested_fields=["max_ground_floor_count"].
 - "물이 스며들지 않는 땅의 비율" → lookup/resolved, requested_fields=["impervious_ratio"].
 - "표면이 햇빛을 얼마나 반사해" → lookup/resolved, requested_fields=["albedo"].
-- "NDVI가 무슨 뜻이야?"와 "녹지율의 출처가 어디야?" → unsupported/unsupported.
+- "NDVI가 무슨 뜻이야?"와 "녹지율의 출처가 어디야?" → doc_search/resolved.
 - "녹지가 차지하는 비율을 5%p 높여줘" → simulation/resolved, green_ratio increase 5 percentage_point.
 - "여기 어떤 정책이 가장 효과적이야"와 "뭐부터 해야 해?" → policy_ranking/resolved.
 - "그거 5플오 해줘"처럼 변경 대상과 방향이 불명확하면 changes=[]와 unresolved=["change_field","change_operation"]을 사용한다.
@@ -1214,10 +1230,20 @@ def _parse_normalized_request(
     grounded_fields = _recognized_lookup_fields(original_message)
 
     if resolution == "unsupported":
-        if intent == "simulation" and unresolved and not changes:
+        has_change_unresolved = any(
+            code in _CHANGE_UNRESOLVED_CODES for code in unresolved
+        )
+        if (intent == "simulation" or has_change_unresolved) and unresolved and not changes:
             # 변경 요청임은 알지만 대상·방향 등이 미완성인 기존 재질문
             # 계약은 유지한다. resolution은 필드 의미 판정용이고 실행은
             # unresolved 분기에서 계속 차단된다.
+            #
+            # ★ intent가 simulation이 아니어도 살린다. ④ 도입으로 intent
+            # 선택지가 늘면서 "그거 5플오 해줘" 같은 미완성 변경을 라우터가
+            # unsupported로 찍기 시작했는데, unresolved 코드는 여전히 정확히
+            # 채워 온다. 그 신호를 버리면 재질문 대신 "지원하지 않습니다"가
+            # 나가서 사용자가 뭘 고쳐야 할지 알 수 없다.
+            intent = "simulation"
             resolution = "resolved"
             candidate_fields = []
             requested_fields = []
@@ -1264,6 +1290,17 @@ def _parse_normalized_request(
         if not has_field_list_request:
             intent = "unsupported"
             resolution = "unsupported"
+        requested_fields = []
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
+    elif intent == "doc_search":
+        # 문서 질문은 격자와 무관하다. 조회 필드도 변경 인자도 필요 없다.
+        resolution = "resolved"
         requested_fields = []
         candidate_fields = []
         changes = []
@@ -1669,16 +1706,26 @@ def _raise_ollama_error(exc: Exception) -> None:
 def _ollama_chat(
     client: Any,
     messages: list[Any],
+    num_predict: int = ROUTER_NUM_PREDICT,
+    format_schema: Any = None,
 ) -> Any:
+    """Ollama 호출. 기본은 라우터 스키마.
+
+    ★ 스키마를 벗기면 안 된다. format을 None으로 두고 자유 생성을 시켰더니
+    qwen3:4b가 사고 과정("Okay, let's see. The user is asking...")을 통째로
+    답변에 실어 보냈다. think=False로도 막히지 않는다. 형식을 강제하는 것이
+    이 구조에서 딴소리를 막는 유일한 수단이다.
+    """
+
     try:
         return client.chat(
             model=MODEL_NAME,
             messages=messages,
-            format=ROUTER_OUTPUT_SCHEMA,
+            format=ROUTER_OUTPUT_SCHEMA if format_schema is None else format_schema,
             think=False,
             options={
                 "temperature": 0,
-                "num_predict": ROUTER_NUM_PREDICT,
+                "num_predict": num_predict,
             },
             keep_alive=MODEL_KEEP_ALIVE,
         )
@@ -2290,6 +2337,32 @@ def _validate_simulation_answer(
     _validate_supported_numbers(answer, "run_simulation", tool_result)
 
 
+def _validate_doc_search_answer(
+    answer: str,
+    tool_result: Mapping[str, Any],
+) -> None:
+    """문서 답변 검증. 숫자는 보지 않고 '근거를 벗어났는지'만 본다."""
+
+    if len(answer.strip()) < 10:
+        raise ChatProtocolError("문서 답변이 너무 짧습니다.")
+
+    hits = tool_result.get("hits")
+    if not isinstance(hits, list) or not hits:
+        raise ChatProtocolError("문서 발췌 없이 답변이 생성되었습니다.")
+
+    # 발췌로 준 문서 중 적어도 하나는 출처로 밝혀야 한다. 어느 것도 언급하지
+    # 않았다면 발췌를 안 보고 지어냈을 가능성이 높다.
+    docs = {
+        str(hit.get("doc"))
+        for hit in hits
+        if isinstance(hit, Mapping) and hit.get("doc")
+    }
+    if docs and not any(doc in answer for doc in docs):
+        raise ChatProtocolError(
+            "문서 답변에 발췌 출처가 없습니다: " + ", ".join(sorted(docs))
+        )
+
+
 def _validate_policy_ranking_answer(
     answer: str,
     tool_result: Mapping[str, Any],
@@ -2729,9 +2802,100 @@ def format_policy_ranking_answer(tool_result: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+DOC_ANSWER_SYSTEM = (
+    """아래 문서 발췌만 근거로 한국어로 답한다.
+
+- 발췌에 없는 내용은 지어내지 않는다. 근거가 없으면 answer에 없다고 쓴다.
+- 수치를 인용할 때는 "문서 기준"임을 밝힌다. 문서의 수치는 작성 시점 값이라
+  현재 모델과 다를 수 있다.
+- answer는 한국어 완성 문장 3~5개다. 사고 과정이나 영어를 쓰지 않는다.
+- source는 근거가 된 발췌의 문서 파일 이름 그대로다."""
+)
+# 답변에도 스키마를 씌운다. 자유 생성으로 두면 4b가 사고 과정을 그대로 뱉는다.
+DOC_ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {
+            "type": "string",
+            "description": "발췌만 근거로 한 한국어 답변 3~5문장. 사고 과정 금지.",
+        },
+        "source": {
+            "type": "string",
+            "description": "근거가 된 발췌의 문서 파일 이름",
+        },
+    },
+    "required": ["answer", "source"],
+}
+# ④만 Ollama를 두 번 부른다. ①②③은 파이썬이 문장을 조립하지만 문서 답변은
+# 발췌를 사람 말로 풀어야 하기 때문이다. 라우터와 별개의 짧은 프롬프트를 쓰므로
+# 라우터 예산(여유 911토큰)과는 무관하다.
+DOC_ANSWER_NUM_PREDICT = 512
+
+
+def _doc_answer_prompt(tool_result: Mapping[str, Any]) -> str:
+    hits = tool_result.get("hits")
+    if not isinstance(hits, list) or not hits:
+        raise ChatProtocolError("문서 발췌가 없습니다.")
+    parts = []
+    for index, hit in enumerate(hits, start=1):
+        if not isinstance(hit, Mapping):
+            raise ChatProtocolError("문서 발췌 형식이 올바르지 않습니다.")
+        parts.append(f"[발췌 {index}] {hit.get('text', '')}")
+    question = tool_result.get("question") or ""
+    return "\n\n".join(parts) + f"\n\n질문: {question}"
+
+
+def generate_doc_answer(
+    client: Any,
+    tool_result: Mapping[str, Any],
+    metrics: dict[str, Any] | None = None,
+) -> str:
+    """발췌를 근거로 LLM이 문장을 쓴다. ①②③과 달리 파이썬이 쓰지 않는다."""
+
+    messages = [
+        {"role": "system", "content": DOC_ANSWER_SYSTEM},
+        {"role": "user", "content": _doc_answer_prompt(tool_result)},
+    ]
+    started = time.perf_counter()
+    if metrics is not None:
+        metrics["ollama_call_count"] += 1
+    try:
+        response = _ollama_chat(
+            client,
+            messages,
+            num_predict=DOC_ANSWER_NUM_PREDICT,
+            format_schema=DOC_ANSWER_SCHEMA,
+        )
+    finally:
+        if metrics is not None:
+            metrics["llm_answer_seconds"] = round(time.perf_counter() - started, 6)
+    raw = _message_content(_response_message(response)).strip()
+    if not raw:
+        raise ChatProtocolError("문서 답변을 생성하지 못했습니다.")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ChatProtocolError("문서 답변이 약속한 형식이 아닙니다.") from exc
+    if not isinstance(payload, Mapping):
+        raise ChatProtocolError("문서 답변이 객체가 아닙니다.")
+    answer = str(payload.get("answer") or "").strip()
+    source = str(payload.get("source") or "").strip()
+    if not answer:
+        raise ChatProtocolError("문서 답변이 비어 있습니다.")
+    if source:
+        answer = f"{answer}\n출처: {source}"
+
+    limitations = tool_result.get("limitations")
+    if isinstance(limitations, list):
+        answer = "\n".join([answer, *(str(item) for item in limitations)])
+    return answer
+
+
 def _format_tool_answer(
     tool_name: str,
     tool_result: Mapping[str, Any],
+    client: Any | None = None,
+    metrics: dict[str, Any] | None = None,
 ) -> str:
     if tool_name == "get_grid_data":
         return format_grid_data_answer(tool_result)
@@ -2739,6 +2903,16 @@ def _format_tool_answer(
         return format_simulation_answer(tool_result)
     if tool_name == "rank_policies":
         return format_policy_ranking_answer(tool_result)
+    if tool_name == "search_docs":
+        # ★ 여기가 ④의 구조 변경 지점이다. 원래 이 함수에는 client가 없었고,
+        # client는 _run_chat_with_client 안에만 있었다. 발췌를 사람 말로 풀려면
+        # LLM이 필요하므로 인자로 받아 내려온다.
+        error_answer = _tool_error_answer(tool_result)
+        if error_answer is not None:
+            return error_answer
+        if client is None:
+            raise ChatProtocolError("문서 답변 생성에는 LLM 클라이언트가 필요합니다.")
+        return generate_doc_answer(client, tool_result, metrics)
     raise ChatProtocolError(f"답변 formatter를 지원하지 않는 도구입니다: {tool_name}")
 
 
@@ -2762,6 +2936,12 @@ def _validate_final_answer(
         _validate_simulation_answer(answer, tool_result)
     elif tool_name == "rank_policies":
         _validate_policy_ranking_answer(answer, tool_result)
+    elif tool_name == "search_docs":
+        # ★ 숫자 검증기를 걸지 않는다. 문서 인용문에는 Tool 반환값에서 유도할 수
+        # 없는 숫자(작성 시점 R², 격자 수 등)가 섞여 있어 무조건 실패로 걸린다.
+        # 위에서 이미 돌린 _validate_no_reasoning_trace는 유지한다. ④는 LLM이
+        # 직접 문장을 쓰는 유일한 경로라 추론 누출 검사가 오히려 더 필요하다.
+        _validate_doc_search_answer(answer, tool_result)
     else:
         raise ChatProtocolError(
             f"최종 답변 검증을 지원하지 않는 도구입니다: {tool_name}"
@@ -3072,6 +3252,11 @@ def _run_chat_with_client(
             # rank_policies는 grid_id만 받는다. 시나리오 크기는 Tool 안에 있다.
             assumptions = []
             preparation_error = None
+        elif normalized_request.intent == "doc_search":
+            # 문서 검색은 격자와 무관하다. grid_id를 넘기지 말고 질문을 넘긴다.
+            tool_arguments = {"question": router_message}
+            assumptions = []
+            preparation_error = None
         else:
             tool_arguments, assumptions, preparation_error = (
                 _prepare_simulation_arguments(
@@ -3103,7 +3288,12 @@ def _run_chat_with_client(
 
     formatter_started = time.perf_counter()
     try:
-        final_content = _format_tool_answer(tool_name, tool_result)
+        final_content = _format_tool_answer(
+            tool_name,
+            tool_result,
+            client=client,
+            metrics=metrics,
+        )
         if tool_result.get("success") is True:
             final_content = _append_assumptions(final_content, assumptions)
     finally:

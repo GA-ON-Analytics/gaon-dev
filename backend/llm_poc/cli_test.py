@@ -429,10 +429,11 @@ GENERAL_LOOKUP_ROUTING_CASES = (
         False,
     ),
     (
+        # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
         MODEL_EXPLANATION_QUESTION,
-        NO_TOOL_EXPECTED,
+        "search_docs",
         None,
-        None,
+        "출처:",
         False,
         False,
     ),
@@ -453,18 +454,20 @@ GENERAL_LOOKUP_ROUTING_CASES = (
         False,
     ),
     (
+        # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
         DATA_SOURCE_QUESTION,
-        NO_TOOL_EXPECTED,
+        "search_docs",
         None,
-        None,
+        "출처:",
         False,
         False,
     ),
     (
+        # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
         MODEL_DATA_EXPLANATION_QUESTION,
-        NO_TOOL_EXPECTED,
+        "search_docs",
         None,
-        None,
+        "출처:",
         False,
         False,
     ),
@@ -595,19 +598,21 @@ SEMANTIC_ROUTING_CASES = (
         (),
     ),
     (
+        # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
         "NDVI가 무슨 뜻이야?",
-        NO_TOOL_EXPECTED,
+        "search_docs",
         None,
-        "현재 요청은 아직 지원하지 않습니다.",
-        "unsupported",
+        "출처:",
+        "resolved",
         (),
     ),
     (
+        # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
         "녹지율 데이터 출처가 어디야?",
-        NO_TOOL_EXPECTED,
+        "search_docs",
         None,
-        "현재 요청은 아직 지원하지 않습니다.",
-        "unsupported",
+        "출처:",
+        "resolved",
         (),
     ),
     (
@@ -998,14 +1003,18 @@ def run_tool_calling(
         raise
     _print_result(result)
 
+    # 라우터 1회가 기본이다. 문서 검색(④)만 발췌를 사람 말로 풀어야 해서
+    # 답변 생성에 한 번 더 부른다. 그 외 intent가 2회를 부르면 설계 위반이다.
+    expected_calls = 2 if result.metrics.get("intent") == "doc_search" else 1
     ollama_call_count = result.metrics.get("ollama_call_count")
     if (
         isinstance(ollama_call_count, bool)
         or not isinstance(ollama_call_count, int)
-        or ollama_call_count != 1
+        or ollama_call_count != expected_calls
     ):
         raise RuntimeError(
-            "질문 한 건의 Ollama 호출 횟수가 정확히 1회가 아닙니다."
+            f"질문 한 건의 Ollama 호출 횟수가 정확히 {expected_calls}회가 아닙니다"
+            f" (실제 {ollama_call_count}회, intent={result.metrics.get('intent')})."
         )
     if result.final_thinking:
         raise RuntimeError("Python formatter 이후 별도 LLM 추론이 존재합니다.")
