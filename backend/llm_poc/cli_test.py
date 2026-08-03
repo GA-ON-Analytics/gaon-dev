@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from backend.llm_poc.chat_service import (
+    DOC_ANSWER_MAX_ATTEMPTS,
     ChatInputError,
     ChatProtocolError,
     ChatResult,
@@ -1004,16 +1005,21 @@ def run_tool_calling(
     _print_result(result)
 
     # 라우터 1회가 기본이다. 문서 검색(④)만 발췌를 사람 말로 풀어야 해서
-    # 답변 생성에 한 번 더 부른다. 그 외 intent가 2회를 부르면 설계 위반이다.
-    expected_calls = 2 if result.metrics.get("intent") == "doc_search" else 1
+    # 답변 생성에 한 번 더 부르고, 생성이 확률적이라 최대 1회 다시 뽑는다.
+    # 그 외 intent가 2회를 부르면 설계 위반이다.
+    if result.metrics.get("intent") == "doc_search":
+        allowed_calls = range(2, 2 + DOC_ANSWER_MAX_ATTEMPTS)
+    else:
+        allowed_calls = range(1, 2)
     ollama_call_count = result.metrics.get("ollama_call_count")
     if (
         isinstance(ollama_call_count, bool)
         or not isinstance(ollama_call_count, int)
-        or ollama_call_count != expected_calls
+        or ollama_call_count not in allowed_calls
     ):
         raise RuntimeError(
-            f"질문 한 건의 Ollama 호출 횟수가 정확히 {expected_calls}회가 아닙니다"
+            "질문 한 건의 Ollama 호출 횟수가 허용 범위"
+            f"({allowed_calls.start}~{allowed_calls.stop - 1}회)를 벗어났습니다"
             f" (실제 {ollama_call_count}회, intent={result.metrics.get('intent')})."
         )
     if result.final_thinking:

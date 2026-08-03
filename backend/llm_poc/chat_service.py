@@ -26,7 +26,11 @@ from backend.llm_poc.tools import (
 )
 
 
-DEFAULT_MODEL_NAME = "qwen3:4b"
+# ④ 문서 답변은 열린 생성이라 모델 크기가 직접 반영된다. 4b는 "데이터 말고 모델
+# 설명해줘"에서 질문을 그대로 되뱉는다(스키마·재시도·지적 재시도 모두 실패).
+# 8b는 같은 질문에 정상 답변한다. 라우터 정확도는 아래 ambiguous 제약을
+# 스키마에 명시해 보완했다.
+DEFAULT_MODEL_NAME = "qwen3:8b"
 MODEL_NAME = os.getenv("GAON_LLM_MODEL") or DEFAULT_MODEL_NAME
 DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
 ROUTER_NUM_PREDICT = 768
@@ -231,7 +235,10 @@ ROUTER_OUTPUT_SCHEMA = {
                 "확인이 필요하면 ambiguous, 지원 필드가 아니면 unsupported. "
                 "평균 몇 층=avg_ground_floor_count resolved, 가장 높은 건물의 "
                 "층수=max_ground_floor_count resolved, 식생의 푸르름·활력=ndvi "
-                "resolved이며 단순 식물의 양만 ambiguous"
+                "resolved이며 단순 식물의 양만 ambiguous. "
+                "ambiguous를 쓰려면 intent=lookup이고 candidate_fields가 "
+                "정확히 2개 또는 3개이며 requested_fields=[], changes=[], "
+                "lookup_all=false여야 한다. 이 조건을 못 맞추면 ambiguous를 쓰지 않는다"
             ),
         },
         "candidate_fields": {
@@ -394,6 +401,7 @@ SYSTEM_PROMPT = (
 - 두 필드 이상의 의미가 실제로 가능하면 resolution=ambiguous, requested_fields=[], candidate_fields에 가장 가까운 2~3개만 둔다.
 - 지원 필드와 대응하지 않으면 resolution=unsupported, intent=unsupported이고 candidate_fields, requested_fields, changes를 비운다. 비슷한 다른 필드로 대체하지 않는다.
 - resolved의 candidate_fields는 비우거나 requested_fields와 같아야 한다.
+- resolution=ambiguous는 intent=lookup에서만 쓴다. candidate_fields에 정확히 2~3개를 넣고 requested_fields=[], changes=[], lookup_all=false로 둔다. 이 조건을 못 맞추면 ambiguous를 쓰지 않는다.
 - lookup_evidence는 의미 판정 근거가 된 사용자 원문의 가장 짧은 실제 문자열이다. 전체 조회·field_list·unsupported이면 빈 문자열을 쓸 수 있다.
 - "식물이 얼마나 많은지"는 면적 비율인 green_ratio와 푸르름·활력 지수인 ndvi 중 뜻이 불명확하므로 ambiguous다.
 - "건물 높이"는 평균층수와 최대층수 중 기준이 없으면 avg_ground_floor_count와 max_ground_floor_count 사이의 ambiguous다.
@@ -441,6 +449,7 @@ SYSTEM_PROMPT = (
 - "녹지가 차지하는 비율을 5%p 높여줘" → simulation/resolved, green_ratio increase 5 percentage_point.
 - "여기 어떤 정책이 가장 효과적이야"와 "뭐부터 해야 해?" → policy_ranking/resolved.
 - "그거 5플오 해줘"처럼 변경 대상과 방향이 불명확하면 changes=[]와 unresolved=["change_field","change_operation"]을 사용한다.
+- "녹지 한 5 정도 높이고 불투수는 3 낮춰봐"처럼 지표·방향·수치가 다 있으면 단위가 생략돼도 실행한다. green_ratio increase 5 percent, impervious_ratio decrease 3 percent, unresolved=[]다.
 - "녹지율을 올려줘"처럼 수치만 없으면 changes=[]와 unresolved=["change_value"]을 사용한다.
 """
 )
@@ -1262,6 +1271,22 @@ def _parse_normalized_request(
             excluded_scope = False
     elif resolution == "ambiguous":
         if (
+            intent == "lookup"
+            and len(candidate_fields) == 1
+            and not requested_fields
+            and not changes
+            and not lookup_all
+            and candidate_fields[0] in grounded_fields
+        ):
+            # 후보가 하나뿐이면 애초에 모호하지 않다. 라벨만 틀리고 데이터는
+            # 맞는 경우라 되묻지 말고 확정한다.
+            # ★ 원문에 그 필드의 근거가 있을 때만 살린다. "식물이 얼마나 많은지"
+            # "건물 높이"처럼 진짜 모호한 요청은 grounded_fields가 비어 있어
+            # 여기로 새지 않고 그대로 되묻는다.
+            resolution = "resolved"
+            requested_fields = [candidate_fields[0]]
+            candidate_fields = []
+        elif (
             intent != "lookup"
             or len(candidate_fields) not in {2, 3}
             or requested_fields
@@ -2803,13 +2828,15 @@ def format_policy_ranking_answer(tool_result: Mapping[str, Any]) -> str:
 
 
 DOC_ANSWER_SYSTEM = (
-    """아래 문서 발췌만 근거로 한국어로 답한다.
+    """너는 아래 문서 발췌만 근거로 사용자 질문에 답한다.
 
-- 발췌에 없는 내용은 지어내지 않는다. 근거가 없으면 answer에 없다고 쓴다.
-- 수치를 인용할 때는 "문서 기준"임을 밝힌다. 문서의 수치는 작성 시점 값이라
-  현재 모델과 다를 수 있다.
-- answer는 한국어 완성 문장 3~5개다. 사고 과정이나 영어를 쓰지 않는다.
-- source는 근거가 된 발췌의 문서 파일 이름 그대로다."""
+지켜야 할 것
+- 발췌에 있는 내용만 쓴다. 지어내지 않는다.
+- 발췌로 답할 수 없으면 answer에 "제공된 문서에서 관련 내용을 찾지 못했습니다."라고 쓴다.
+- 수치를 인용하면 "문서 기준"임을 함께 밝힌다. 문서 수치는 작성 시점 값이라 현재와 다를 수 있다.
+- 사고 과정과 영어 문장을 쓰지 않는다.
+
+★ answer에는 위 발췌 본문에서 읽은 내용만 넣는다. 이 지시문의 문장을 복사하지 않는다."""
 )
 # 답변에도 스키마를 씌운다. 자유 생성으로 두면 4b가 사고 과정을 그대로 뱉는다.
 DOC_ANSWER_SCHEMA = {
@@ -2817,7 +2844,11 @@ DOC_ANSWER_SCHEMA = {
     "properties": {
         "answer": {
             "type": "string",
-            "description": "발췌만 근거로 한 한국어 답변 3~5문장. 사고 과정 금지.",
+            # ★ description을 "한국어 3~5문장" 같은 명사구로 쓰지 말 것.
+            # 4b가 그 문구를 값으로 그대로 복사한다(실측: "한국어로 3~5개의 완성 문장").
+            # minLength는 쓰지 않는다. llama.cpp 문법 생성에서 출력이 중간에
+            # 잘려 JSON 파싱이 깨지는 경우가 있었다. 길이 검사는 파이썬에서 한다.
+            "description": "발췌에서 읽은 사실을 서술한 한국어 문장들",
         },
         "source": {
             "type": "string",
@@ -2826,6 +2857,49 @@ DOC_ANSWER_SCHEMA = {
     },
     "required": ["answer", "source"],
 }
+# 답변 생성이 확률적이라 드물게 엉뚱한 값을 채운다(실측: 질문을 그대로 되뱉거나
+# source에 "발췌 1, 발췌 2"를 적음). 67개 전체 실행에서만 나오고 단독 5회로는
+# 재현되지 않았다. 재현 안 되는 실패는 원인을 못 잡으므로 두 겹으로 막는다.
+DOC_ANSWER_MAX_ATTEMPTS = 2
+
+
+def _doc_answer_schema(tool_result: Mapping[str, Any]) -> dict[str, Any]:
+    """실제 발췌 문서 이름만 source로 쓸 수 있게 스키마를 좁힌다.
+
+    enum을 걸면 "발췌 1, 발췌 2" 같은 값이 문법적으로 불가능해진다.
+    프롬프트로 부탁하는 것보다 형식으로 막는 쪽이 확실하다.
+    """
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "answer": dict(DOC_ANSWER_SCHEMA["properties"]["answer"]),
+            "source": dict(DOC_ANSWER_SCHEMA["properties"]["source"]),
+        },
+        "required": ["answer", "source"],
+    }
+    hits = tool_result.get("hits")
+    if isinstance(hits, list):
+        docs = sorted(
+            {
+                str(hit["doc"])
+                for hit in hits
+                if isinstance(hit, Mapping) and hit.get("doc")
+            }
+        )
+        if docs:
+            schema["properties"]["source"]["enum"] = docs
+    return schema
+
+
+def _doc_answer_is_degenerate(answer: str, question: str) -> bool:
+    """질문을 되뱉었거나 알맹이가 없는 답인지 본다."""
+
+    compact_answer = re.sub(r"\s+", "", answer)
+    compact_question = re.sub(r"\s+", "", question or "")
+    if len(compact_answer) < 20:
+        return True
+    return bool(compact_question) and compact_answer in compact_question
 # ④만 Ollama를 두 번 부른다. ①②③은 파이썬이 문장을 조립하지만 문서 답변은
 # 발췌를 사람 말로 풀어야 하기 때문이다. 라우터와 별개의 짧은 프롬프트를 쓰므로
 # 라우터 예산(여유 911토큰)과는 무관하다.
@@ -2852,36 +2926,72 @@ def generate_doc_answer(
 ) -> str:
     """발췌를 근거로 LLM이 문장을 쓴다. ①②③과 달리 파이썬이 쓰지 않는다."""
 
-    messages = [
+    base_messages = [
         {"role": "system", "content": DOC_ANSWER_SYSTEM},
         {"role": "user", "content": _doc_answer_prompt(tool_result)},
     ]
+    messages = list(base_messages)
+    schema = _doc_answer_schema(tool_result)
+    question = str(tool_result.get("question") or "")
+
+    answer = ""
+    source = ""
+    last_error = "문서 답변을 생성하지 못했습니다."
     started = time.perf_counter()
-    if metrics is not None:
-        metrics["ollama_call_count"] += 1
     try:
-        response = _ollama_chat(
-            client,
-            messages,
-            num_predict=DOC_ANSWER_NUM_PREDICT,
-            format_schema=DOC_ANSWER_SCHEMA,
-        )
+        for attempt in range(1, DOC_ANSWER_MAX_ATTEMPTS + 1):
+            if metrics is not None:
+                metrics["ollama_call_count"] += 1
+                metrics["doc_answer_attempts"] = attempt
+            response = _ollama_chat(
+                client,
+                messages,
+                num_predict=DOC_ANSWER_NUM_PREDICT,
+                format_schema=schema,
+            )
+            raw = _message_content(_response_message(response)).strip()
+            if not raw:
+                last_error = "문서 답변이 비어 있습니다."
+                continue
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                last_error = "문서 답변이 약속한 형식이 아닙니다."
+                continue
+            if not isinstance(payload, Mapping):
+                last_error = "문서 답변이 객체가 아닙니다."
+                continue
+            candidate = str(payload.get("answer") or "").strip()
+            if _doc_answer_is_degenerate(candidate, question):
+                # 생성이 확률적이라 같은 입력으로 다시 뽑으면 대개 정상이 나온다.
+                # 실패한 답을 메시지에 남긴다. 남기지 않으면 E2E에서만 재현되는
+                # 실패를 진단할 방법이 없다.
+                last_error = (
+                    "문서 답변이 질문을 되풀이했거나 내용이 없습니다: "
+                    f"{candidate[:120]!r}"
+                )
+                # ★ 같은 입력으로 그냥 다시 부르면 소용없다. 실측에서 두 번 다
+                # 글자 하나까지 같은 답이 나왔다. 무엇이 틀렸는지 대화에 넣어야
+                # 입력이 달라지고 다른 답이 나온다.
+                messages = base_messages + [
+                    {"role": "assistant", "content": raw},
+                    {
+                        "role": "user",
+                        "content": (
+                            "answer에 질문 문장을 그대로 옮겼다. 질문을 반복하지 말고 "
+                            "위 발췌 본문에서 읽은 사실만으로 다시 작성하라."
+                        ),
+                    },
+                ]
+                continue
+            answer = candidate
+            source = str(payload.get("source") or "").strip()
+            break
     finally:
         if metrics is not None:
             metrics["llm_answer_seconds"] = round(time.perf_counter() - started, 6)
-    raw = _message_content(_response_message(response)).strip()
-    if not raw:
-        raise ChatProtocolError("문서 답변을 생성하지 못했습니다.")
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ChatProtocolError("문서 답변이 약속한 형식이 아닙니다.") from exc
-    if not isinstance(payload, Mapping):
-        raise ChatProtocolError("문서 답변이 객체가 아닙니다.")
-    answer = str(payload.get("answer") or "").strip()
-    source = str(payload.get("source") or "").strip()
     if not answer:
-        raise ChatProtocolError("문서 답변이 비어 있습니다.")
+        raise ChatProtocolError(last_error)
     if source:
         answer = f"{answer}\n출처: {source}"
 
