@@ -72,6 +72,22 @@ def _load_feature_meta_map() -> dict[str, dict[str, Any]]:
     }
 
 
+def dataset_ranges(feats: list[str], static: pd.DataFrame) -> dict[str, tuple[float, float]]:
+    """데이터셋에서 직접 잰 범위.
+
+    feature_meta.json을 **만드는** 쪽(build_feature_meta)이 쓴다. 거기서 _load()의 ranges를
+    쓰면 meta가 자기 자신을 되먹여, 데이터셋이 바뀌어도 옛 범위가 그대로 굳는다.
+    """
+    measured = static[feats].describe().T[["min", "max"]]
+    return {
+        feature: (
+            float(measured.loc[feature, "min"]),
+            float(measured.loc[feature, "max"]),
+        )
+        for feature in feats
+    }
+
+
 def _ranges_from_meta(feats: list[str], static: pd.DataFrame) -> dict[str, tuple[float, float]]:
     meta_by_name = _load_feature_meta_map()
     dataset_ranges = static[feats].describe().T[["min", "max"]]

@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 
 try:
-    from .predict_core import _load, FEATURE_META_PATH, RATIO_FEATURES
+    from .predict_core import _load, dataset_ranges, FEATURE_META_PATH, RATIO_FEATURES
 except ImportError:
-    from predict_core import _load, FEATURE_META_PATH, RATIO_FEATURES
+    from predict_core import _load, dataset_ranges, FEATURE_META_PATH, RATIO_FEATURES
 
 # 변수별: 한글명, 설명, 자연어 별칭(LLM 매칭용), 온도 방향(+올림/-내림), 조절 가능성
 META = {
@@ -57,7 +57,10 @@ META = {
 
 
 def main() -> None:
-    _, feats, _, ranges = _load()
+    # ★ _load()의 ranges를 쓰면 안 된다. _ranges_from_meta가 이 파일이 만든 feature_meta.json을
+    #   우선 읽으므로, meta가 자기 자신을 되먹여 데이터셋이 바뀌어도 옛 범위가 굳는다.
+    _, feats, static, _ = _load()
+    ranges = dataset_ranges(feats, static)
     out = []
     for f in feats:
         name, desc, aliases, direction, editable = META.get(f, (f, "", [], "0", "unknown"))
