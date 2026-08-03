@@ -137,9 +137,45 @@ def get_grid_features(grid_id: str) -> dict | None:
     return out
 
 
+# 경고 문구는 대시보드 초록 안내창과 챗봇 답변에 그대로 노출된다. 변수명을 영어로 두면
+# 사용자가 무엇이 보정됐는지 알 수 없어 한글 라벨로 바꿔 말한다.
+FEATURE_LABEL = {
+    "green_ratio": "녹지율",
+    "impervious_ratio": "불투수면 비율",
+    "ndvi": "식생 활력도(NDVI)",
+    "albedo": "표면 반사율(albedo)",
+}
+
+# 비율 변수는 %로 말해야 슬라이더(%p)와 같은 단위가 된다. NDVI·albedo는 무단위 지수라 원값.
+_RATIO_FEATURES = {"green_ratio", "impervious_ratio"}
+
+
+def _fmt_value(feature: str, value: float) -> str:
+    if feature in _RATIO_FEATURES:
+        return f"{value * 100:.1f}%"
+    return f"{value:.3f}"
+
+
 def _clip_feature_value(feature: str, value: float, ranges: dict) -> float:
     lo, hi = ranges[feature]
     return min(max(value, lo), hi)
+
+
+def _clip_warning(feature: str, requested: float, applied: float, ranges: dict) -> str:
+    """왜 요청값이 그대로 안 들어갔는지를 사람 말로 설명한다.
+
+    'clip'이라는 낱말과 '학습범위'는 chat_service의 clip 감지 조건이라 반드시 남긴다
+    (_validate_final_answer / _format_tool_answer에서 이 두 단어로 clip 여부를 판정한다).
+    """
+    lo, hi = ranges[feature]
+    label = FEATURE_LABEL.get(feature, feature)
+    bound = "하한" if requested < lo else "상한"
+    return (
+        f"{label}을 {_fmt_value(feature, requested)}로 요청했지만 모델 학습범위"
+        f"({_fmt_value(feature, lo)}~{_fmt_value(feature, hi)})의 {bound}을 벗어나 "
+        f"{_fmt_value(feature, applied)}로 보정(clip)했습니다. "
+        f"모델이 학습 때 본 적 없는 값은 예측 근거가 없어 경계에서 멈춥니다."
+    )
 
 
 def _final_clip_scenario(scen: dict, feats: list, ranges: dict, warnings: list[str]) -> None:
@@ -147,8 +183,7 @@ def _final_clip_scenario(scen: dict, feats: list, ranges: dict, warnings: list[s
         value = float(scen[feature])
         clipped = _clip_feature_value(feature, value, ranges)
         if not np.isclose(value, clipped):
-            lo, hi = ranges[feature]
-            warnings.append(f"{feature}={value:.3f} 최종 학습범위[{lo:.2f},{hi:.2f}] 밖 → clip")
+            warnings.append(_clip_warning(feature, value, clipped, ranges))
             scen[feature] = clipped
 
 
@@ -175,10 +210,29 @@ def _apply_land_cover_coupling(changes: dict, scen: dict, feats: list, ranges: d
     before = float(scen[dst])
     scen[dst] = _clip_feature_value(dst, before + delta, ranges)
     moved = scen[dst] - before
-    if np.isclose(moved, 0.0):
-        return [f"{dst}가 이미 학습범위 끝이라 녹지 연동이 반영되지 않았습니다."]
+    lo, hi = ranges[dst]
+    green_pp = applied_deltas[src] * 100
 
-    return [f"녹지 {applied_deltas[src] * 100:+.1f}%p에 연동해 불투수면을 "
+    if np.isclose(moved, 0.0):
+        bound = "하한" if delta < 0 else "상한"
+        return [f"불투수면 비율이 이미 학습범위 {bound}({_fmt_value(dst, lo if delta < 0 else hi)})"
+                f"이라 녹지 연동을 반영하지 못했습니다(clip). 이 격자에서는 녹지를 늘려도 "
+                f"불투수면을 더 줄일 여지가 없습니다."]
+
+    # 연동분이 clip에 걸려 일부만 반영된 경우. 기울기만 알려주면 사용자가 곱셈으로 검산했을 때
+    # 숫자가 안 맞아 "왜 -0.65가 아니지?"로 읽힌다. 기대값·실제값·멈춘 이유를 함께 말한다.
+    # '학습범위'와 'clip'은 chat_service의 clip 감지 키워드라 반드시 포함한다.
+    if abs(moved) < abs(delta) - 1e-9:
+        bound = "하한" if delta < 0 else "상한"
+        return [f"녹지 {green_pp:+.1f}%p면 관측 기울기 {GREEN_TO_IMPERVIOUS}에 따라 불투수면이 "
+                f"{delta * 100:+.1f}%p 바뀌어야 하지만, 이 격자의 불투수면 비율이 "
+                f"{_fmt_value(dst, before)}에서 학습범위 {bound}"
+                f"({_fmt_value(dst, lo if delta < 0 else hi)})에 닿아 "
+                f"{moved * 100:+.1f}%p까지만 반영(clip)했습니다. "
+                f"모델이 학습 때 본 적 없는 값은 예측 근거가 없어 경계에서 멈춥니다. "
+                f"불투수면을 직접 지정하면 연동하지 않습니다."]
+
+    return [f"녹지 {green_pp:+.1f}%p에 연동해 불투수면을 "
             f"{moved * 100:+.1f}%p 조정했습니다 (관측 기울기 {GREEN_TO_IMPERVIOUS}). "
             f"불투수면을 직접 지정하면 연동하지 않습니다."]
 
@@ -218,7 +272,7 @@ def _apply_and_constrain(base: dict, changes: dict, feats: list, ranges: dict,
         val = scen[k] + float(delta) if _is_delta(delta) else float(_strip(delta))
         lo, hi = ranges[k]
         if val < lo or val > hi:
-            warnings.append(f"{k}={val:.3f} 학습범위[{lo:.2f},{hi:.2f}] 밖 → clip")
+            warnings.append(_clip_warning(k, val, _clip_feature_value(k, val, ranges), ranges))
         scen[k] = _clip_feature_value(k, val, ranges)
         applied_deltas[k] = float(scen[k]) - float(base[k])  # clip 후 실제 반영량
 

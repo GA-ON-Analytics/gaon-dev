@@ -394,8 +394,26 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
         if valid_results
         else None
     )
+
+    # 학습범위 clip에 걸린 셀은 요청보다 적은 개입을 받았는데도 저감이 크게 나온다.
+    # 실측(구별 200셀 표본)에서 그냥 평균하면 clip 제외 평균보다 0.13~0.35℃ 더 시원하게 나왔고,
+    # 이는 delta_c 추정오차(0.132℃)를 넘는다. 즉 반올림 오차가 아니라 계통 편향이다.
+    # 평균값 자체는 바꾸지 않고(사용자가 보던 수가 말없이 달라지면 더 혼란스럽다)
+    # 몇 개가 잘렸는지와 잘린 셀을 뺀 평균을 함께 돌려준다.
+    unclipped = [
+        result
+        for result in valid_results
+        if not any("clip" in str(warning) for warning in result.get("warnings") or [])
+    ]
     return {
         "count": len(results),
         "mean_delta_c": mean_delta,
+        "clipped_count": len(valid_results) - len(unclipped),
+        "valid_count": len(valid_results),
+        "mean_delta_c_unclipped": (
+            round(sum(result["delta_c"] for result in unclipped) / len(unclipped), 3)
+            if unclipped
+            else None
+        ),
         "results": results,
     }
