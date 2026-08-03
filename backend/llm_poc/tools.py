@@ -752,7 +752,203 @@ def run_simulation(
     return result
 
 
+# 정책 후보 4개. 시나리오 크기를 바꾸면 순위가 바뀌므로 답변에 반드시 명시해야
+# 하는데, LLM이 지어내면 안 되므로 문구까지 Tool이 돌려준다.
+# park_area_within_500m은 #18 역방향 학습으로 제외한다.
+POLICY_SCENARIOS: tuple[dict[str, Any], ...] = (
+    {
+        "label": "녹지 확대",
+        "feature": "green_ratio",
+        "argument": "green_ratio_delta",
+        "delta": 0.05,
+        "scenario_note": "녹지 +5%p",
+    },
+    {
+        "label": "식생 활력 개선",
+        "feature": "ndvi",
+        "argument": "ndvi_delta",
+        "delta": 0.05,
+        "scenario_note": "NDVI +0.05",
+    },
+    {
+        "label": "불투수면 저감",
+        "feature": "impervious_ratio",
+        "argument": "impervious_ratio_delta",
+        "delta": -0.05,
+        "scenario_note": "불투수면 -5%p",
+    },
+    {
+        "label": "쿨루프(알베도)",
+        "feature": "albedo",
+        "argument": "albedo_delta",
+        "delta": 0.02,
+        "scenario_note": "알베도 +0.02",
+    },
+)
+# 데이터 부트스트랩 8회 재학습으로 얻은 추정오차다. 이보다 작은 차이는 순위로
+# 구분할 수 없다. delta_std(트리 산포)는 실제 오차의 8.3배라 여기 쓰지 않는다.
+TIE_BAND_C = 0.132
+# 순위에 오른 정책. 냉각 방향이고 동률 밴드를 넘으며 시행 여지도 있는 경우.
+POLICY_STATE_RANKED = "ranked"
+# 밴드는 넘었는데 온도가 올라가는 정책. 60격자 측정에서는 0건이었으나 표본이
+# 서울 전체가 아니다. 이 상태가 없으면 abs()로 정렬해 온난화 정책을 1위로
+# 추천하면서 아무 경고도 내지 않는다.
+POLICY_STATE_ADVERSE = "adverse"
+POLICY_STATE_INDISTINGUISHABLE = "indistinguishable"
+# clip이 나서 요청한 만큼 반영되지 않은 경우. "효과 없음"과 다르다.
+POLICY_STATE_NO_ROOM = "no_room"
+POLICY_STATE_UNRESPONSIVE = "unresponsive"
+RANK_SCENARIO_NOTE = (
+    " · ".join(scenario["scenario_note"] for scenario in POLICY_SCENARIOS) + " 기준"
+)
+
+
+# 직접 지정한 레버 자체가 요청량만큼 못 들어간 경우.
+POLICY_CLIP_DIRECT = "direct"
+# 레버는 다 들어갔는데 연동돼 따라가야 할 불투수면이 하한에 걸린 경우.
+POLICY_CLIP_COUPLED = "coupled"
+
+
+def _policy_clip_reason(sim: Mapping[str, Any]) -> str | None:
+    """요청한 변경이 그대로 반영되지 않았다면 그 이유를 돌려준다.
+
+    경고 문자열만 보면 녹지 연동 clip 9건 중 8건을 놓친다(240건 실측:
+    직접 레버 1건 대 연동 8건 단독). 두 갈래를 모두 보되, 답변에서 둘을
+    다르게 설명해야 하므로 bool이 아니라 이유를 돌려준다.
+    """
+
+    requested = sim.get("requested_changes") or {}
+    changed = sim.get("changed_features") or {}
+
+    # 갈래 1 — 직접 지정한 레버가 요청량만큼 움직였는가.
+    # 경고 문자열 대조보다 이쪽이 낫다. predict_core가 경고 문구를 바꿔도
+    # 조용히 깨지지 않는다.
+    for field, wanted in requested.items():
+        change = changed.get(field)
+        if not isinstance(change, Mapping):
+            return POLICY_CLIP_DIRECT
+        applied = change["after"] - change["before"]
+        if not math.isclose(applied, wanted, rel_tol=0.0, abs_tol=1e-4):
+            return POLICY_CLIP_DIRECT
+
+    # 갈래 2 — 녹지에 연동돼 자동으로 움직인 불투수면이 관측 기울기만큼
+    # 따라왔는가. 녹지는 다 들어갔는데 불투수면이 하한에 걸리는 경우가 있다.
+    green = changed.get("green_ratio")
+    impervious = changed.get("impervious_ratio")
+    if isinstance(green, Mapping) and isinstance(impervious, Mapping):
+        applied = green["after"] - green["before"]
+        expected = applied * predict_core.GREEN_TO_IMPERVIOUS
+        actual = impervious["after"] - impervious["before"]
+        if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-4):
+            return POLICY_CLIP_COUPLED
+    return None
+
+
+def _policy_state(sim: Mapping[str, Any], clipped: bool) -> str:
+    """정책 하나를 5상태로 분류한다. ★ 판정 순서가 곧 답이다.
+
+    clip을 동률 밴드보다 먼저 보는 이유: clip이 났다는 건 요청한 만큼
+    반영되지 않았다는 뜻이라 그때의 delta_c는 "효과가 작다"가 아니라
+    "그만큼 못 넣었다"다. 순서를 뒤집으면 "녹지는 효과가 없습니다"라고
+    답하게 되는데, 사실은 "이 격자엔 녹지를 더 넣을 땅이 없습니다"다.
+    """
+
+    if sim.get("direction_confidence") is None:
+        return POLICY_STATE_UNRESPONSIVE
+    if clipped:
+        return POLICY_STATE_NO_ROOM
+    delta_c = sim["delta_c"]
+    if abs(delta_c) < TIE_BAND_C:
+        return POLICY_STATE_INDISTINGUISHABLE
+    if delta_c > 0:
+        return POLICY_STATE_ADVERSE
+    return POLICY_STATE_RANKED
+
+
+def _empty_rank_result(grid_id: str | None) -> dict[str, Any]:
+    return {
+        "success": False,
+        "grid_id": grid_id,
+        "gu_name": None,
+        "policies": [],
+        "ranked_count": 0,
+        "tie_band_c": TIE_BAND_C,
+        "scenario_note": RANK_SCENARIO_NOTE,
+        "interpretation_basis": INTERPRETATION_BASIS,
+        "limitations": list(LIMITATIONS),
+        "error": None,
+    }
+
+
+def rank_policies(grid_id: str) -> dict[str, Any]:
+    """정책 4개를 그 격자에 적용해 5상태로 분류한다. LLM은 호출하지 않는다.
+
+    순위는 냉각 방향(delta_c < 0)만 매기고 delta_c 오름차순으로 정렬한다.
+    가장 많이 내려간 정책이 1위다.
+
+    시뮬레이션은 predict_core.predict를 직접 부르지 않고 run_simulation에
+    위임한다. 필수 반환값·유한성·direction_confidence 범위 검사를 복제하면
+    반드시 갈라지기 때문이다.
+    """
+
+    normalized_grid_id = grid_id.strip() if isinstance(grid_id, str) else None
+    result = _empty_rank_result(normalized_grid_id)
+    if not normalized_grid_id:
+        result["error"] = "grid_id가 필요합니다."
+        return result
+
+    policies: list[dict[str, Any]] = []
+    gu_name: str | None = None
+    for scenario in POLICY_SCENARIOS:
+        sim = run_simulation(
+            normalized_grid_id,
+            **{scenario["argument"]: scenario["delta"]},
+        )
+        if not sim.get("success"):
+            # 실패는 격자·모델 파일 단위라 정책 하나만 빠지는 일이 없다.
+            # 부분 순위는 1위였을 정책이 빠진 채 나갈 수 있어 더 위험하다.
+            result["gu_name"] = sim.get("gu_name")
+            result["error"] = sim.get("error") or "정책 시뮬레이션에 실패했습니다."
+            return result
+        gu_name = sim["gu_name"]
+        clip_reason = _policy_clip_reason(sim)
+        policies.append(
+            {
+                "label": scenario["label"],
+                "feature": scenario["feature"],
+                "delta": scenario["delta"],
+                "scenario_note": scenario["scenario_note"],
+                "delta_c": sim["delta_c"],
+                "state": _policy_state(sim, clip_reason is not None),
+                "clipped": clip_reason is not None,
+                "clip_reason": clip_reason,
+                "applied": dict(sim["changed_features"]),
+                "rank": None,
+            }
+        )
+
+    ranked = sorted(
+        (p for p in policies if p["state"] == POLICY_STATE_RANKED),
+        key=lambda p: p["delta_c"],
+    )
+    for position, policy in enumerate(ranked, start=1):
+        policy["rank"] = position
+    # 순위에 오른 것을 앞으로, 나머지는 선언 순서를 유지한다.
+    rest = [p for p in policies if p["state"] != POLICY_STATE_RANKED]
+
+    result.update(
+        {
+            "success": True,
+            "gu_name": gu_name,
+            "policies": ranked + rest,
+            "ranked_count": len(ranked),
+        }
+    )
+    return result
+
+
 TOOL_FUNCTIONS = {
     "get_grid_data": get_grid_data,
     "run_simulation": run_simulation,
+    "rank_policies": rank_policies,
 }

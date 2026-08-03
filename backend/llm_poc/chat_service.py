@@ -16,6 +16,11 @@ from typing import Any
 from backend.llm_poc.tools import (
     ALLOWED_GRID_FIELDS,
     GRID_FIELD_SPECS,
+    POLICY_STATE_ADVERSE,
+    POLICY_STATE_INDISTINGUISHABLE,
+    POLICY_STATE_NO_ROOM,
+    POLICY_STATE_RANKED,
+    POLICY_STATE_UNRESPONSIVE,
     TOOL_FUNCTIONS,
     format_grid_field_value,
 )
@@ -81,6 +86,7 @@ _SIMULATION_FIELD_TERMS = {
 _SUPPORTED_INTENTS = {
     "field_list",
     "lookup",
+    "policy_ranking",
     "simulation",
     "unsupported",
 }
@@ -91,6 +97,7 @@ _TOOLLESS_INTENTS = {"field_list", "unsupported"}
 # 숨어 있었고, 새 intent가 조용히 run_simulation으로 새도 아무도 몰랐다.
 _INTENT_TOOL = {
     "lookup": "get_grid_data",
+    "policy_ranking": "rank_policies",
     "simulation": "run_simulation",
 }
 # 표가 어긋나는 두 방향을 모두 import 시점에 잡는다.
@@ -173,7 +180,8 @@ _CLARIFICATION_BY_CODE = {
 }
 SUPPORTED_SCOPE_ANSWER = (
     "현재 요청은 아직 지원하지 않습니다. "
-    "GA:ON AI에서는 격자 데이터 조회와 정책 시뮬레이션을 사용할 수 있습니다. "
+    "GA:ON AI에서는 격자 데이터 조회, 정책 시뮬레이션, 정책 우선순위 추천을 "
+    "사용할 수 있습니다. "
     "AI 화면의 사용 가이드를 확인하거나 "
     "“조회 가능한 데이터 목록 보여줘”라고 입력해 주세요."
 )
@@ -187,11 +195,18 @@ ROUTER_OUTPUT_SCHEMA = {
     "properties": {
         "intent": {
             "type": "string",
-            "enum": ["unsupported", "field_list", "lookup", "simulation"],
+            "enum": [
+                "unsupported",
+                "field_list",
+                "lookup",
+                "simulation",
+                "policy_ranking",
+            ],
             "description": (
                 "허용된 격자 지표의 현재값 조회와 전체 조회는 lookup, "
                 "조회 가능한 데이터 목록 요청은 field_list, 지원 정책 변경은 "
-                "simulation, 그 밖의 요청은 unsupported"
+                "simulation, 어떤 정책이 효과적인지 우선순위를 묻는 요청은 "
+                "policy_ranking, 그 밖의 요청은 unsupported"
             ),
         },
         "resolution": {
@@ -381,7 +396,8 @@ SYSTEM_PROMPT = (
 - 전체·모두·모든·전부 또는 독립된 "다"로 전체 데이터를 요구하면 lookup_all=true다.
 - 전체 범위를 말고·제외·필요 없고·보여주지 말고 등으로 부정하면 excluded_scope=true, lookup_all=false이고 실제 요청 필드만 requested_fields에 둔다.
 - "조회 가능한 데이터 목록"처럼 지원 조회 필드 목록 자체를 요구하면 intent=field_list, resolution=resolved다. 실제 격자 Tool 조회는 아니다.
-- 데이터 정의·뜻·출처·모델 설명·정책 추천·문서 질문은 아직 지원하지 않으므로 intent=unsupported, resolution=unsupported다.
+- 특정 지표를 지정하지 않고 어떤 정책이 효과적인지·무엇부터 해야 하는지 우선순위를 물으면 intent=policy_ranking, resolution=resolved이고 requested_fields, candidate_fields, changes를 비운다.
+- 데이터 정의·뜻·출처·모델 설명·문서 질문은 아직 지원하지 않으므로 intent=unsupported, resolution=unsupported다.
 - 인구·인구밀도처럼 카탈로그에 없는 지표는 unsupported다.
 - 데이터 조회를 부정하고 정책 변경을 요청하면 simulation을 우선한다.
 
@@ -407,6 +423,7 @@ SYSTEM_PROMPT = (
 - "표면이 햇빛을 얼마나 반사해" → lookup/resolved, requested_fields=["albedo"].
 - "NDVI가 무슨 뜻이야?"와 "녹지율의 출처가 어디야?" → unsupported/unsupported.
 - "녹지가 차지하는 비율을 5%p 높여줘" → simulation/resolved, green_ratio increase 5 percentage_point.
+- "여기 어떤 정책이 가장 효과적이야"와 "뭐부터 해야 해?" → policy_ranking/resolved.
 - "그거 5플오 해줘"처럼 변경 대상과 방향이 불명확하면 changes=[]와 unresolved=["change_field","change_operation"]을 사용한다.
 - "녹지율을 올려줘"처럼 수치만 없으면 changes=[]와 unresolved=["change_value"]을 사용한다.
 """
@@ -1255,6 +1272,20 @@ def _parse_normalized_request(
         lookup_all = False
         excluded_scope = False
         lookup_evidence = ""
+    elif intent == "policy_ranking":
+        # 격자 하나에 정책 4개를 전부 돌려보는 요청이라 조회 필드도 변경 인자도
+        # 필요 없다. 라우터가 실어 보낸 것이 있으면 그대로 흘리지 말고 비운다.
+        # 이 분기가 없으면 새 intent가 아래 어느 elif에도 안 걸려 검증을 통째로
+        # 건너뛴다.
+        resolution = "resolved"
+        requested_fields = []
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
     elif intent == "simulation":
         if resolution != "resolved":
             raise ChatProtocolError(
@@ -1823,6 +1854,53 @@ def _allowed_content_numbers(
             and math.isfinite(float(confidence))
         ):
             allowed.append(float(confidence) * 100)
+    if tool_name == "rank_policies":
+        # 정책별 적용 내역을 %로 인용할 수 있게 환산값도 허용한다.
+        # _collect_tool_numbers가 원본 비율은 이미 담았다.
+        policies = tool_result.get("policies")
+        if isinstance(policies, list):
+            for policy in policies:
+                if not isinstance(policy, Mapping):
+                    continue
+                requested_delta = policy.get("delta")
+                if (
+                    "ratio" in str(policy.get("feature"))
+                    and isinstance(requested_delta, Real)
+                    and not isinstance(requested_delta, bool)
+                    and math.isfinite(float(requested_delta))
+                ):
+                    allowed.append(float(requested_delta) * 100)
+                applied = policy.get("applied")
+                if not isinstance(applied, Mapping):
+                    continue
+                for feature, values in applied.items():
+                    if not isinstance(values, Mapping):
+                        continue
+                    before = values.get("before")
+                    after = values.get("after")
+                    if (
+                        not isinstance(before, Real)
+                        or isinstance(before, bool)
+                        or not isinstance(after, Real)
+                        or isinstance(after, bool)
+                    ):
+                        continue
+                    before_number = float(before)
+                    after_number = float(after)
+                    if not (
+                        math.isfinite(before_number)
+                        and math.isfinite(after_number)
+                    ):
+                        continue
+                    allowed.append(after_number - before_number)
+                    if "ratio" in str(feature):
+                        allowed.extend(
+                            (
+                                before_number * 100,
+                                after_number * 100,
+                                (after_number - before_number) * 100,
+                            )
+                        )
     return allowed
 
 
@@ -2212,6 +2290,41 @@ def _validate_simulation_answer(
     _validate_supported_numbers(answer, "run_simulation", tool_result)
 
 
+def _validate_policy_ranking_answer(
+    answer: str,
+    tool_result: Mapping[str, Any],
+) -> None:
+    """정책 순위 답변이 Tool 결과 밖으로 나가지 않았는지 확인한다."""
+
+    _validate_supported_numbers(answer, "rank_policies", tool_result)
+
+    grid_id = tool_result.get("grid_id")
+    gu_name = tool_result.get("gu_name")
+    if isinstance(grid_id, str) and grid_id and grid_id not in answer:
+        raise ChatProtocolError("정책 순위 답변에 격자 ID가 없습니다.")
+    if isinstance(gu_name, str) and gu_name and gu_name not in answer:
+        raise ChatProtocolError("정책 순위 답변에 구 이름이 없습니다.")
+
+    scenario_note = tool_result.get("scenario_note")
+    if isinstance(scenario_note, str) and scenario_note not in answer:
+        # 시나리오 크기를 바꾸면 순위가 바뀐다. 크기가 빠진 순위표는 근거 없는 표다.
+        raise ChatProtocolError("정책 순위 답변에 시나리오 크기가 없습니다.")
+
+    policies = tool_result.get("policies")
+    if not isinstance(policies, list):
+        raise ChatProtocolError("정책 순위 Tool 결과에 정책 목록이 없습니다.")
+    for policy in policies:
+        if not isinstance(policy, Mapping):
+            continue
+        label = policy.get("label")
+        # 상태와 무관하게 정책 4개가 모두 답변에 나와야 한다. 빠지면 사용자는
+        # 그 정책을 검토했는지조차 알 수 없다.
+        if isinstance(label, str) and label and label not in answer:
+            raise ChatProtocolError(
+                f"정책 순위 답변에서 정책이 누락되었습니다: {label}"
+            )
+
+
 def _tool_error_answer(tool_result: Mapping[str, Any]) -> str | None:
     if tool_result.get("success") is True:
         return None
@@ -2442,6 +2555,180 @@ def format_simulation_answer(tool_result: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# no_room은 여기에 없다. "왜 못 넣었나"가 정책마다 달라서 한 문장으로 묶을 수 없다.
+_POLICY_STATE_SUMMARIES = {
+    POLICY_STATE_INDISTINGUISHABLE: "차이가 동률 밴드보다 작아 순위를 구분할 수 없습니다",
+    POLICY_STATE_UNRESPONSIVE: "모델이 반응하지 않아 판단할 수 없습니다",
+    POLICY_STATE_ADVERSE: "예상 변화가 온도 상승 방향이라 추천하지 않습니다",
+}
+
+
+def _policy_applied_text(policy: Mapping[str, Any]) -> str:
+    """정책 하나의 실제 적용 내역을 사람이 읽을 수 있게 만든다."""
+
+    applied = policy.get("applied")
+    if not isinstance(applied, Mapping) or not applied:
+        return "실제로 반영된 변경이 없습니다"
+    parts: list[str] = []
+    for feature, values in applied.items():
+        if not isinstance(values, Mapping):
+            continue
+        before = values.get("before")
+        after = values.get("after")
+        if (
+            not isinstance(before, Real)
+            or isinstance(before, bool)
+            or not isinstance(after, Real)
+            or isinstance(after, bool)
+        ):
+            continue
+        spec = GRID_FIELD_SPECS.get(str(feature), {})
+        label = str(spec.get("label") or feature)
+        if spec.get("is_ratio") is True:
+            parts.append(
+                f"{label} {float(before) * 100:.2f}% → {float(after) * 100:.2f}%"
+            )
+        else:
+            parts.append(f"{label} {float(before):.4f} → {float(after):.4f}")
+    return ", ".join(parts) if parts else "실제로 반영된 변경이 없습니다"
+
+
+def _policy_no_room_line(policy: Mapping[str, Any]) -> str:
+    """★ '못 넣었다'와 '효과가 없다'를 구분해서 말한다.
+
+    막힌 이유가 두 가지인데 사용자에게는 전혀 다른 뜻이다.
+    - direct  : 그 지표 자체를 요청한 만큼 넣을 자리가 없다
+    - coupled : 지표는 다 들어갔고, 연동돼 따라가야 할 불투수면이 하한에 걸렸다
+    둘을 뭉뚱그리면 녹지가 전부 반영된 격자에도 "녹지를 못 넣었다"고 답하게 된다.
+    """
+
+    label = str(policy.get("label"))
+    applied_text = _policy_applied_text(policy)
+    reason = policy.get("clip_reason")
+    if reason == "coupled":
+        head = (
+            f"{label}: 요청한 만큼 반영됐지만 연동된 불투수면이 하한에 걸려 "
+            "함께 내려가지 못했습니다"
+        )
+    else:
+        head = f"{label}: 이 격자엔 요청한 만큼 시행할 여지가 없습니다"
+
+    delta_c = policy.get("delta_c")
+    tail = ""
+    if (
+        isinstance(delta_c, Real)
+        and not isinstance(delta_c, bool)
+        and math.isfinite(float(delta_c))
+    ):
+        # 부분 적용만으로도 변화량이 클 수 있다. 숨기면 "효과 없음"으로 읽힌다.
+        tail = (
+            f" 실제 적용 결과의 예상 변화량은 {float(delta_c):.3f}℃지만, "
+            "요청과 다른 크기라 순위에서 제외했습니다."
+        )
+    return f"{head} ({applied_text}).{tail}"
+
+
+def format_policy_ranking_answer(tool_result: Mapping[str, Any]) -> str:
+    """정책 순위 Tool 결과만 사용해 결정적인 한국어 답변을 만든다."""
+
+    error_answer = _tool_error_answer(tool_result)
+    if error_answer is not None:
+        return error_answer
+
+    grid_id = tool_result.get("grid_id")
+    gu_name = tool_result.get("gu_name")
+    if (
+        not isinstance(grid_id, str)
+        or not grid_id
+        or not isinstance(gu_name, str)
+        or not gu_name
+    ):
+        raise ChatProtocolError("정책 순위 Tool 결과의 지역 정보가 올바르지 않습니다.")
+
+    scenario_note = tool_result.get("scenario_note")
+    if not isinstance(scenario_note, str) or not scenario_note:
+        raise ChatProtocolError(
+            "정책 순위 Tool 결과의 시나리오 정보가 올바르지 않습니다."
+        )
+    tie_band = tool_result.get("tie_band_c")
+    if (
+        not isinstance(tie_band, Real)
+        or isinstance(tie_band, bool)
+        or not math.isfinite(float(tie_band))
+    ):
+        raise ChatProtocolError("정책 순위 Tool 결과의 동률 밴드가 올바르지 않습니다.")
+
+    policies = tool_result.get("policies")
+    if not isinstance(policies, list) or not policies:
+        raise ChatProtocolError("정책 순위 Tool 결과에 정책 목록이 없습니다.")
+
+    grouped: dict[str, list[str]] = {}
+    ranked: list[tuple[int, str, float]] = []
+    no_room: list[Mapping[str, Any]] = []
+    for policy in policies:
+        if not isinstance(policy, Mapping):
+            raise ChatProtocolError(
+                "정책 순위 Tool 결과의 정책 항목이 올바르지 않습니다."
+            )
+        label = policy.get("label")
+        state = policy.get("state")
+        if not isinstance(label, str) or not label or not isinstance(state, str):
+            raise ChatProtocolError(
+                "정책 순위 Tool 결과의 정책 이름 또는 상태가 올바르지 않습니다."
+            )
+        if state == POLICY_STATE_RANKED:
+            rank = policy.get("rank")
+            delta_c = policy.get("delta_c")
+            if (
+                not isinstance(rank, int)
+                or isinstance(rank, bool)
+                or rank < 1
+                or not isinstance(delta_c, Real)
+                or isinstance(delta_c, bool)
+                or not math.isfinite(float(delta_c))
+            ):
+                raise ChatProtocolError(
+                    "순위에 오른 정책의 순위 또는 예상 변화량이 올바르지 않습니다."
+                )
+            ranked.append((rank, label, float(delta_c)))
+            continue
+        if state == POLICY_STATE_NO_ROOM:
+            no_room.append(policy)
+            continue
+        if state not in _POLICY_STATE_SUMMARIES:
+            raise ChatProtocolError(f"정책 순위 Tool 결과의 상태가 미지원입니다: {state}")
+        grouped.setdefault(state, []).append(label)
+    ranked.sort(key=lambda item: item[0])
+
+    lines = [f"{grid_id} 격자({gu_name})의 정책 우선순위입니다. ({scenario_note})"]
+    if ranked:
+        for rank, label, delta_c in ranked:
+            lines.append(f"{rank}위 {label}: {delta_c:.3f}℃")
+    else:
+        lines.append("순위를 매길 수 있는 정책이 없습니다.")
+    # ★ 나머지를 상태별로 나눠 말한다. "효과 없음"과 "시행 여지 없음"을 한 문장으로
+    # 묶으면 정책 담당자에게 정반대 뜻으로 전달된다.
+    for policy in no_room:
+        lines.append(_policy_no_room_line(policy))
+    for state, summary in _POLICY_STATE_SUMMARIES.items():
+        labels = grouped.get(state)
+        if labels:
+            lines.append(f"{' · '.join(labels)}: {summary}.")
+    lines.append(
+        f"동률 밴드는 {float(tie_band):.3f}℃이며, 이보다 작은 차이는 "
+        "모델 추정오차 안이라 순위로 구분하지 않습니다."
+    )
+    lines.append(
+        "표시된 값은 절대온도가 아니라 두 모델 예측의 차이인 "
+        "모델 기준 예상 변화량입니다."
+    )
+
+    limitations = tool_result.get("limitations")
+    if isinstance(limitations, list):
+        lines.extend(str(limitation) for limitation in limitations)
+    return "\n".join(lines)
+
+
 def _format_tool_answer(
     tool_name: str,
     tool_result: Mapping[str, Any],
@@ -2450,6 +2737,8 @@ def _format_tool_answer(
         return format_grid_data_answer(tool_result)
     if tool_name == "run_simulation":
         return format_simulation_answer(tool_result)
+    if tool_name == "rank_policies":
+        return format_policy_ranking_answer(tool_result)
     raise ChatProtocolError(f"답변 formatter를 지원하지 않는 도구입니다: {tool_name}")
 
 
@@ -2471,6 +2760,8 @@ def _validate_final_answer(
         _validate_grid_answer(answer, tool_result)
     elif tool_name == "run_simulation":
         _validate_simulation_answer(answer, tool_result)
+    elif tool_name == "rank_policies":
+        _validate_policy_ranking_answer(answer, tool_result)
     else:
         raise ChatProtocolError(
             f"최종 답변 검증을 지원하지 않는 도구입니다: {tool_name}"
@@ -2775,6 +3066,10 @@ def _run_chat_with_client(
                 if normalized_request.lookup_all
                 else list(normalized_request.requested_fields)
             )
+            assumptions = []
+            preparation_error = None
+        elif normalized_request.intent == "policy_ranking":
+            # rank_policies는 grid_id만 받는다. 시나리오 크기는 Tool 안에 있다.
             assumptions = []
             preparation_error = None
         else:
