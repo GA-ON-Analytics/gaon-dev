@@ -44,6 +44,10 @@ const DEFAULT_CENTER: [number, number] = [37.5665, 126.978];
 const SEOUL_OVERVIEW_ZOOM = 11;
 const DISTRICT_DETAIL_ZOOM = 13;
 const DISTRICT_OVERVIEW_ZOOM = 12;
+// 격자 코드로 찾아갔을 때의 줌. 100m 격자 하나가 화면에서 식별되려면 구 상세(13)로는 부족하다.
+const GRID_SEARCH_ZOOM = 17;
+// 100m 격자 코드 형식: 자치구 5자리 + '_' + 격자 5자리 (예: 11560_02332)
+const GRID_CODE_PATTERN = /^(\d{5})_(\d{5})$/;
 // 라벨 칸이 이미 '분석 기준'이므로 값에는 기간만 (중복 접두어 제거 → 한 줄)
 const ANALYSIS_PERIOD_LABEL = '2023~2025년 여름철 평균';
 const DATA_PENDING = '데이터 준비중';
@@ -776,6 +780,26 @@ export function MapDashboard() {
     () => new Map(districts.map((district) => [district.district, district.sigCode])),
     [districts]
   );
+  // 격자 코드 앞 5자리로 어느 구인지 되찾기 위한 역방향 표.
+  const districtNameByCode = useMemo(
+    () => new Map(districts.map((district) => [district.sigCode, district.district])),
+    [districts]
+  );
+  // ── 격자 코드 검색 ────────────────────────────────────────────────────────
+  // 서울 100m 격자가 64,676개라 특정 격자를 지도에서 눈으로 찾는 건 불가능하다.
+  // 이슈 재현·검증에 필요한 격자(예: clip이 걸리는 11560_02332)로 갈 방법이 없었다.
+  const [gridSearchError, setGridSearchError] = useState<string | null>(null);
+  const [gridSearchBusy, setGridSearchBusy] = useState(false);
+  // 찾은 격자를 곧바로 반영하지 않고 상태에 담아 두는 이유는 위 '검색 결과 반영' effect 주석 참고.
+  const [gridSearchHit, setGridSearchHit] = useState<{
+    feature: Feature<Geometry>;
+    guTotal: number;
+  } | null>(null);
+  // 검색으로 이동할 때만 구 중심 대신 격자 중심을 본다. null이면 평소대로 구 중심.
+  const [gridFocus, setGridFocus] = useState<{ center: [number, number]; zoom: number } | null>(
+    null
+  );
+
   const loadDistrict100mDetails = useCallback((sigCode: string, districtName: string) => {
     const cached = district100mCacheRef.current.get(sigCode);
     if (cached) return Promise.resolve(cached);
@@ -794,6 +818,64 @@ export function MapDashboard() {
 
     district100mRequestRef.current.set(sigCode, request);
     return request;
+  }, []);
+
+  const handleGridSearch = useCallback(
+    async (rawCode: string) => {
+      const code = rawCode.trim();
+      setGridSearchError(null);
+
+      const matched = GRID_CODE_PATTERN.exec(code);
+      if (!matched) {
+        setGridSearchError('격자 코드는 11560_02332 처럼 다섯 자리_다섯 자리예요.');
+        return;
+      }
+      const sigCode = matched[1];
+      const districtName = districtNameByCode.get(sigCode);
+      if (!districtName) {
+        setGridSearchError(`앞 다섯 자리 ${sigCode}에 해당하는 서울 자치구가 없어요.`);
+        return;
+      }
+
+      setGridSearchBusy(true);
+      try {
+        // 구 상세(100m)를 먼저 받아 격자를 확인한 뒤에 화면 상태를 바꾼다. 순서를 뒤집으면
+        // 구가 바뀌며 선택이 비워진 다음에야 '없는 격자'임을 알게 돼 선택이 사라진다.
+        const collection = await loadDistrict100mDetails(sigCode, districtName);
+        const feature = collection.features.find(
+          (candidate) =>
+            getGridIdentifier(getFeatureProperties(candidate as Feature<Geometry>)) === code
+        ) as Feature<Geometry> | undefined;
+
+        if (!feature) {
+          setGridSearchError(`${districtName}에 ${code} 격자가 없어요.`);
+          return;
+        }
+
+        const center = L.geoJSON(feature).getBounds().getCenter();
+        setSelectedGridResolution('100m');   // 격자 코드는 100m 전용이다
+        setSelectedDistrict(districtName);
+        setGridSearchHit({ feature, guTotal: collection.features.length });
+        setGridFocus({ center: [center.lat, center.lng], zoom: GRID_SEARCH_ZOOM });
+      } catch {
+        setGridSearchError('격자 데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.');
+      } finally {
+        setGridSearchBusy(false);
+      }
+    },
+    [districtNameByCode, loadDistrict100mDetails]
+  );
+
+  // 사용자가 직접 구·해상도를 바꾸면 검색 이동을 풀어 평소의 구 중심 보기로 돌아간다.
+  const handleDistrictChange = useCallback((district: string) => {
+    setGridFocus(null);
+    setGridSearchError(null);
+    setSelectedDistrict(district);
+  }, []);
+  const handleGridResolutionChange = useCallback((resolution: GridResolution) => {
+    setGridFocus(null);
+    setGridSearchError(null);
+    setSelectedGridResolution(resolution);
   }, []);
 
   // 구 선택 직후 상세 속성을 선로딩해 100m 격자 클릭 시 경량→상세 전환 깜빡임을 줄인다.
@@ -853,6 +935,24 @@ export function MapDashboard() {
       isActive = false;
     };
   }, [districtCodeByName, isAllDistricts, selectedDistrict, selectedGridResolution]);
+
+  // ★ 검색 결과 반영은 반드시 위 구 전환 useEffect '뒤에' 선언해야 한다. 구를 바꾸면 위
+  //   effect가 선택을 비우는데, 같은 커밋에서는 선언 순서대로 실행되므로 뒤에 있어야
+  //   검색으로 고른 격자가 살아남는다.
+  useEffect(() => {
+    if (!gridSearchHit) return;
+    const { feature, guTotal } = gridSearchHit;
+    const properties = getFeatureProperties(feature);
+
+    selectedResetRef.current?.();
+    selectedGridIdRef.current = getGridIdentifier(properties);
+    selectedGridLayerRef.current = null;
+    setSelected100mFeature(feature);
+    setSelected100mPopupPosition(L.geoJSON(feature).getBounds().getCenter());
+    setSelectedGridProperties(properties);
+    setSelectedGridGuTotal(guTotal);
+    setGridSearchHit(null);
+  }, [gridSearchHit]);
 
   useEffect(() => {
     if (selectedGridResolution === '100m') return;
@@ -1257,7 +1357,10 @@ export function MapDashboard() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           <MapZoomWatcher onZoomChange={setZoomLevel} />
-          <MapFocus center={center} zoom={targetZoom} />
+          <MapFocus
+            center={gridFocus?.center ?? center}
+            zoom={gridFocus?.zoom ?? targetZoom}
+          />
           <RightDragPan />
           <GeoJSON
             key={`${selectedDistrict}-${selectedLayer}-${isGuMode}`}
@@ -1462,9 +1565,12 @@ export function MapDashboard() {
         gridCount={gridCount}
         gridLoading={gridLoading}
         selectedGridProperties={selectedGridProperties}
-        onDistrictChange={setSelectedDistrict}
-        onGridResolutionChange={setSelectedGridResolution}
+        gridSearchError={gridSearchError}
+        gridSearchBusy={gridSearchBusy}
+        onDistrictChange={handleDistrictChange}
+        onGridResolutionChange={handleGridResolutionChange}
         onLayerChange={setSelectedLayer}
+        onGridSearch={handleGridSearch}
       />
       <RightToolbar activeTool={activeTool} onSelectTool={setActiveTool} />
       <GridDetailSidePanel
@@ -1507,9 +1613,12 @@ interface SearchPanelProps {
   gridCount: number;
   gridLoading: boolean;
   selectedGridProperties: GridAnalysisProperties | null;
+  gridSearchError: string | null;
+  gridSearchBusy: boolean;
   onDistrictChange: (district: string) => void;
   onGridResolutionChange: (resolution: GridResolution) => void;
   onLayerChange: (layer: LayerKey) => void;
+  onGridSearch: (code: string) => void;
 }
 
 function SearchPanel({
@@ -1520,10 +1629,14 @@ function SearchPanel({
   gridCount,
   gridLoading,
   selectedGridProperties,
+  gridSearchError,
+  gridSearchBusy,
   onDistrictChange,
   onGridResolutionChange,
-  onLayerChange
+  onLayerChange,
+  onGridSearch
 }: SearchPanelProps) {
+  const [gridCodeInput, setGridCodeInput] = useState('');
   // 지표 버튼 위 커스텀 툴팁 (스크롤 패널에 잘리지 않게 position:fixed로 화면 기준 표시)
   const [tip, setTip] = useState<{ text: string; top: number; left: number } | null>(null);
   const showTip = (event: ReactMouseEvent | ReactFocusEvent, text: string) => {
@@ -1585,7 +1698,40 @@ function SearchPanel({
             ))}
           </select>
         </label>
+        {/* 격자 코드로 바로 이동. label 대신 div인 이유는 안에 버튼이 있어서다
+            (label 클릭이 입력창 포커스로 가로채이면 버튼이 두 번 눌린 것처럼 동작한다) */}
+        <div className="gridCodeSearch">
+          <span>격자 코드</span>
+          <div className="gcsRow">
+            <input
+              type="text"
+              value={gridCodeInput}
+              onChange={(event) => setGridCodeInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                onGridSearch(gridCodeInput);
+              }}
+              placeholder="예 : 11560_02332"
+              aria-label="격자 코드로 이동"
+              spellCheck={false}
+              disabled={gridSearchBusy}
+            />
+            <button
+              type="button"
+              onClick={() => onGridSearch(gridCodeInput)}
+              disabled={gridSearchBusy || !gridCodeInput.trim()}
+            >
+              {gridSearchBusy ? '찾는 중' : '이동'}
+            </button>
+          </div>
+        </div>
       </div>
+      {gridSearchError && (
+        <p className="gcsError" role="alert">
+          {gridSearchError}
+        </p>
+      )}
 
       {!selectedGridProperties && (
         <div className="selectionGuide" role="status">
