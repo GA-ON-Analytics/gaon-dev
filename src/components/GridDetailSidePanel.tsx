@@ -117,6 +117,72 @@ const METRIC_DESC: Record<string, string> = {
   built_heat_proxy: '인공 지표면이 식생 없이 열을 내뿜는 정도.'
 };
 
+// 값의 출처. "이 숫자를 어디서 가져왔나"를 물었을 때 답할 수 있어야 신뢰가 생기고,
+// 반대로 출처를 모르면 위성 추정값을 실측처럼 읽는다.
+// 출처는 GAON/docs/GAON_ML_전과정_정리_ko.md §4.2, 수집 스크립트 주석과 일치시킨다.
+const METRIC_SOURCE: Record<string, string> = {
+  impervious_ratio: '위성 Dynamic World (Google Earth Engine)',
+  green_ratio: '위성 Dynamic World (Google Earth Engine)',
+  ndvi: '위성 Sentinel-2 (Google Earth Engine)',
+  albedo: '위성 Landsat 표면반사율 (Google Earth Engine)',
+  building_ratio: '국토부 VWorld 건물 도형 (lt_c_spbd)',
+  avg_ground_floor_count: '국토부 VWorld 건물 도형',
+  max_ground_floor_count: '국토부 VWorld 건물 도형',
+  floor_area_ratio_proxy: '국토부 VWorld 건물 도형에서 파생 (바닥면적×층수÷격자면적)',
+  road_ratio: '국토부 VWorld 도로 (lt_c_upisuq151)',
+  nearest_park_distance_m: '국토부 VWorld 공원 (lt_c_upisuq161)',
+  park_area_within_500m: '국토부 VWorld 공원',
+  nearest_stream_distance_m: '국토부 VWorld 하천 (lt_c_wkmstrm)',
+  zoning_residential_ratio: '국토부 VWorld 용도지역 (lt_c_uq111)',
+  zoning_commercial_ratio: '국토부 VWorld 용도지역',
+  zoning_industrial_ratio: '국토부 VWorld 용도지역',
+  zoning_green_ratio: '국토부 VWorld 용도지역',
+  elevation_m: '위성 SRTM DEM (Google Earth Engine)',
+  slope_deg: '위성 SRTM DEM (Google Earth Engine)',
+  mean_actual_lst: '위성 Landsat 8/9 열적외 밴드(ST_B10)',
+  mean_actual_anomaly: '위성 Landsat 8/9 열적외 밴드(ST_B10)',
+  nearest_shelter_distance_m: '서울 열린데이터 무더위쉼터 4,088개'
+};
+
+// 관측 시점. 위성 시계열만 기간이 명확하고 나머지는 수집 시점의 최신본이라 '기준 시점'으로 쓴다.
+const LST_PERIOD = '2023~2025년 여름(6~8월) 관측 평균';
+const METRIC_PERIOD: Record<string, string> = {
+  mean_actual_lst: LST_PERIOD,
+  mean_actual_anomaly: LST_PERIOD,
+  ndvi: LST_PERIOD,
+  albedo: LST_PERIOD,
+  green_ratio: LST_PERIOD,
+  impervious_ratio: LST_PERIOD
+};
+
+// 인구는 '이 격자를 세어본 값'이 아니라 구 단위 통계를 건물로 나눠준 추정치다.
+// 수집 스크립트(collect_grid_vulnerability.py)가 "정직한 한계(반드시 인지)"로 못박아 둔
+// 내용 — 구 안에서 이 값의 순위는 주거 연면적 순위와 같다 — 을 그대로 옮긴다.
+// 이걸 모르면 '320명'을 조사 결과처럼 읽는다.
+const POPULATION_TIP =
+  '이 격자를 직접 센 값이 아니라, 자치구 인구를 주거 연면적에 비례해 나눠준 추정치예요.\n\n' +
+  '쓰는 인구는 주민등록인구가 아니라 생활인구예요. 그 시간 실제로 그 지역에 있는 ' +
+  '사람(출퇴근·방문자 포함)이라, 폭염 노출 위험엔 이쪽이 더 맞습니다.\n\n' +
+  '한계 · 구 안에서 이 값의 순위는 주거 연면적 순위와 같아요. 건물이 없는 격자는 0명이 ' +
+  '됩니다. 실제 거주 여부와는 다를 수 있어요.\n\n' +
+  '출처 · 서울 열린데이터 생활인구(자치구, 전 시간대 평균)';
+
+const ELDERLY_TIP =
+  '추정 거주 인구에 그 격자가 속한 행정동의 65세 이상 비율을 곱한 값이에요.\n\n' +
+  '고령비율은 자치구가 아니라 행정동(서울 426개) 단위라, 같은 구 안에서도 동마다 ' +
+  '다릅니다. 실제로 6.2%~36.4%까지 벌어져요.\n\n' +
+  '한계 · 인구 자체가 추정치라 이 값도 추정치입니다.\n\n' +
+  '출처 · 통계청 SGIS 행정동 경계 + SGIS 인구통계';
+
+function metricTip(feature: string): string {
+  const parts = [METRIC_DESC[feature]].filter(Boolean) as string[];
+  const source = METRIC_SOURCE[feature];
+  const period = METRIC_PERIOD[feature];
+  if (source) parts.push(`출처 · ${source}`);
+  if (period) parts.push(`기준 · ${period}`);
+  return parts.join('\n\n');
+};
+
 // ⓘ 아이콘에 마우스를 올리면 설명 말풍선을 띄우는 커스텀 툴팁
 // align: 말풍선이 열리는 방향 (아이콘이 패널 왼쪽이면 'left'=오른쪽으로 펼침, 오른쪽이면 'right')
 // down: 기본은 위로 열리는데, 카드가 패널 상단에 있으면 말풍선이 잘린다. 그럴 때 아래로 연다.
@@ -242,7 +308,9 @@ function GridDetailSidePanel({
   const shelterAddr = properties?.nearest_shelter_addr?.trim() || null;
   const shelterTip =
     (shelterAddr ? `주소: ${shelterAddr}\n\n` : '') +
-    '폭염 때 이용할 수 있는 냉방 대피 시설이에요. 가까울수록 취약계층 대응에 유리합니다.';
+    '폭염 때 이용할 수 있는 냉방 대피 시설이에요. 가까울수록 취약계층 대응에 유리합니다.\n\n' +
+    '거리는 격자 중심에서 잰 직선거리라 실제 도보 거리와는 다를 수 있어요.\n\n' +
+    '출처 · 서울 열린데이터 무더위쉼터 4,088개';
 
   // SHAP top1~3: 존재하는 것만 모으고, 막대 길이용 최대 절대기여도를 구한다.
   const shapItems = [
@@ -360,7 +428,7 @@ function GridDetailSidePanel({
                         <div className="si-top">
                           <span className="si-name">
                             {featureLabel(it.f)}
-                            {METRIC_DESC[it.f] && <InfoTip text={METRIC_DESC[it.f]} />}
+                            {METRIC_DESC[it.f] && <InfoTip text={metricTip(it.f)} />}
                           </span>
                           {hasValue && (
                             <span className="si-actual">
@@ -405,21 +473,21 @@ function GridDetailSidePanel({
                   value={properties.green_ratio}
                   color="var(--gdp-green)"
                   label="녹지율"
-                  tip={METRIC_DESC.green_ratio}
+                  tip={metricTip('green_ratio')}
                   tipAlign="left"
                 />
                 <Donut
                   value={properties.impervious_ratio}
                   color="var(--gdp-hot)"
                   label="불투수면"
-                  tip={METRIC_DESC.impervious_ratio}
+                  tip={metricTip('impervious_ratio')}
                   tipAlign="center"
                 />
                 <Donut
                   value={properties.building_ratio}
                   color="var(--gdp-ink2)"
                   label="건물"
-                  tip={METRIC_DESC.building_ratio}
+                  tip={metricTip('building_ratio')}
                   tipAlign="right"
                   estimated={buildingEstimated}
                 />
@@ -435,7 +503,10 @@ function GridDetailSidePanel({
               <div className="sec-title">취약성</div>
               <div className="rows">
                 <div className="row">
-                  <span className="r-lab">추정 거주 인구</span>
+                  <span className="r-lab">
+                    추정 거주 인구
+                    <InfoTip text={POPULATION_TIP} align="center" />
+                  </span>
                   <span className="r-val">
                     {popUnavailable
                       ? '집계 제외'
@@ -445,7 +516,10 @@ function GridDetailSidePanel({
                   </span>
                 </div>
                 <div className="row">
-                  <span className="r-lab">추정 고령인구 (65+)</span>
+                  <span className="r-lab">
+                    추정 고령인구 (65+)
+                    <InfoTip text={ELDERLY_TIP} align="center" />
+                  </span>
                   <span className="r-val">{popUnavailable ? '집계 제외' : elderlyText}</span>
                 </div>
                 <div className="shelter">
