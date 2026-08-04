@@ -967,7 +967,7 @@ def _document_index() -> Any:
 
     chunks = doc_search.load_corpus()
     keyword = doc_search.KeywordIndex(chunks)
-    dense = doc_search.DenseIndex(chunks, doc_search.build_embeddings(chunks))
+    dense = doc_search.make_dense_index(chunks, doc_search.build_embeddings(chunks))
     return doc_search.HybridIndex(keyword, dense)
 
 

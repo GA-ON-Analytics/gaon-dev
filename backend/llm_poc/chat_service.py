@@ -1370,14 +1370,27 @@ def _parse_normalized_request(
         if candidate_fields and any(
             field not in _SIMULATION_FIELDS for field in candidate_fields
         ):
-            raise ChatProtocolError(
-                "시뮬레이션 구조화 출력에 정책 레버가 아닌 후보가 포함되었습니다."
-            )
-        candidate_fields = []
-        if not changes and not unresolved:
-            unresolved.extend(
-                ("change_field", "change_operation", "change_value")
-            )
+            # 정책 레버가 아닌 지표를 바꿔달라는 요청이다(공원 면적 등).
+            # ★ 프로토콜 오류로 터뜨리지 않는다. 우리 계약이 깨진 게 아니라
+            # 지원하지 않는 요청일 뿐이고, 사용자에게는 "지원하지 않습니다"가
+            # 정확한 답이다. 터뜨리면 오류 화면이 나간다.
+            # 실측: "공원 면적을 500㎡ 늘려줘"에서 라우터가 후보에는
+            # park_area_within_500m를 두고 changes에는 green_ratio를 지어냈다.
+            intent = "unsupported"
+            resolution = "unsupported"
+            candidate_fields = []
+            requested_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            lookup_all = False
+            excluded_scope = False
+        else:
+            candidate_fields = []
+            if not changes and not unresolved:
+                unresolved.extend(
+                    ("change_field", "change_operation", "change_value")
+                )
     elif intent == "lookup":
         if has_field_list_request:
             intent = "field_list"
@@ -2375,17 +2388,9 @@ def _validate_doc_search_answer(
     if not isinstance(hits, list) or not hits:
         raise ChatProtocolError("문서 발췌 없이 답변이 생성되었습니다.")
 
-    # 발췌로 준 문서 중 적어도 하나는 출처로 밝혀야 한다. 어느 것도 언급하지
-    # 않았다면 발췌를 안 보고 지어냈을 가능성이 높다.
-    docs = {
-        str(hit.get("doc"))
-        for hit in hits
-        if isinstance(hit, Mapping) and hit.get("doc")
-    }
-    if docs and not any(doc in answer for doc in docs):
-        raise ChatProtocolError(
-            "문서 답변에 발췌 출처가 없습니다: " + ", ".join(sorted(docs))
-        )
+    # 출처는 답변 본문에 넣지 않으므로 여기서 문자열로 찾지 않는다.
+    # 모델이 실제 발췌 문서 중 하나를 골랐는지는 DOC_ANSWER_SCHEMA의 enum과
+    # generate_doc_answer의 source 검사가 이미 보장한다.
 
 
 def _validate_policy_ranking_answer(
@@ -2992,8 +2997,12 @@ def generate_doc_answer(
             metrics["llm_answer_seconds"] = round(time.perf_counter() - started, 6)
     if not answer:
         raise ChatProtocolError(last_error)
-    if source:
-        answer = f"{answer}\n출처: {source}"
+    # ★ 출처는 화면에 내보내지 않는다. 사용자에게 파일 이름은 의미가 없다.
+    # 다만 모델이 출처를 대게 하는 것 자체는 유지한다. 발췌를 실제로 읽었는지
+    # 확인하는 유일한 신호이고, 아래 _validate_doc_search_answer가 그것으로
+    # 환각을 잡는다. 검증에는 쓰고 표시만 뺀다.
+    if not source:
+        raise ChatProtocolError("문서 답변이 근거 문서를 대지 않았습니다.")
 
     limitations = tool_result.get("limitations")
     if isinstance(limitations, list):
