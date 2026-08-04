@@ -68,6 +68,42 @@ jobs:
           rsync -az --delete --stats --size-only \
             -e "$SSH" dist/dashboard/ "$TARGET:/srv/gaon/dist/dashboard/"
 
+      # ★ 반드시 재시작 앞에 온다.
+      #
+      # backend/requirements.txt에 의존성이 추가됐는데 서버 venv에 없으면,
+      # rsync로 새 코드가 이미 올라간 뒤 재시작이 ImportError로 죽는다. 그러면
+      # "배포 실패 시 서버는 이전 상태를 유지한다"가 성립하지 않는다 —
+      # 대시보드·시뮬레이션까지 통째로 내려간다.
+      #
+      # 실제 사례: requirements.txt에 ollama==0.6.2를 넣었지만 CD가 설치하지
+      # 않아, /api/chat이 든 코드를 배포하면 uvicorn이 기동하지 못하는 상태였다.
+      #
+      # 서버에 올라가는 건 HTTP 클라이언트 라이브러리뿐이다. Ollama 런타임과
+      # 모델은 SSH 역터널 반대쪽(개발 PC)에 있고 서버 VRAM을 쓰지 않는다.
+      - name: 파이썬 의존성 설치
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" bash -s <<'REMOTE'
+          set -e
+          /srv/gaon/.venv/bin/pip list --format=freeze | sort > /tmp/pip_before.txt
+
+          /srv/gaon/.venv/bin/pip install --quiet --disable-pip-version-check \
+            -r /srv/gaon/backend/requirements.txt
+
+          echo "--- 변경된 패키지 ---"
+          /srv/gaon/.venv/bin/pip list --format=freeze | sort > /tmp/pip_after.txt
+          diff /tmp/pip_before.txt /tmp/pip_after.txt || true
+
+          # 재시작 전에 임포트를 먼저 확인한다. 여기서 걸리면 서비스는 아직
+          # 이전 코드로 살아 있다.
+          echo "--- 임포트 확인 ---"
+          cd /srv/gaon
+          if ! /srv/gaon/.venv/bin/python -c "import backend.main"; then
+              echo "backend.main 임포트 실패 — 재시작하지 않고 중단한다"
+              exit 1
+          fi
+          echo "임포트 OK"
+          REMOTE
+
       - name: 서비스 재시작 및 검증
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" bash -s <<'REMOTE'
