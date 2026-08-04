@@ -32,6 +32,8 @@ import type {
   LayerKey
 } from '../types/dashboard';
 import GridDetailSidePanel from './GridDetailSidePanel';
+import AiChatLauncher from './AiChatLauncher';
+import MapLegend from './MapLegend';
 import CanvasGridLayer from './CanvasGridLayer';
 
 const ALL_DISTRICTS = '전체';
@@ -42,6 +44,10 @@ const DEFAULT_CENTER: [number, number] = [37.5665, 126.978];
 const SEOUL_OVERVIEW_ZOOM = 11;
 const DISTRICT_DETAIL_ZOOM = 13;
 const DISTRICT_OVERVIEW_ZOOM = 12;
+// 격자 코드로 찾아갔을 때의 줌. 100m 격자 하나가 화면에서 식별되려면 구 상세(13)로는 부족하다.
+const GRID_SEARCH_ZOOM = 17;
+// 100m 격자 코드 형식: 자치구 5자리 + '_' + 격자 5자리 (예: 11560_02332)
+const GRID_CODE_PATTERN = /^(\d{5})_(\d{5})$/;
 // 라벨 칸이 이미 '분석 기준'이므로 값에는 기간만 (중복 접두어 제거 → 한 줄)
 const ANALYSIS_PERIOD_LABEL = '2023~2025년 여름철 평균';
 const DATA_PENDING = '데이터 준비중';
@@ -66,24 +72,35 @@ interface GridResolutionOption {
   label: string;
 }
 
+// 지표 설명 끝에 출처·기준 시점을 붙인다. "이 숫자를 어디서 가져왔나"에 답할 수 없으면
+// 위성 추정값을 실측처럼 읽는다. 출처는 GAON/docs/GAON_ML_전과정_정리_ko.md §4.2 기준.
+const SAT_PERIOD = '\n기준 · 2023~2025년 여름(6~8월) 관측 평균';
+const LST_SOURCE = '\n\n출처 · 위성 Landsat 8/9 열적외 밴드(ST_B10)' + SAT_PERIOD;
+const DW_SOURCE = '\n\n출처 · 위성 Dynamic World (Google Earth Engine)' + SAT_PERIOD;
+
 const HEAT_ISLAND_INDICATORS: LayerOption[] = [
   {
     key: 'priority_score',
     label: '개선 우선순위',
     help: '종합 점수 0~100',
-    desc: '녹지·불투수면·온도 등을 종합해 개선이 시급한 정도를 0~100으로 매긴 점수예요. 높을수록 우선 대상.'
+    desc:
+      '녹지·불투수면·온도 등을 종합해 개선이 시급한 정도를 0~100으로 매긴 점수예요. 높을수록 우선 대상.' +
+      '\n\n열 위험·냉각 여지·녹지 부족·포장면·취약계층·쉼터 접근성을 합쳐 구 안에서 매긴 백분위라, ' +
+      '구가 다르면 직접 비교할 수 없어요.'
   },
   {
     key: 'mean_actual_anomaly',
     label: '현재 열 위험',
     help: '구 평균 대비 온도차',
-    desc: '같은 자치구 평균보다 이 격자가 얼마나 더 뜨거운지(℃)를 보여줘요. 양수일수록 더 더운 지역.'
+    desc:
+      '같은 자치구 평균보다 이 격자가 얼마나 더 뜨거운지(℃)를 보여줘요. 양수일수록 더 더운 지역.' +
+      LST_SOURCE
   },
   {
     key: 'mean_actual_lst',
     label: '실제 지표면온도',
     help: '위성 관측 지표온도',
-    desc: '위성으로 관측한 지표면 온도(℃)예요. 2023~2025년 여름철 평균 기준.'
+    desc: '위성으로 관측한 지표면 온도(℃)예요.' + LST_SOURCE
   },
   // '시나리오 저감효과'(green_delta_c) 레이어는 뺐다. 단일 고정 시나리오(녹지+5%p·NDVI+0.03·
   // 불투수-5%p) 하나만 지도 전체에 칠하는 방식이라, 우측 패널의 시뮬레이션 값과 어긋나 혼란을
@@ -93,38 +110,51 @@ const HEAT_ISLAND_INDICATORS: LayerOption[] = [
     key: 'green_ratio',
     label: '녹지율',
     help: '식생이 덮은 비율',
-    desc: '격자 면적 중 식생(풀·나무 등)이 덮은 비율이에요. 높을수록 시원한 편.'
+    desc: '격자 면적 중 식생(풀·나무 등)이 덮은 비율이에요. 높을수록 시원한 편.' + DW_SOURCE
   },
   {
     key: 'ndvi',
     label: '식생지수(NDVI)',
     help: '식생 활력 지수',
-    desc: '위성 기반 식생 활력도(−1~1)예요. 값이 클수록 초록이 무성합니다.'
+    desc:
+      '위성 기반 식생 활력도(−1~1)예요. 값이 클수록 초록이 무성합니다.' +
+      '\n\n출처 · 위성 Sentinel-2 (Google Earth Engine)' +
+      SAT_PERIOD
   },
   {
     key: 'building_ratio',
     label: '건물 비율',
     help: '건물이 덮은 비율',
-    desc: '격자 면적 중 건물이 차지하는 비율이에요. 높을수록 열이 쌓이기 쉬움.'
+    desc:
+      '격자 면적 중 건물이 차지하는 비율이에요. 높을수록 열이 쌓이기 쉬움.' +
+      '\n\n출처 · 국토부 VWorld 건물 도형 (lt_c_spbd)'
   },
   {
     key: 'impervious_ratio',
     label: '불투수면 비율',
     help: '아스팔트·콘크리트 비율',
-    desc: '물이 스며들지 못하는 포장면(아스팔트·콘크리트) 비율이에요. 높을수록 더 뜨거움.'
+    desc:
+      '물이 스며들지 못하는 포장면(아스팔트·콘크리트) 비율이에요. 높을수록 더 뜨거움.' + DW_SOURCE
   },
   {
     key: 'nearest_shelter_distance_m',
     label: '쉼터 접근성',
     help: '가장 가까운 쉼터 거리',
-    desc: '가장 가까운 무더위쉼터까지의 거리(m)예요. 가까울수록 폭염 대응에 유리합니다.'
+    desc:
+      '가장 가까운 무더위쉼터까지의 거리(m)예요. 가까울수록 폭염 대응에 유리합니다.' +
+      '\n\n격자 중심에서 잰 직선거리라 실제 도보 거리와 다를 수 있어요.' +
+      '\n\n출처 · 서울 열린데이터 무더위쉼터 4,088개'
   }
 ];
 
 const GRID_RESOLUTION_OPTIONS: GridResolutionOption[] = [
   { key: '100m', label: '100M' },
   { key: '250m', label: '250M' },
-  { key: '500m', label: '500M' }
+  { key: '500m', label: '500M' },
+  // 격자가 아니라 자치구 경계 단위. 예전에는 '전체 선택 + 낮은 줌'이면 암묵적으로
+  // 구 단위로 칠했는데, 격자와 겹쳐 그려져 무엇을 보고 있는지 알 수 없었다.
+  // 명시적 선택지로 올려 "지금 무엇을 보고 있는가"를 사용자가 정하게 한다.
+  { key: 'gu', label: '구' }
 ];
 
 const DISTRICT_LABEL_CENTER_OVERRIDES: Record<string, [number, number]> = {
@@ -152,7 +182,13 @@ function getDistrictCode(feature: Feature<Geometry>) {
 }
 
 function getResolutionMeters(resolution: GridResolution) {
+  if (resolution === 'gu') return 0;   // 격자가 아니다
   return Number(resolution.replace('m', ''));
+}
+
+/** 격자 대신 자치구 경계를 칠하는 모드인가 */
+function isGuResolution(resolution: GridResolution) {
+  return resolution === 'gu';
 }
 
 function getFeatureGuCode(feature: Feature<Geometry>) {
@@ -235,8 +271,37 @@ function getLayerLabel(layer: LayerKey) {
   return HEAT_ISLAND_INDICATORS.find((indicator) => indicator.key === layer)?.label ?? layer;
 }
 
-function getNumericProperty(properties: GridAnalysisProperties, key: LayerKey) {
-  const value: unknown = properties[key];   // geojson 값은 문자열일 수도 있어 unknown으로 받는다
+/* 구 단위는 같은 개념을 다른 필드에 담는다.
+   격자의 mean_actual_anomaly 는 '그 구 평균 대비' 편차라, 구 전체를 평균하면
+   정의상 0이 된다. 그래서 ML(aggregate_dashboard_resolution.py)이 의도적으로 제외하고
+   대신 gu_anomaly_vs_seoul('서울 평균 대비')을 넣어두었다.
+   → 프론트가 구 단위에서는 이 필드를 읽어야 한다. */
+const DISTRICT_FIELD_BY_LAYER: Partial<Record<LayerKey, string>> = {
+  mean_actual_anomaly: 'gu_anomaly_vs_seoul',
+  // 격자의 priority_score는 '그 구 안에서의 백분위'라 구끼리 비교할 수 없고,
+  // 백분위의 평균은 정의상 50이라 구 평균도 의미가 없다.
+  // 그래서 ML이 같은 가중치로 '서울 25개 구 안에서' 다시 매긴 값을 쓴다.
+  priority_score: 'gu_priority_score'
+};
+
+function districtFieldOf(layer: LayerKey) {
+  return DISTRICT_FIELD_BY_LAYER[layer] ?? layer;
+}
+
+/** 해상도에 맞는 필드에서 값을 읽는다. 구 단위에서는 별칭이 있으면 그쪽을 본다. */
+function getLayerValue(
+  properties: GridAnalysisProperties,
+  layer: LayerKey,
+  isDistrictOverview: boolean
+) {
+  return getNumericProperty(
+    properties,
+    isDistrictOverview ? districtFieldOf(layer) : layer
+  );
+}
+
+function getNumericProperty(properties: GridAnalysisProperties, key: string) {
+  const value: unknown = properties[key as keyof GridAnalysisProperties];   // geojson 값은 문자열일 수도 있어 unknown으로 받는다
 
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -324,32 +389,42 @@ function formatLayerProperty(properties: GridAnalysisProperties | null, layer: L
   return formatAnyProperty(properties, layer);
 }
 
-function colorByScore(value: number, highIsRisk = true) {
-  if (highIsRisk) {
-    if (value >= 80) return '#cf3f3f';
-    if (value >= 60) return '#f29a4b';
-    if (value >= 40) return '#f2cf5b';
-    return '#6fbf73';
-  }
+/* ─────────────────────────────────────────────────────────────────────────
+   지도 색 램프 — 모든 레이어가 이 한 벌만 쓴다.
 
-  if (value >= 80) return '#2f855a';
-  if (value >= 60) return '#78b66a';
-  if (value >= 40) return '#f2cf5b';
-  return '#cf3f3f';
+   예전에는 램프가 두 벌이었고 서로 대칭이 아니었다.
+     위험형: #6fbf73(L59) → #f2cf5b → #f29a4b → #cf3f3f
+     이득형: #cf3f3f → #f2cf5b → #78b66a(L56) → #2f855a(L35)
+   '가장 좋음'이 한쪽은 밝은 초록(L59), 다른 쪽은 진한 초록(L35)이라 밝기가 24%p
+   차이 났고, 이득형에는 주황 단계가 아예 없었다. 그래서 레이어를 바꿀 때마다
+   같은 등급이 다른 색으로 보였다.
+
+   이제 한 벌을 두고 방향만 뒤집는다. 같은 등급 = 항상 같은 색.
+   ───────────────────────────────────────────────────────────────────────── */
+const HEAT_RAMP = ['#6fbf73', '#f2cf5b', '#f29a4b', '#cf3f3f'] as const;   // 좋음 → 나쁨
+
+/** 값이 클수록 나쁘면 그대로, 값이 클수록 좋으면 뒤집는다 */
+function rampFor(highIsRisk: boolean) {
+  return highIsRisk ? [...HEAT_RAMP] : [...HEAT_RAMP].reverse();
+}
+
+/** 낮은 값 → 높은 값 순서의 경계로 구간 색을 고른다 */
+function pickByBreaks(value: number, breaks: readonly number[], highIsRisk: boolean) {
+  const ramp = rampFor(highIsRisk);
+  for (let i = 0; i < breaks.length; i += 1) {
+    if (value < breaks[i]) return ramp[i];
+  }
+  return ramp[breaks.length];
+}
+
+function colorByScore(value: number, highIsRisk = true) {
+  return pickByBreaks(value, [40, 60, 80], highIsRisk);
 }
 
 function colorByRatio(value: number, highIsRisk: boolean) {
-  if (highIsRisk) {
-    if (value >= 0.7) return '#cf3f3f';
-    if (value >= 0.5) return '#f29a4b';
-    if (value >= 0.3) return '#f2cf5b';
-    return '#6fbf73';
-  }
-
-  if (value >= 0.35) return '#2f855a';
-  if (value >= 0.22) return '#78b66a';
-  if (value >= 0.12) return '#f2cf5b';
-  return '#cf3f3f';
+  return highIsRisk
+    ? pickByBreaks(value, [0.3, 0.5, 0.7], true)
+    : pickByBreaks(value, [0.12, 0.22, 0.35], false);
 }
 
 function colorByLayerValue(properties: GridAnalysisProperties, layer: LayerKey) {
@@ -360,48 +435,107 @@ function colorByLayerValue(properties: GridAnalysisProperties, layer: LayerKey) 
   }
 
   if (layer === 'priority_score') return colorByScore(value);
-  if (layer === 'mean_actual_lst') {
-    if (value >= 41) return '#cf3f3f';
-    if (value >= 38) return '#f29a4b';
-    if (value >= 35) return '#f2cf5b';
-    return '#6fbf73';
-  }
-  if (layer === 'mean_actual_anomaly') {
-    if (value >= 3) return '#cf3f3f';
-    if (value >= 1.5) return '#f29a4b';
-    if (value >= 0) return '#f2cf5b';
-    return '#6fbf73';
-  }
+  if (layer === 'mean_actual_lst') return pickByBreaks(value, [35, 38, 41], true);
+  if (layer === 'mean_actual_anomaly') return pickByBreaks(value, [0, 1.5, 3], true);
   if (layer === 'green_ratio' || layer === 'ndvi') return colorByRatio(value, false);
   if (layer === 'building_ratio' || layer === 'impervious_ratio') return colorByRatio(value, true);
+  // 쉼터는 가까울수록 좋다 = 값이 작을수록 좋다 → 위험형(값 클수록 나쁨)과 같은 방향
   if (layer === 'nearest_shelter_distance_m') {
-    if (value <= 250) return '#2f855a';
-    if (value <= 500) return '#78b66a';
-    if (value <= 1000) return '#f2cf5b';
-    return '#cf3f3f';
+    return pickByBreaks(value, [250, 500, 1000], true);
   }
 
   return NEUTRAL_COLOR;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   구(區) 단위 채색은 격자용 고정 임계값을 쓰지 않는다.
+
+   colorByScore·colorByRatio의 경계값(0.3 / 0.5 / 0.7 등)은 100m 격자 분포를 보고
+   정한 값이다. 구 단위는 격자 평균이라 극단값이 상쇄돼 범위가 훨씬 좁다.
+   예: 건물비율 구 범위는 0.124~0.298인데 첫 경계가 0.3 → 25개 구가 전부 같은 색.
+
+   그래서 구 단위는 '그 화면에 실제로 그려지는 값들'에서 사분위 경계를 뽑아 쓴다.
+   코로플레스 지도의 표준 분류 방식(quantile classification)이고,
+   데이터가 바뀌어도 사람이 임계값을 다시 만질 필요가 없다.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/** 값이 클수록 '좋은' 지표인지 */
+const HIGHER_IS_BETTER: ReadonlySet<LayerKey> = new Set<LayerKey>([
+  'green_ratio',
+  'ndvi'
+]);
+
+export interface QuantileBreaks {
+  /** 25% / 50% / 75% 지점의 값 */
+  breaks: number[];
+  ramp: string[];
+  /** 분류에 쓴 구의 개수 */
+  count: number;
+}
+
+function quantile(sorted: number[], p: number) {
+  if (sorted.length === 0) return NaN;
+  const pos = (sorted.length - 1) * p;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+export function computeQuantileBreaks(
+  features: Feature<Geometry>[],
+  layer: LayerKey
+): QuantileBreaks | null {
+  const values = features
+    // 구 단위 features이므로 별칭 필드를 본다
+    .map((feature) => getLayerValue(getFeatureProperties(feature), layer, true))
+    .filter((value): value is number => value !== null)
+    .sort((a, b) => a - b);
+
+  // 표본이 너무 적으면 사분위가 의미 없다
+  if (values.length < 4) return null;
+
+  return {
+    breaks: [quantile(values, 0.25), quantile(values, 0.5), quantile(values, 0.75)],
+    // 격자와 같은 램프를 쓴다. 값이 클수록 좋은 지표만 방향을 뒤집는다.
+    ramp: rampFor(!HIGHER_IS_BETTER.has(layer)),
+    count: values.length
+  };
+}
+
+export function colorByQuantile(value: number, spec: QuantileBreaks) {
+  const [q1, q2, q3] = spec.breaks;
+  if (value < q1) return spec.ramp[0];
+  if (value < q2) return spec.ramp[1];
+  if (value < q3) return spec.ramp[2];
+  return spec.ramp[3];
 }
 
 function getBoundaryStyle(
   feature: Feature<Geometry> | undefined,
   selectedDistrict: string,
   selectedLayer: LayerKey,
-  isDistrictOverview: boolean
+  isGuMode: boolean,
+  quantileSpec: QuantileBreaks | null
 ): PathOptions {
   const districtName = feature ? getDistrictName(feature) : '';
   const isSelected = districtName === selectedDistrict;
   const properties = feature ? getFeatureProperties(feature) : {};
-  const fillColor = colorByLayerValue(properties, selectedLayer);
-  const hasLayerValue = getNumericProperty(properties, selectedLayer) !== null;
+  const layerValue = getLayerValue(properties, selectedLayer, isGuMode);
+  const hasLayerValue = layerValue !== null;
 
-  if (isDistrictOverview) {
+  if (isGuMode) {
+    // 구 단위는 사분위 분류를 쓴다. 사분위를 못 만들면(값이 4개 미만) 격자 규칙으로 내려간다.
+    const fillColor =
+      hasLayerValue && quantileSpec
+        ? colorByQuantile(layerValue, quantileSpec)
+        : colorByLayerValue(properties, selectedLayer);
     return {
       color: isSelected ? '#063f25' : '#1f2933',
       fillColor,
-      fillOpacity: hasLayerValue ? (isSelected ? 0.68 : 0.5) : 0.18,
-      opacity: isSelected ? 1 : 0.72,
+      // 구 모드에서는 이 폴리곤이 유일한 데이터 표현이므로 진하게 칠한다.
+      // (격자와 겹쳐 그리던 시절에는 아래가 비쳐야 해서 0.5였다)
+      fillOpacity: hasLayerValue ? (isSelected ? 0.92 : 0.82) : 0.2,
+      opacity: 1,
       weight: isSelected ? 3.2 : 1.4
     };
   }
@@ -470,11 +604,21 @@ function buildDistrictTooltip(feature: Feature<Geometry>, selectedLayer: LayerKe
   const properties = getFeatureProperties(feature);
   const district = getDistrictName(feature);
 
+  // 구 단위 별칭 필드를 읽는다(예: 현재 열 위험 → gu_anomaly_vs_seoul)
+  const value = formatAnyProperty(
+    properties,
+    districtFieldOf(selectedLayer) as keyof GridAnalysisProperties
+  );
+  const note =
+    selectedLayer === 'mean_actual_anomaly'
+      ? '서울 평균 대비 (격자 단위는 구 평균 대비)'
+      : '구 25개 안에서의 상대 위치로 색을 매깁니다';
+
   return `
     <div class="districtTempTooltipBody">
       <strong>${district}</strong>
-      <span>${getLayerLabel(selectedLayer)} ${formatLayerProperty(properties, selectedLayer)}</span>
-      <small>구 단위 ML 속성은 향후 GeoJSON properties로 제공 예정</small>
+      <span>${getLayerLabel(selectedLayer)} ${value}</span>
+      <small>${note}</small>
     </div>
   `;
 }
@@ -615,6 +759,8 @@ export function MapDashboard() {
   const selectedResetRef = useRef<(() => void) | null>(null);   // 선택 격자 테두리 원복 함수
   const seoul100mMapCacheRef = useRef<FeatureCollection | null>(null);
   const district100mCacheRef = useRef(new Map<string, FeatureCollection>());
+  // 같은 구의 상세 파일을 중복 요청하지 않도록 진행 중인 Promise도 공유한다.
+  const district100mRequestRef = useRef(new Map<string, Promise<FeatureCollection>>());
 
   // Phase 3 — 격자 비교(두 번째 격자). A(주 격자)는 그대로 두고 B에 담는다.
   const [comparePropertiesB, setComparePropertiesB] =
@@ -654,6 +800,122 @@ export function MapDashboard() {
     () => new Map(districts.map((district) => [district.district, district.sigCode])),
     [districts]
   );
+  // 격자 코드 앞 5자리로 어느 구인지 되찾기 위한 역방향 표.
+  const districtNameByCode = useMemo(
+    () => new Map(districts.map((district) => [district.sigCode, district.district])),
+    [districts]
+  );
+  // ── 격자 코드 검색 ────────────────────────────────────────────────────────
+  // 서울 100m 격자가 64,676개라 특정 격자를 지도에서 눈으로 찾는 건 불가능하다.
+  // 이슈 재현·검증에 필요한 격자(예: clip이 걸리는 11560_02332)로 갈 방법이 없었다.
+  const [gridSearchError, setGridSearchError] = useState<string | null>(null);
+  const [gridSearchBusy, setGridSearchBusy] = useState(false);
+  // 찾은 격자를 곧바로 반영하지 않고 상태에 담아 두는 이유는 위 '검색 결과 반영' effect 주석 참고.
+  const [gridSearchHit, setGridSearchHit] = useState<{
+    feature: Feature<Geometry>;
+    guTotal: number;
+  } | null>(null);
+  // 검색으로 이동할 때만 구 중심 대신 격자 중심을 본다. null이면 평소대로 구 중심.
+  const [gridFocus, setGridFocus] = useState<{ center: [number, number]; zoom: number } | null>(
+    null
+  );
+
+  const loadDistrict100mDetails = useCallback((sigCode: string, districtName: string) => {
+    const cached = district100mCacheRef.current.get(sigCode);
+    if (cached) return Promise.resolve(cached);
+
+    const pending = district100mRequestRef.current.get(sigCode);
+    if (pending) return pending;
+
+    const request = getDistrictResolutionGrid('100m', sigCode, districtName)
+      .then((collection) => {
+        district100mCacheRef.current.set(sigCode, collection);
+        return collection;
+      })
+      .finally(() => {
+        district100mRequestRef.current.delete(sigCode);
+      });
+
+    district100mRequestRef.current.set(sigCode, request);
+    return request;
+  }, []);
+
+  const handleGridSearch = useCallback(
+    async (rawCode: string) => {
+      const code = rawCode.trim();
+      setGridSearchError(null);
+
+      const matched = GRID_CODE_PATTERN.exec(code);
+      if (!matched) {
+        setGridSearchError('격자 코드는 11560_02332 처럼 다섯 자리_다섯 자리예요.');
+        return;
+      }
+      const sigCode = matched[1];
+      const districtName = districtNameByCode.get(sigCode);
+      if (!districtName) {
+        setGridSearchError(`앞 다섯 자리 ${sigCode}에 해당하는 서울 자치구가 없어요.`);
+        return;
+      }
+
+      setGridSearchBusy(true);
+      try {
+        // 구 상세(100m)를 먼저 받아 격자를 확인한 뒤에 화면 상태를 바꾼다. 순서를 뒤집으면
+        // 구가 바뀌며 선택이 비워진 다음에야 '없는 격자'임을 알게 돼 선택이 사라진다.
+        const collection = await loadDistrict100mDetails(sigCode, districtName);
+        const feature = collection.features.find(
+          (candidate) =>
+            getGridIdentifier(getFeatureProperties(candidate as Feature<Geometry>)) === code
+        ) as Feature<Geometry> | undefined;
+
+        if (!feature) {
+          setGridSearchError(`${districtName}에 ${code} 격자가 없어요.`);
+          return;
+        }
+
+        const center = L.geoJSON(feature).getBounds().getCenter();
+        setSelectedGridResolution('100m');   // 격자 코드는 100m 전용이다
+        setSelectedDistrict(districtName);
+        setGridSearchHit({ feature, guTotal: collection.features.length });
+        setGridFocus({ center: [center.lat, center.lng], zoom: GRID_SEARCH_ZOOM });
+      } catch {
+        setGridSearchError('격자 데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.');
+      } finally {
+        setGridSearchBusy(false);
+      }
+    },
+    [districtNameByCode, loadDistrict100mDetails]
+  );
+
+  // 사용자가 직접 구·해상도를 바꾸면 검색 이동을 풀어 평소의 구 중심 보기로 돌아간다.
+  const handleDistrictChange = useCallback((district: string) => {
+    setGridFocus(null);
+    setGridSearchError(null);
+    setSelectedDistrict(district);
+  }, []);
+  const handleGridResolutionChange = useCallback((resolution: GridResolution) => {
+    setGridFocus(null);
+    setGridSearchError(null);
+    setSelectedGridResolution(resolution);
+  }, []);
+
+  // 구 선택 직후 상세 속성을 선로딩해 100m 격자 클릭 시 경량→상세 전환 깜빡임을 줄인다.
+  useEffect(() => {
+    if (selectedGridResolution !== '100m' || isAllDistricts) return;
+
+    const sigCode = districtCodeByName.get(selectedDistrict);
+    if (!sigCode) return;
+
+    void loadDistrict100mDetails(sigCode, selectedDistrict).catch(() => {
+      // 선로딩 실패 시 격자 클릭 때 다시 요청한다.
+    });
+  }, [
+    districtCodeByName,
+    isAllDistricts,
+    loadDistrict100mDetails,
+    selectedDistrict,
+    selectedGridResolution
+  ]);
+
   useEffect(() => {
     if (selectedGridResolution !== '100m') return;
 
@@ -694,6 +956,24 @@ export function MapDashboard() {
     };
   }, [districtCodeByName, isAllDistricts, selectedDistrict, selectedGridResolution]);
 
+  // ★ 검색 결과 반영은 반드시 위 구 전환 useEffect '뒤에' 선언해야 한다. 구를 바꾸면 위
+  //   effect가 선택을 비우는데, 같은 커밋에서는 선언 순서대로 실행되므로 뒤에 있어야
+  //   검색으로 고른 격자가 살아남는다.
+  useEffect(() => {
+    if (!gridSearchHit) return;
+    const { feature, guTotal } = gridSearchHit;
+    const properties = getFeatureProperties(feature);
+
+    selectedResetRef.current?.();
+    selectedGridIdRef.current = getGridIdentifier(properties);
+    selectedGridLayerRef.current = null;
+    setSelected100mFeature(feature);
+    setSelected100mPopupPosition(L.geoJSON(feature).getBounds().getCenter());
+    setSelectedGridProperties(properties);
+    setSelectedGridGuTotal(guTotal);
+    setGridSearchHit(null);
+  }, [gridSearchHit]);
+
   useEffect(() => {
     if (selectedGridResolution === '100m') return;
 
@@ -702,6 +982,13 @@ export function MapDashboard() {
     setSelected100mFeature(null);
     setSelected100mPopupPosition(null);
     setSelectedGridProperties(null);
+
+    // 구 모드는 격자를 쓰지 않는다. 남아 있던 격자를 비워야 지도에 겹쳐 그려지지 않는다.
+    if (isGuResolution(selectedGridResolution)) {
+      setGridGeoJson(null);
+      setGridLoading(false);
+      return;
+    }
 
     if (isAllDistricts) {
       let isActive = true;
@@ -775,6 +1062,21 @@ export function MapDashboard() {
   const center = selectedDistrictMeta?.center ?? DEFAULT_CENTER;
   const targetZoom = isAllDistricts ? SEOUL_OVERVIEW_ZOOM : DISTRICT_DETAIL_ZOOM;
   const isDistrictOverview = isAllDistricts || zoomLevel <= DISTRICT_OVERVIEW_ZOOM;
+
+  // ★ 구 경계를 '칠하는' 판단은 줌이 아니라 해상도 선택으로만 한다.
+  //   예전에는 isDistrictOverview(전체 선택 또는 낮은 줌)로 결정해서 격자와 동시에
+  //   그려졌고, 화면에 보이는 색이 격자인지 구인지 구분할 수 없었다.
+  const isGuMode = isGuResolution(selectedGridResolution);
+
+  // 구 단위 사분위 경계. 지금 화면에 그려지는 구들의 값에서 직접 뽑는다.
+  const districtQuantiles = useMemo(
+    () =>
+      geoJson
+        ? computeQuantileBreaks(geoJson.features as Feature<Geometry>[], selectedLayer)
+        : null,
+    [geoJson, selectedLayer]
+  );
+
   const gridCount = gridGeoJson?.features.length ?? 0;
   const gridMeters = getResolutionMeters(selectedGridResolution);
   const gridLayerKey =
@@ -793,15 +1095,7 @@ export function MapDashboard() {
 
       if (!gridId || !districtName || !/^\d{5}$/.test(sigCode)) return;
 
-      const cached = district100mCacheRef.current.get(sigCode);
-      const detailRequest = cached
-        ? Promise.resolve(cached)
-        : getDistrictResolutionGrid('100m', sigCode, districtName).then((collection) => {
-            district100mCacheRef.current.set(sigCode, collection);
-            return collection;
-          });
-
-      detailRequest
+      loadDistrict100mDetails(sigCode, districtName)
         .then((collection) => {
           if (selectedGridIdRef.current !== gridId) return;
           // 이 구별 상세 파일의 격자 수 = 구 내부 순위(priority_rank)의 분모
@@ -819,7 +1113,7 @@ export function MapDashboard() {
           // 지도용 속성만으로도 선택과 팝업은 유지한다. 상세 요청은 다음 선택 시 재시도한다.
         });
     },
-    [districtCodeByName]
+    [districtCodeByName, loadDistrict100mDetails]
   );
   // 비교 격자 100m 상세 보충 (A의 hydrate와 같은 캐시 사용, guTotal은 불필요)
   const hydrateCompareProperties = useCallback(
@@ -832,15 +1126,7 @@ export function MapDashboard() {
       );
       if (!gridId || !districtName || !/^\d{5}$/.test(sigCode)) return;
 
-      const cached = district100mCacheRef.current.get(sigCode);
-      const detailRequest = cached
-        ? Promise.resolve(cached)
-        : getDistrictResolutionGrid('100m', sigCode, districtName).then((collection) => {
-            district100mCacheRef.current.set(sigCode, collection);
-            return collection;
-          });
-
-      detailRequest
+      loadDistrict100mDetails(sigCode, districtName)
         .then((collection) => {
           if (compareGridIdRef.current !== gridId) return;
           const fullFeature = collection.features.find(
@@ -855,7 +1141,7 @@ export function MapDashboard() {
           // 경량 속성만으로도 비교표 대부분은 채워진다. 다음 선택 시 재시도.
         });
     },
-    [districtCodeByName]
+    [districtCodeByName, loadDistrict100mDetails]
   );
   const selected100mGridId = selected100mFeature
     ? getGridIdentifier(getFeatureProperties(selected100mFeature))
@@ -865,14 +1151,26 @@ export function MapDashboard() {
     (feature: Feature<Geometry>, latLng: L.LatLng) => {
       const properties = getFeatureProperties(feature);
       const gridId = getGridIdentifier(properties);
+      const districtName = typeof properties.gu_name === 'string' ? properties.gu_name : '';
+      const sigCode = String(properties.gu_code ?? districtCodeByName.get(districtName) ?? '');
+      const cached = /^\d{5}$/.test(sigCode)
+        ? district100mCacheRef.current.get(sigCode)
+        : undefined;
+      const fullFeature = cached?.features.find(
+        (candidate) =>
+          getGridIdentifier(getFeatureProperties(candidate as Feature<Geometry>)) === gridId
+      );
+      const fullProperties = fullFeature
+        ? getFeatureProperties(fullFeature as Feature<Geometry>)
+        : null;
 
       // 비교 픽 모드: B에 담고 A(주 격자)는 그대로 둔다
       if (isPickingCompareRef.current) {
         if (gridId === selectedGridIdRef.current) return;   // 같은 격자끼리 비교 불가
         compareGridIdRef.current = gridId;
-        setComparePropertiesB(properties);
+        setComparePropertiesB(fullProperties ?? properties);
         setIsPickingCompare(false);
-        hydrateCompareProperties(properties);
+        if (!fullProperties) hydrateCompareProperties(properties);
         return;
       }
 
@@ -881,11 +1179,12 @@ export function MapDashboard() {
       selectedGridLayerRef.current = null;
       setSelected100mFeature(feature);
       setSelected100mPopupPosition(latLng);
-      setSelectedGridProperties(properties);
-      setSelectedGridGuTotal(null);   // 새 구 상세가 로드되면 다시 채워진다
-      hydrateSelectedGridProperties(properties);
+      // 상세 캐시가 있으면 경량 속성을 거치지 않고 완성된 속성을 한 번에 반영한다.
+      setSelectedGridProperties(fullProperties ?? properties);
+      setSelectedGridGuTotal(cached?.features.length ?? null);
+      if (!fullProperties) hydrateSelectedGridProperties(properties);
     },
-    [hydrateSelectedGridProperties, hydrateCompareProperties]
+    [districtCodeByName, hydrateSelectedGridProperties, hydrateCompareProperties]
   );
   const build100mTooltip = useCallback(
     (feature: Feature<Geometry>) => buildGridTooltip(feature, selectedLayer, 100),
@@ -1030,6 +1329,25 @@ export function MapDashboard() {
     setIsPickingCompare(false);
   }, []);
 
+  // AI 채팅 문맥. 상세 패널 안에 있던 계산을 여기로 올렸다(#26).
+  // AI Tool 문맥에는 ML 데이터셋의 실제 100m grid_id만 전달한다.
+  // display_grid_id는 헤더 표시용이며 API 문맥으로 승격하지 않는다.
+  const chatGridId =
+    selectedGridResolution === '100m' &&
+    typeof selectedGridProperties?.grid_id === 'string' &&
+    selectedGridProperties.grid_id.trim()
+      ? selectedGridProperties.grid_id.trim()
+      : null;
+  const chatDisplayGridId =
+    (selectedGridProperties?.display_grid_id ??
+      selectedGridProperties?.grid_id ??
+      '') || null;
+  const chatGuName =
+    typeof selectedGridProperties?.gu_name === 'string' &&
+    selectedGridProperties.gu_name.trim()
+      ? selectedGridProperties.gu_name.trim()
+      : null;
+
   return (
     <div className={isPanelOpen ? 'gisShell panelOpen' : 'gisShell'}>
       {loading && (
@@ -1046,32 +1364,42 @@ export function MapDashboard() {
           className="gisMap"
           zoomControl={false}
           scrollWheelZoom
-          preferCanvas
+          /* preferCanvas 를 켜지 않는다.
+             켜면 Leaflet이 <GeoJSON> 같은 벡터 레이어를 공용 캔버스 렌더러로 그리는데,
+             이 앱에서는 그 렌더러가 지도에 붙지 않아 구 경계·250m/500m 격자가
+             통째로 안 그려졌다(캔버스 draw 호출 0회. 레이어와 style 함수는 정상 동작해서
+             로그만으로는 정상으로 보였다).
+             64,574개짜리 100m 격자는 CanvasGridLayer가 따로 캔버스로 그리므로
+             preferCanvas 없이도 성능 문제가 없다. */
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           <MapZoomWatcher onZoomChange={setZoomLevel} />
-          <MapFocus center={center} zoom={targetZoom} />
+          <MapFocus
+            center={gridFocus?.center ?? center}
+            zoom={gridFocus?.zoom ?? targetZoom}
+          />
           <RightDragPan />
           <GeoJSON
-            key={`${selectedDistrict}-${selectedLayer}-${isDistrictOverview}`}
+            key={`${selectedDistrict}-${selectedLayer}-${isGuMode}`}
             data={geoJson}
-            interactive={selectedGridResolution !== '100m' && isDistrictOverview}
+            interactive={isGuMode}
             style={(feature) =>
               getBoundaryStyle(
                 feature as Feature<Geometry>,
                 selectedDistrict,
                 selectedLayer,
-                isDistrictOverview
+                isGuMode,
+                districtQuantiles
               )
             }
             onEachFeature={(feature, layer) => {
               const typedFeature = feature as Feature<Geometry>;
               const districtName = getDistrictName(typedFeature);
 
-              if (isDistrictOverview) {
+              if (isGuMode) {
                 layer.bindTooltip(buildDistrictTooltip(typedFeature, selectedLayer), {
                   className: 'districtTempTooltip',
                   direction: 'top',
@@ -1083,22 +1411,23 @@ export function MapDashboard() {
               layer.on({
                 click: () => setSelectedDistrict(districtName),
                 mouseover: () => {
-                  if (isDistrictOverview) {
+                  if (isGuMode) {
                     (layer as L.Path).setStyle({
-                    fillOpacity: 0.32,
+                      fillOpacity: 0.9,
                       opacity: 1,
                       weight: 3.4
                     });
                   }
                 },
                 mouseout: () => {
-                  if (isDistrictOverview) {
+                  if (isGuMode) {
                     (layer as L.Path).setStyle(
                       getBoundaryStyle(
                         typedFeature,
                         selectedDistrict,
                         selectedLayer,
-                        isDistrictOverview
+                        isGuMode,
+                        districtQuantiles
                       )
                     );
                   }
@@ -1117,7 +1446,7 @@ export function MapDashboard() {
               onFeatureClick={handle100mFeatureClick}
             />
           )}
-          {gridGeoJson && selectedGridResolution !== '100m' && (
+          {gridGeoJson && selectedGridResolution !== '100m' && !isGuMode && (
             <GeoJSON
               key={gridLayerKey}
               data={gridGeoJson}
@@ -1235,8 +1564,12 @@ export function MapDashboard() {
               </Marker>
             );
           })()}
-          <ZoomControl position="bottomright" />
-          <ScaleControl position="bottomright" metric imperial={false} />
+          {/* 줌·축척을 우측 상단 도구 팔레트(.rightToolbar) 옆으로 모았다.
+              지도 조작 컨트롤이 화면 양 끝에 흩어져 있으면 시선이 두 번 움직인다. */}
+          <ZoomControl position="topright" />
+          {/* 카드 안쪽 폭이 50px이라 maxWidth를 40으로 둔다.
+              50으로 맞추면 막대가 좌우 여백 없이 꽉 차서 넘친 것처럼 보인다. */}
+          <ScaleControl position="topright" metric imperial={false} maxWidth={40} />
         </MapContainer>
       )}
       {!loading && !error && gridLoading && (
@@ -1252,9 +1585,12 @@ export function MapDashboard() {
         gridCount={gridCount}
         gridLoading={gridLoading}
         selectedGridProperties={selectedGridProperties}
-        onDistrictChange={setSelectedDistrict}
-        onGridResolutionChange={setSelectedGridResolution}
+        gridSearchError={gridSearchError}
+        gridSearchBusy={gridSearchBusy}
+        onDistrictChange={handleDistrictChange}
+        onGridResolutionChange={handleGridResolutionChange}
         onLayerChange={setSelectedLayer}
+        onGridSearch={handleGridSearch}
       />
       <RightToolbar activeTool={activeTool} onSelectTool={setActiveTool} />
       <GridDetailSidePanel
@@ -1270,6 +1606,21 @@ export function MapDashboard() {
         onStartCompare={handleStartCompare}
         onClearCompare={handleClearCompare}
       />
+      {/* 색 범례. colorByLayerValue를 그대로 넘겨 범례가 지도와 같은 색을 쓰게 한다. */}
+      {!loading && !error && (
+        <MapLegend
+          layer={selectedLayer}
+          layerLabel={getLayerLabel(selectedLayer)}
+          colorOf={colorByLayerValue}
+          neutralColor={NEUTRAL_COLOR}
+          quantile={isGuMode ? districtQuantiles : null}
+        />
+      )}
+      <AiChatLauncher
+        selectedGridId={chatGridId}
+        selectedDisplayGridId={chatDisplayGridId}
+        selectedGuName={chatGuName}
+      />
     </div>
   );
 }
@@ -1282,9 +1633,12 @@ interface SearchPanelProps {
   gridCount: number;
   gridLoading: boolean;
   selectedGridProperties: GridAnalysisProperties | null;
+  gridSearchError: string | null;
+  gridSearchBusy: boolean;
   onDistrictChange: (district: string) => void;
   onGridResolutionChange: (resolution: GridResolution) => void;
   onLayerChange: (layer: LayerKey) => void;
+  onGridSearch: (code: string) => void;
 }
 
 function SearchPanel({
@@ -1295,10 +1649,14 @@ function SearchPanel({
   gridCount,
   gridLoading,
   selectedGridProperties,
+  gridSearchError,
+  gridSearchBusy,
   onDistrictChange,
   onGridResolutionChange,
-  onLayerChange
+  onLayerChange,
+  onGridSearch
 }: SearchPanelProps) {
+  const [gridCodeInput, setGridCodeInput] = useState('');
   // 지표 버튼 위 커스텀 툴팁 (스크롤 패널에 잘리지 않게 position:fixed로 화면 기준 표시)
   const [tip, setTip] = useState<{ text: string; top: number; left: number } | null>(null);
   const showTip = (event: ReactMouseEvent | ReactFocusEvent, text: string) => {
@@ -1319,8 +1677,11 @@ function SearchPanel({
   return (
     <aside className="gisLeftPanel heatIslandPanel">
       <div className="heatPanelHeader">
-        <p>Urban Heat Island</p>
-        <h1>도시 열섬 해결 대시보드</h1>
+        <img className="heatPanelLogo" src="/logo-avatar.svg" alt="GA:ON" />
+        <div>
+          <p>Urban Heat Island</p>
+          <h1>도시 열섬 해결 대시보드</h1>
+        </div>
       </div>
 
       <div className="heatControlBlock">
@@ -1357,7 +1718,40 @@ function SearchPanel({
             ))}
           </select>
         </label>
+        {/* 격자 코드로 바로 이동. label 대신 div인 이유는 안에 버튼이 있어서다
+            (label 클릭이 입력창 포커스로 가로채이면 버튼이 두 번 눌린 것처럼 동작한다) */}
+        <div className="gridCodeSearch">
+          <span>격자 코드</span>
+          <div className="gcsRow">
+            <input
+              type="text"
+              value={gridCodeInput}
+              onChange={(event) => setGridCodeInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                onGridSearch(gridCodeInput);
+              }}
+              placeholder="예 : 11560_02332"
+              aria-label="격자 코드로 이동"
+              spellCheck={false}
+              disabled={gridSearchBusy}
+            />
+            <button
+              type="button"
+              onClick={() => onGridSearch(gridCodeInput)}
+              disabled={gridSearchBusy || !gridCodeInput.trim()}
+            >
+              {gridSearchBusy ? '찾는 중' : '이동'}
+            </button>
+          </div>
+        </div>
       </div>
+      {gridSearchError && (
+        <p className="gcsError" role="alert">
+          {gridSearchError}
+        </p>
+      )}
 
       {!selectedGridProperties && (
         <div className="selectionGuide" role="status">

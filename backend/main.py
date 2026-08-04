@@ -7,6 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from backend.llm_poc.chat_service import (
+    ChatInputError,
+    ChatProtocolError,
+    OllamaConnectionError,
+    OllamaModelError,
+    OllamaTimeoutError,
+    run_chat,
+)
+from backend.llm_poc.tools import ALLOWED_GRID_FIELDS, GRID_FIELD_SPECS
+
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -68,6 +78,19 @@ class BatchSimulationRequest(BaseModel):
     grid_ids: list[str]
     changes: dict[str, float] = Field(default_factory=dict)
     couple_land_cover: bool = True
+
+
+class ChatRequest(BaseModel):
+    message: str
+    selected_grid_id: str | None = None
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    used_tools: list[str]
+    tool_data: dict[str, Any]
+    warnings: list[str]
+    limitations: list[str]
 
 
 def _file_response(file_path: Path, media_type: str) -> FileResponse:
@@ -168,6 +191,48 @@ def health():
     return {"ok": True, "backend": "fastapi"}
 
 
+@app.post("/api/chat", response_model=ChatResponse)
+def chat(payload: ChatRequest) -> ChatResponse:
+    try:
+        result = run_chat(payload.message, payload.selected_grid_id)
+    except ChatInputError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except OllamaTimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="로컬 AI 응답 시간이 초과되었습니다. 다시 시도해 주세요.",
+        ) from None
+    except OllamaConnectionError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "로컬 AI 서버에 연결할 수 없습니다. "
+                "Ollama 실행 상태를 확인해 주세요."
+            ),
+        ) from None
+    except OllamaModelError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "로컬 AI 모델 qwen3:4b를 사용할 수 없습니다. "
+                "모델 설치 상태를 확인해 주세요."
+            ),
+        ) from None
+    except ChatProtocolError:
+        raise HTTPException(
+            status_code=503,
+            detail="로컬 AI 응답을 처리하지 못했습니다. 다시 시도해 주세요.",
+        ) from None
+
+    return ChatResponse(
+        answer=result.answer,
+        used_tools=result.used_tools,
+        tool_data=result.tool_data,
+        warnings=result.warnings,
+        limitations=result.limitations,
+    )
+
+
 @app.get("/api/model/status")
 def model_status() -> Any:
     file_status = {
@@ -247,7 +312,28 @@ def features() -> Any:
         return _simulation_not_connected_response()
 
     predict_core = _load_predict_core()
-    feature_meta = predict_core.feature_meta()
+    model_meta = {
+        item["name"]: item
+        for item in predict_core.feature_meta()
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    feature_meta = []
+    for field in ALLOWED_GRID_FIELDS:
+        spec = GRID_FIELD_SPECS[field]
+        feature_meta.append(
+            {
+                **model_meta.get(field, {}),
+                "name": field,
+                "label": spec["label"],
+                "description": spec["description"],
+                "semantic_definition": spec.get(
+                    "semantic_definition",
+                    spec["description"],
+                ),
+                "unit": spec["unit"],
+                "category": spec["category"],
+            }
+        )
     return {
         "count": len(feature_meta),
         "features": feature_meta,
@@ -308,8 +394,26 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
         if valid_results
         else None
     )
+
+    # 학습범위 clip에 걸린 셀은 요청보다 적은 개입을 받았는데도 저감이 크게 나온다.
+    # 실측(구별 200셀 표본)에서 그냥 평균하면 clip 제외 평균보다 0.13~0.35℃ 더 시원하게 나왔고,
+    # 이는 delta_c 추정오차(0.132℃)를 넘는다. 즉 반올림 오차가 아니라 계통 편향이다.
+    # 평균값 자체는 바꾸지 않고(사용자가 보던 수가 말없이 달라지면 더 혼란스럽다)
+    # 몇 개가 잘렸는지와 잘린 셀을 뺀 평균을 함께 돌려준다.
+    unclipped = [
+        result
+        for result in valid_results
+        if not any("clip" in str(warning) for warning in result.get("warnings") or [])
+    ]
     return {
         "count": len(results),
         "mean_delta_c": mean_delta,
+        "clipped_count": len(valid_results) - len(unclipped),
+        "valid_count": len(valid_results),
+        "mean_delta_c_unclipped": (
+            round(sum(result["delta_c"] for result in unclipped) / len(unclipped), 3)
+            if unclipped
+            else None
+        ),
         "results": results,
     }
