@@ -27,7 +27,10 @@ MAX_CHUNK_CHARS = 600
 # 개수로 끊으면 안 된다. 표 청크가 1,251자까지 나오므로 "상위 4개"가 4,115자가
 # 되는 경우가 있고, 그러면 컨텍스트 4,096토큰 안에서 답변을 만들 자리가 없다.
 MAX_CONTEXT_CHARS = 2400
-DEFAULT_TOP_K = 4
+# 후보는 6개까지 뽑고 실제 컷은 위 글자 예산이 한다. 코퍼스를 10문서로 늘린 뒤
+# 정답이 5위로 밀리는 질문이 생겼는데, 조각이 작으면 5·6위도 예산 안에 들어간다.
+# 실측: k=4에서 22/26, k=5부터 23/26으로 올라가고 그 뒤로는 평평하다.
+DEFAULT_TOP_K = 6
 
 _HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _FENCE_PATTERN = re.compile(r"^\s*(```|~~~)")
@@ -267,13 +270,16 @@ EMBEDDING_CACHE = Path(__file__).resolve().parent / "corpus_embeddings.npz"
 _RRF_K = 60
 
 
-def corpus_fingerprint(chunks: list[DocChunk]) -> str:
-    """코퍼스 내용의 지문. 문서가 바뀌면 임베딩 캐시를 자동으로 무효화한다."""
+def chunk_key(chunk: DocChunk) -> str:
+    """청크 하나의 지문.
+
+    코퍼스 전체를 하나의 지문으로 잡으면 문서 한 줄만 고쳐도 139조각을 전부
+    다시 임베딩한다(약 19초). 조각별로 잡으면 바뀐 것만 다시 계산한다.
+    """
 
     digest = hashlib.sha256()
     digest.update(EMBED_MODEL.encode("utf-8"))
-    for chunk in chunks:
-        digest.update(chunk.text.encode("utf-8"))
+    digest.update(chunk.text.encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -305,13 +311,24 @@ def build_embeddings(
     import numpy as np
 
     path = cache_path or EMBEDDING_CACHE
-    fingerprint = corpus_fingerprint(chunks)
+    keys = [chunk_key(chunk) for chunk in chunks]
+
+    cached: dict[str, Any] = {}
     if path.exists():
-        cached = np.load(path, allow_pickle=False)
-        if str(cached["fingerprint"]) == fingerprint:
-            return cached["vectors"]
-    vectors = _embed([chunk.text for chunk in chunks], client=client)
-    np.savez_compressed(path, vectors=vectors, fingerprint=fingerprint)
+        stored = np.load(path, allow_pickle=False)
+        if "keys" in stored:
+            cached = dict(zip(stored["keys"].tolist(), stored["vectors"]))
+
+    missing = [i for i, key in enumerate(keys) if key not in cached]
+    if missing:
+        fresh = _embed([chunks[i].text for i in missing], client=client)
+        for index, vector in zip(missing, fresh):
+            cached[keys[index]] = vector
+
+    vectors = np.stack([cached[key] for key in keys])
+    if missing:
+        # 지금 코퍼스에 있는 조각만 저장한다. 삭제된 조각의 벡터는 버린다.
+        np.savez_compressed(path, vectors=vectors, keys=np.array(keys))
     return vectors
 
 
@@ -335,6 +352,77 @@ class DenseIndex:
         scores = self.vectors @ query_vector  # 단위벡터라 내적 = 코사인
         order = scores.argsort()[::-1][:top_k]
         return [SearchHit(self.chunks[i], float(scores[i])) for i in order]
+
+
+class ChromaDenseIndex:
+    """Chroma로 밀집 검색을 대신한다. 임베딩은 여전히 우리가 bge-m3로 만든다.
+
+    Chroma 자체 임베딩 기능은 쓰지 않는다. 기본 모델이 한국어에 약해 Recall이
+    떨어진다.
+
+    지금 규모(139조각)에서는 numpy보다 손해다 — 실측으로 검색 45배 느리고
+    색인에 576ms가 들며, 상위 4개는 20/20 질문에서 numpy와 완전히 동일했다.
+    근사 이득이 없다. 규모가 커졌을 때 코드를 안 고치고 바꾸려고 남겨 둔다.
+    """
+
+    def __init__(
+        self,
+        chunks: list[DocChunk],
+        vectors: Any,
+        client: Any | None = None,
+    ) -> None:
+        try:
+            import chromadb
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "GAON_VECTOR_BACKEND=chroma를 쓰려면 chromadb를 설치해야 합니다. "
+                "기본값 numpy는 추가 설치가 필요 없습니다."
+            ) from exc
+        self.chunks = chunks
+        self._client = client
+        store = chromadb.EphemeralClient()
+        self._collection = store.get_or_create_collection(
+            "gaon_docs", metadata={"hnsw:space": "cosine"}
+        )
+        self._collection.add(
+            ids=[chunk.chunk_id for chunk in chunks],
+            embeddings=[vector.tolist() for vector in vectors],
+        )
+        self._by_id = {chunk.chunk_id: chunk for chunk in chunks}
+
+    def search(self, query: str, top_k: int = DEFAULT_TOP_K) -> list[SearchHit]:
+        query_vector = _embed([query], client=self._client)[0]
+        found = self._collection.query(
+            query_embeddings=[query_vector.tolist()],
+            n_results=min(top_k, len(self.chunks)),
+        )
+        hits: list[SearchHit] = []
+        for chunk_id, distance in zip(found["ids"][0], found["distances"][0]):
+            chunk = self._by_id.get(chunk_id)
+            if chunk is not None:
+                hits.append(SearchHit(chunk, 1.0 - float(distance)))
+        return hits
+
+
+def make_dense_index(
+    chunks: list[DocChunk],
+    vectors: Any,
+    client: Any | None = None,
+) -> Any:
+    """``GAON_VECTOR_BACKEND``로 밀집 검색 구현을 고른다.
+
+    바깥에서 보면 둘 다 ``list[SearchHit]``을 돌려주므로, RRF 합치기·글자 예산·
+    답변 생성은 어느 쪽을 써도 그대로다. 교체 지점은 이 함수 하나다.
+    """
+
+    backend = (os.getenv("GAON_VECTOR_BACKEND") or "numpy").strip().lower()
+    if backend == "chroma":
+        return ChromaDenseIndex(chunks, vectors, client=client)
+    if backend not in {"numpy", ""}:
+        raise ValueError(
+            f"알 수 없는 GAON_VECTOR_BACKEND입니다: {backend} (numpy 또는 chroma)"
+        )
+    return DenseIndex(chunks, vectors)
 
 
 class HybridIndex:
