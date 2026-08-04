@@ -78,6 +78,8 @@ function containsPoint(indexed: IndexedFeature, lng: number, lat: number) {
 class FeatureSpatialIndex {
   readonly features: IndexedFeature[];
   private readonly buckets = new Map<string, number[]>();
+  // 선택 테두리만 빠르게 찾기 위한 ID 인덱스. 전체 공간 인덱스를 다시 순회하지 않는다.
+  private readonly featuresByGridId = new Map<string, Feature<Geometry>>();
 
   constructor(collection: FeatureCollection) {
     this.features = collection.features.flatMap((rawFeature) => {
@@ -105,6 +107,9 @@ class FeatureSpatialIndex {
     });
 
     this.features.forEach((feature, featureIndex) => {
+      const gridId = getGridId(feature.feature);
+      if (gridId) this.featuresByGridId.set(gridId, feature.feature);
+
       const minX = Math.floor(feature.west / INDEX_CELL_DEGREES);
       const maxX = Math.floor(feature.east / INDEX_CELL_DEGREES);
       const minY = Math.floor(feature.south / INDEX_CELL_DEGREES);
@@ -156,33 +161,25 @@ class FeatureSpatialIndex {
 
     return null;
   }
+
+  getByGridId(gridId: string | null) {
+    return gridId ? this.featuresByGridId.get(gridId) ?? null : null;
+  }
 }
 
 class GeoJsonCanvasTiles extends L.GridLayer {
   private renderStyle: (feature: Feature<Geometry>) => PathOptions;
-  private selectedGridId: string | null;
-  private compareGridId: string | null;
 
   constructor(
     private readonly index: FeatureSpatialIndex,
-    renderStyle: (feature: Feature<Geometry>) => PathOptions,
-    selectedGridId: string | null,
-    compareGridId: string | null
+    renderStyle: (feature: Feature<Geometry>) => PathOptions
   ) {
     super({ pane: 'gridCanvasPane', tileSize: 256, updateWhenIdle: true, keepBuffer: 2 });
     this.renderStyle = renderStyle;
-    this.selectedGridId = selectedGridId;
-    this.compareGridId = compareGridId;
   }
 
-  updatePresentation(
-    renderStyle: (feature: Feature<Geometry>) => PathOptions,
-    selectedGridId: string | null,
-    compareGridId: string | null
-  ) {
+  updatePresentation(renderStyle: (feature: Feature<Geometry>) => PathOptions) {
     this.renderStyle = renderStyle;
-    this.selectedGridId = selectedGridId;
-    this.compareGridId = compareGridId;
     this.redraw();
   }
 
@@ -213,15 +210,7 @@ class GeoJsonCanvasTiles extends L.GridLayer {
 
     for (const indexed of candidates) {
       const feature = indexed.feature;
-      const gid = getGridId(feature);
-      const isSelected = gid === this.selectedGridId;
-      const isCompare = this.compareGridId != null && gid === this.compareGridId;
-      const baseStyle = this.renderStyle(feature);
-      const style: PathOptions = isSelected
-        ? { ...baseStyle, color: '#111827', weight: 3, opacity: 1 }
-        : isCompare
-        ? { ...baseStyle, color: '#1c7ed6', weight: 3, opacity: 1 }   // 비교 격자 = 파랑
-        : baseStyle;
+      const style = this.renderStyle(feature);
 
       context.beginPath();
       for (const rings of indexed.polygons) {
@@ -272,7 +261,12 @@ export default function CanvasGridLayer({
     pane.style.zIndex = '350';
     pane.style.pointerEvents = 'none';
 
-    const layer = new GeoJsonCanvasTiles(index, style, selectedGridId, compareGridId);
+    let selectionPane = map.getPane('gridSelectionPane');
+    if (!selectionPane) selectionPane = map.createPane('gridSelectionPane');
+    selectionPane.style.zIndex = '450';
+    selectionPane.style.pointerEvents = 'none';
+
+    const layer = new GeoJsonCanvasTiles(index, style);
     layerRef.current = layer;
     layer.addTo(map);
 
@@ -283,8 +277,35 @@ export default function CanvasGridLayer({
   }, [index, map]);
 
   useEffect(() => {
-    layerRef.current?.updatePresentation(style, selectedGridId, compareGridId);
-  }, [selectedGridId, compareGridId, style]);
+    layerRef.current?.updatePresentation(style);
+  }, [style]);
+
+  // 선택 ID 변경 때 캔버스 타일 전체를 redraw하지 않고 테두리 레이어만 교체한다.
+  useEffect(() => {
+    const selectionGroup = L.layerGroup().addTo(map);
+    const addOutline = (gridId: string | null, color: string) => {
+      const feature = index.getByGridId(gridId);
+      if (!feature) return;
+
+      L.geoJSON(feature, {
+        interactive: false,
+        style: {
+          pane: 'gridSelectionPane',
+          color,
+          weight: 3,
+          opacity: 1,
+          fill: false
+        }
+      }).addTo(selectionGroup);
+    };
+
+    addOutline(selectedGridId, '#111827');
+    addOutline(compareGridId, '#1c7ed6');
+
+    return () => {
+      selectionGroup.removeFrom(map);
+    };
+  }, [compareGridId, index, map, selectedGridId]);
 
   useEffect(() => {
     const handleClick = (event: LeafletMouseEvent) => {

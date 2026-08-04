@@ -10,7 +10,7 @@
   --line: #d9e1e5;
   --muted: #64717f;
   --heat: #cf3f3f;
-  --green: #2f855a;
+  --green: #318136;
   --ink: #172033;
   --water: #2b6cb0;
 }
@@ -423,7 +423,7 @@ button {
   display: block;
   height: 100%;
   border-radius: 8px;
-  background: linear-gradient(90deg, #2b6cb0, #2f855a);
+  background: linear-gradient(90deg, #2b6cb0, #318136);
 }
 
 .tableScroll {
@@ -625,8 +625,8 @@ td {
   --gdp-ink2: #4e5968;
   --gdp-ink3: #8b95a1;
   --gdp-line: #eceef1;
-  --gdp-green: #0d5743;
-  --gdp-green-soft: #e5f1ec;
+  --gdp-green: #1f5121;
+  --gdp-green-soft: #e4f1e5;
   position: absolute;
   top: 18px;
   left: 16px;
@@ -649,6 +649,17 @@ td {
 
 .heatPanelHeader {
   padding: 18px 20px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 브랜드 로고 마크. 대시보드에서 GA:ON을 알아볼 수 있는 유일한 지점이라 헤더에 둔다. */
+.heatPanelLogo {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 11px;   /* 원본 avatar의 라운드 사각과 맞춤 */
 }
 
 .heatPanelHeader p {
@@ -686,6 +697,63 @@ td {
 .heatControlBlock label span {
   color: var(--gdp-ink2);
   font-weight: 700;
+}
+
+/* 격자 코드 검색. .heatControlBlock label과 같은 64px + 나머지 2열 격자를 맞춘다 */
+.heatControlBlock .gridCodeSearch {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.heatControlBlock .gridCodeSearch > span {
+  color: var(--gdp-ink2);
+  font-weight: 700;
+}
+
+.gcsRow {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gcsRow input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gcsRow button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--gdp-green);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.gcsRow button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.gcsError {
+  margin: -6px 0 0;
+  padding: 0 20px 10px;
+  color: #c92a2a;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .fixedGridSize {
@@ -852,7 +920,7 @@ td {
 .indicatorList button.active {
   background: var(--gdp-green);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(13, 87, 67, 0.28);
+  box-shadow: 0 4px 12px rgba(31, 81, 33, 0.28);
 }
 
 .indicatorList button.active:hover {
@@ -930,6 +998,9 @@ td {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.45;
+  /* 설명 끝에 붙는 '출처 ·', '기준 ·' 줄을 문단으로 끊어 보여준다. pre-line이 없으면
+     \n이 공백으로 뭉개져 설명과 출처가 한 덩어리로 읽힌다. 상세 패널 InfoTip과 같은 방식. */
+  white-space: pre-line;
   box-shadow: 0 8px 24px rgba(20, 30, 45, 0.28);
   pointer-events: none;
 }
@@ -1471,7 +1542,7 @@ td {
   height: 28px;
   border-radius: 999px 999px 999px 2px;
   transform: rotate(-45deg);
-  background: #0d5743;
+  background: #1f5121;
   box-shadow: 0 2px 6px rgba(20, 30, 45, 0.35);
 }
 
@@ -1491,7 +1562,7 @@ td {
 }
 
 .shelterPopup .leaflet-popup-content strong {
-  color: #0d5743;
+  color: #1f5121;
   font-size: 13px;
 }
 
@@ -1506,12 +1577,12 @@ td {
   padding: 7px 10px;
   border: 0;
   border-radius: 9px;
-  background: #0d5743;
+  background: #1f5121;
   color: #fff;
   font-size: 11.5px;
   line-height: 1.4;
   white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(13, 87, 67, 0.28);
+  box-shadow: 0 4px 14px rgba(31, 81, 33, 0.28);
 }
 
 .leaflet-tooltip.shelterTip b {
@@ -1528,7 +1599,7 @@ td {
 
 /* 말풍선 꼬리도 배경색에 맞춘다 (기본값은 흰색이라 튄다) */
 .leaflet-tooltip.shelterTip.leaflet-tooltip-top::before {
-  border-top-color: #0d5743;
+  border-top-color: #1f5121;
 }
 
 .districtLabelIconWithValue {
@@ -1655,10 +1726,24 @@ td {
 
 .sidePanelBody {
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.rightPanelDashboard {
+  height: 100%;
   padding: 20px;
   overflow-y: auto;
   overflow-x: hidden;   /* 툴팁 등이 삐져나가도 가로 스크롤 안 생기게 */
+  overscroll-behavior: contain;
   box-sizing: border-box;
+}
+
+
+.rightPanelDashboard[hidden],
+.rightPanelChat[hidden] {
+  display: none;
 }
 
 .sidePanelToggle {
@@ -1701,13 +1786,13 @@ td {
 }
 
 .rightToolbar button.active {
-  background: #0d5743;   /* 앱 초록색 (gdp green) */
+  background: #1f5121;   /* 앱 초록색 (gdp green) */
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(13, 87, 67, 0.28);
+  box-shadow: 0 4px 12px rgba(31, 81, 33, 0.28);
 }
 
 .rightToolbar button.active:hover {
-  background: #0d5743;
+  background: #1f5121;
 }
 
 /* 격자 선택 팝업 — 예전 툴팁 색감 그대로 */
@@ -1772,7 +1857,7 @@ td {
   font-size: 30px;
   font-weight: 800;
   line-height: 1;
-  color: #0d5743;
+  color: #1f5121;
 }
 
 .gridReportPriority span {
@@ -1785,7 +1870,7 @@ td {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #0d5743;
+  color: #1f5121;
 }
 
 .gridReportSection dl {
@@ -1874,15 +1959,22 @@ td {
 }
 
 /* ===================== 격자 상세 패널 (목업 이식) ===================== */
-/* 색·모양 변수: :root 대신 패널 '안에서만' 살아있게 스코프 → 앱 전역 색과 충돌 방지 */
-.gridDetailSidePanel {
+/* 색·모양 변수: :root 대신 패널·챗 dock '안에서만' 살아있게 스코프 → 앱 전역 색과 충돌 방지.
+   AI 채팅이 패널 밖(.aiChatDock)으로 나가면서 같은 토큰이 필요해져 선택자를 늘렸다.
+   .aiChatFab은 dock의 형제라 dock 안이 아니다 → 여기 없으면 var()가 빈 값이 되고
+   background 선언 전체가 무효 처리돼 버튼이 투명해진다. 반드시 함께 둔다. */
+.gridDetailSidePanel,
+.aiChatDock,
+.aiChatFab {
   --gdp-page:#eef1f4; --gdp-card:#ffffff; --gdp-sub:#f5f7f9; --gdp-sub2:#eaedf0;
   --gdp-ink:#191f28; --gdp-ink2:#4e5968; --gdp-ink3:#8b95a1; --gdp-line:#eceef1;
-  --gdp-green:#0d5743; --gdp-green2:#12876a; --gdp-green-soft:#e5f1ec;
+  --gdp-green:#1f5121; --gdp-green2:#367836; --gdp-green-soft:#e4f1e5;
   --gdp-hot:#e8590c; --gdp-hot-soft:#fceadd; --gdp-cool:#1c7ed6; --gdp-cool-soft:#e2effb;
   --gdp-danger:#e03131; --gdp-danger-soft:#fbe3e3;   /* 지도 빨강(≥3℃) 티어 */
   --gdp-shadow:0 1px 2px rgba(20,30,45,.04), 0 8px 24px rgba(20,30,45,.05);
   --gdp-r:18px;
+}
+.gridDetailSidePanel {
   background:var(--gdp-page);   /* 패널 배경 흰색 → 연회색 (흰 카드가 떠 보이게) */
 }
 .gridDetailSidePanel .gridReport{
@@ -2068,7 +2160,7 @@ td {
 .gridDetailSidePanel .sr-lab{ color:var(--gdp-ink2); }
 .gridDetailSidePanel .sr-val{ font-weight:700; color:var(--gdp-green); }
 .gridDetailSidePanel .gdpSim input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:3px; background:var(--gdp-sub2); outline:none; margin:0; }
-.gridDetailSidePanel .gdpSim input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); box-shadow:0 1px 4px rgba(13,87,67,.35); }
+.gridDetailSidePanel .gdpSim input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); box-shadow:0 1px 4px rgba(31, 81, 33,.35); }
 .gridDetailSidePanel .gdpSim input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:var(--gdp-green); cursor:pointer; border:3px solid var(--gdp-card); }
 /* 라벨 바로 아래 한 줄 설명이 붙으므로 sr-top의 아래 여백은 줄인다 */
 .gridDetailSidePanel .sr-top{ margin-bottom:2px; }
@@ -2098,10 +2190,33 @@ td {
   margin:3px 0 12px; padding-left:35px;
   font-size:11px; line-height:1.4; color:var(--gdp-ink3);
 }
+/* 서버가 실제로 적용한 변화량. 학습범위 clip 때문에 요청량과 다를 수 있어 항상 함께 보여준다 */
+.gridDetailSidePanel .sc-applied{
+  margin-top:7px; padding:7px 10px; border-radius:8px;
+  background:var(--gdp-sub); color:var(--gdp-ink2);
+  font-size:11px; line-height:1.5; font-weight:600;
+  font-variant-numeric:tabular-nums;
+}
+.gridDetailSidePanel .sc-appliedHead{
+  display:inline-flex; align-items:center; gap:4px; margin-right:6px;
+  color:var(--gdp-ink3); font-weight:700;
+}
+.gridDetailSidePanel .sc-appliedHead::after{ content:'·'; margin-left:2px; }
 /* 백엔드 warnings(연동·clip 안내) */
 .gridDetailSidePanel .sc-note{
   margin-top:7px; padding:7px 10px; border-radius:8px;
   background:var(--gdp-green-soft); color:var(--gdp-green); font-size:11px; line-height:1.5;
+}
+/* 슬라이더로 못 하는 시나리오는 챗봇으로 — 버튼 아래 보조 안내 */
+.gridDetailSidePanel .sc-more{
+  display:flex; align-items:center; gap:4px;
+  margin-top:10px; padding:0; background:transparent;
+  font-size:10.5px; font-weight:500; color:var(--gdp-ink3);
+}
+/* 슬라이더 한계 안내 — 색이 찬 구간까지만 요청량이 온전히 반영된다 */
+.gridDetailSidePanel .sr-limit{
+  display:flex; align-items:center; gap:4px;
+  margin:6px 0 0; font-size:10.5px; line-height:1.4; color:var(--gdp-ink3);
 }
 /* 연동 중 잠긴 슬라이더 — 값이 녹지에서 파생되므로 조작 불가임을 알린다 */
 .gridDetailSidePanel .sim-row-locked input[type=range]{ cursor:not-allowed; opacity:.55; }
@@ -2159,3 +2274,1258 @@ td {
 .gridDetailSidePanel .c-theirs{ color:var(--gdp-ink3); font-weight:600; }
 .gridDetailSidePanel .c-mine.hot{ color:var(--gdp-hot); }
 .gridDetailSidePanel .c-mine.cool{ color:var(--gdp-cool); }
+
+/* ── GA:ON AI 진입 버튼 및 채팅 화면 ── */
+
+
+
+
+
+
+
+
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChat{
+  height:100%;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  color:var(--gdp-ink);
+  font-variant-numeric:tabular-nums;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatHeader{
+  flex:none;
+  min-height:72px;
+  padding:13px 14px;
+  border-bottom:1px solid var(--gdp-line);
+  background:var(--gdp-card);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  box-sizing:border-box;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatBack,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset{
+  flex:none;
+  border:1px solid var(--gdp-line);
+  background:var(--gdp-card);
+  color:var(--gdp-ink2);
+  cursor:pointer;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatBack{
+  min-width:0;
+  height:36px;
+  padding:0 9px;
+  border-radius:11px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:700;
+  white-space:nowrap;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset{
+  min-height:34px;
+  padding:7px 10px;
+  border-radius:10px;
+  font-size:11px;
+  font-weight:700;
+  white-space:nowrap;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatBack:hover,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset:hover{ background:var(--gdp-sub); }
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatHeader > div{
+  min-width:0;
+  flex:1;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatTitle{
+  margin:0;
+  color:var(--gdp-green);
+  font-size:15px;
+  line-height:1.35;
+  font-weight:800;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatContext{
+  margin:2px 0 0;
+  color:var(--gdp-ink3);
+  font-size:11px;
+  line-height:1.35;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatBody{
+  min-height:0;
+  flex:1;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  padding:16px;
+  box-sizing:border-box;
+  scroll-behavior:smooth;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatIntro{
+  margin-bottom:14px;
+  padding:14px 15px;
+  border:1px solid rgba(31, 81, 33,.12);
+  border-radius:15px;
+  background:var(--gdp-green-soft);
+  color:var(--gdp-ink2);
+  font-size:12px;
+  line-height:1.6;
+  overflow-wrap:anywhere;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatIntro strong{ color:var(--gdp-green); }
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatIntro > p{
+  margin:0 0 8px;
+}
+.gridDetailSidePanel .gdpQuickQuestions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin:12px 0 0;
+}
+.gridDetailSidePanel .gdpQuickButton{
+  min-height:34px;
+  padding:8px 10px;
+  border:1px solid rgba(31, 81, 33,.18);
+  border-radius:11px;
+  background:var(--gdp-card);
+  color:var(--gdp-green);
+  font-size:11px;
+  font-weight:700;
+  line-height:1.35;
+  text-align:left;
+  cursor:pointer;
+}
+.gridDetailSidePanel .gdpQuickButton:hover:not(:disabled){
+  background:var(--gdp-green-soft);
+  border-color:rgba(31, 81, 33,.32);
+}
+.gridDetailSidePanel .gdpQuickButton:disabled,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatSend:disabled,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset:disabled{
+  opacity:.5;
+  cursor:not-allowed;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessages{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessage{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessage.user{ align-items:flex-end; }
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatBubble{
+  max-width:90%;
+  padding:11px 13px;
+  border-radius:15px 15px 15px 4px;
+  background:var(--gdp-card);
+  color:var(--gdp-ink);
+  box-shadow:var(--gdp-shadow);
+  font-size:13px;
+  line-height:1.65;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessage.user .gdpChatBubble{
+  border-radius:15px 15px 4px;
+  background:var(--gdp-green);
+  color:#fff;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationResult{
+  width:100%;
+  margin-top:8px;
+  padding:14px;
+  border:1px solid rgba(31, 81, 33,.12);
+  border-radius:14px;
+  background:var(--gdp-card);
+  box-shadow:var(--gdp-shadow);
+  box-sizing:border-box;
+  overflow-wrap:anywhere;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationDelta{
+  margin-bottom:10px;
+  color:var(--gdp-green);
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  line-height:1.3;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationDelta span{
+  font-size:11px;
+  font-weight:700;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationDelta strong{
+  font-size:20px;
+  font-weight:800;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows{
+  margin:0;
+  display:grid;
+  grid-template-columns:auto minmax(0, 1fr);
+  gap:7px 10px;
+  color:var(--gdp-ink2);
+  font-size:12px;
+  line-height:1.5;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows dt,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows dd{
+  min-width:0;
+  margin:0;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows dt{
+  overflow-wrap:anywhere;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows dd{
+  color:var(--gdp-ink);
+  font-weight:700;
+  text-align:right;
+  overflow-wrap:anywhere;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatNotice{
+  width:100%;
+  margin:7px 0 0;
+  padding:9px 11px;
+  border-radius:10px;
+  box-sizing:border-box;
+  font-size:11px;
+  line-height:1.55;
+  overflow-wrap:anywhere;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatNotice.warning{
+  background:var(--gdp-hot-soft);
+  color:#994008;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatNotice.limitation{
+  background:var(--gdp-sub);
+  color:var(--gdp-ink2);
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatError{
+  margin:10px 0 0;
+  padding:10px 12px;
+  border-radius:11px;
+  background:var(--gdp-danger-soft);
+  color:var(--gdp-danger);
+  font-size:12px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatComposer{
+  flex:none;
+  padding:12px 14px 14px;
+  border-top:1px solid var(--gdp-line);
+  background:var(--gdp-card);
+  display:flex;
+  align-items:flex-end;
+  gap:8px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatTextarea{
+  min-width:0;
+  min-height:42px;
+  max-height:112px;
+  flex:1;
+  resize:none;
+  border:1px solid #d9dee3;
+  border-radius:13px;
+  background:var(--gdp-sub);
+  color:var(--gdp-ink);
+  padding:10px 12px;
+  box-sizing:border-box;
+  font:inherit;
+  font-size:13px;
+  line-height:1.5;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatTextarea::placeholder{ color:var(--gdp-ink3); }
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatSend{
+  min-width:58px;
+  min-height:42px;
+  padding:9px 12px;
+  border:0;
+  border-radius:13px;
+  background:var(--gdp-green);
+  color:#fff;
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatSend:hover:not(:disabled){ background:var(--gdp-green2); }
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatLoading{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  color:var(--gdp-ink3);
+  font-size:12px;
+  line-height:1.5;
+}
+
+.gridDetailSidePanel .gaonAiEntry:focus-visible,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatBack:focus-visible,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset:focus-visible,
+.gridDetailSidePanel .gdpQuickButton:focus-visible,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatTextarea:focus-visible,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatSend:focus-visible{
+  outline:3px solid rgba(54, 120, 54,.28);
+  outline-offset:2px;
+}
+
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiWorkspace{
+  position:relative;
+  height:100%;
+  min-height:0;
+  display:grid;
+  grid-template-columns:280px minmax(0,1fr);
+  overflow:hidden;
+  background:var(--gdp-sub);
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiWorkspace.guideCollapsed{
+  grid-template-columns:0 minmax(0,1fr);
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiWorkspace.guideCollapsed .gdpAiGuide{
+  display:none;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuide{
+  min-width:0;
+  min-height:0;
+  border-right:1px solid var(--gdp-line);
+  background:#f6faf8;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  z-index:3;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader{
+  min-height:72px;
+  padding:13px 14px;
+  border-bottom:1px solid var(--gdp-line);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  box-sizing:border-box;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader > div{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader span{
+  color:var(--gdp-green);
+  font-size:10px;
+  font-weight:800;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader strong{
+  color:var(--gdp-ink);
+  font-size:16px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader button{
+  width:32px;
+  height:32px;
+  flex:none;
+  border:1px solid var(--gdp-line);
+  border-radius:10px;
+  background:var(--gdp-card);
+  color:var(--gdp-ink2);
+  font-size:19px;
+  cursor:pointer;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideBody{
+  min-height:0;
+  flex:1;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:14px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  box-sizing:border-box;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideContext,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideFeature,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideComing,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog{
+  border:1px solid rgba(31, 81, 33,.12);
+  border-radius:14px;
+  background:var(--gdp-card);
+  box-shadow:0 4px 14px rgba(24,49,40,.05);
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideContext{
+  padding:12px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideContext > strong{
+  color:var(--gdp-green);
+  font-size:11px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideContext p{
+  margin:7px 0 0;
+  color:var(--gdp-ink2);
+  font-size:11px;
+  line-height:1.55;
+  overflow-wrap:anywhere;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideContext p span,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideContext p b{
+  display:block;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideContext p b{
+  margin-top:2px;
+  color:var(--gdp-ink);
+  font-size:12px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideFeature{
+  padding:13px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideFeatureTitle{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideFeatureTitle span,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideComing > div span{
+  color:var(--gdp-green);
+  font-size:10px;
+  font-weight:800;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideFeatureTitle strong,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideComing > div strong{
+  color:var(--gdp-ink);
+  font-size:13px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideFeature > p{
+  margin:8px 0 10px;
+  color:var(--gdp-ink2);
+  font-size:11px;
+  line-height:1.55;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideExamples{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideExamples button{
+  width:100%;
+  padding:8px 9px;
+  border:1px solid rgba(31, 81, 33,.14);
+  border-radius:9px;
+  background:var(--gdp-green-soft);
+  color:var(--gdp-green);
+  font-size:10.5px;
+  font-weight:700;
+  line-height:1.4;
+  text-align:left;
+  cursor:pointer;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideExamples button:hover{
+  border-color:rgba(31, 81, 33,.32);
+  background:#e6f5ef;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideLeverList{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-bottom:9px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideLeverList span{
+  padding:4px 7px;
+  border-radius:999px;
+  background:var(--gdp-sub);
+  color:var(--gdp-ink2);
+  font-size:10px;
+  font-weight:700;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideComing{
+  padding:11px 12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideComing > div{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideComing > b{
+  flex:none;
+  padding:4px 7px;
+  border-radius:999px;
+  background:var(--gdp-sub2);
+  color:var(--gdp-ink3);
+  font-size:9px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog{
+  overflow:hidden;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog summary{
+  padding:12px 13px;
+  color:var(--gdp-ink);
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog > p{
+  margin:0;
+  padding:0 13px 12px;
+  color:var(--gdp-ink3);
+  font-size:10px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog .gdpGuideCatalogError{
+  color:var(--gdp-danger);
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog > section{
+  padding:0 13px 12px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog > section > strong{
+  color:var(--gdp-green);
+  font-size:10px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog ul{
+  margin:6px 0 0;
+  padding:0;
+  list-style:none;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog li{
+  padding:7px 0;
+  border-top:1px solid var(--gdp-line);
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog li span{
+  color:var(--gdp-ink);
+  font-size:10.5px;
+  font-weight:700;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog li small{
+  color:var(--gdp-ink3);
+  font-size:9.5px;
+  line-height:1.4;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideToggle{
+  min-height:34px;
+  padding:7px 9px;
+  flex:none;
+  border:1px solid var(--gdp-line);
+  border-radius:10px;
+  background:var(--gdp-card);
+  color:var(--gdp-green);
+  font-size:10px;
+  font-weight:800;
+  white-space:nowrap;
+  cursor:pointer;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpDraftNotice{
+  flex:none;
+  margin:0;
+  padding:8px 14px;
+  border-top:1px solid #f0dfb7;
+  background:#fff9e9;
+  color:#855217;
+  font-size:10px;
+  line-height:1.4;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideBackdrop{
+  display:none;
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader button:focus-visible,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideToggle:focus-visible,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideExamples button:focus-visible,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog summary:focus-visible{
+  outline:3px solid rgba(54, 120, 54,.28);
+  outline-offset:2px;
+}
+
+
+
+
+/* =========================================================
+   GA:ON AI 사용 가이드 레이아웃 최종 수정
+   - 채팅 패널 너비는 항상 고정
+   - 가이드는 채팅 패널 왼쪽에 별도 배치
+   - X로 닫아도 채팅 위치가 움직이지 않음
+   ========================================================= */
+
+/* 가이드가 패널 바깥 왼쪽으로 나갈 수 있도록 허용 */
+
+
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiWorkspace,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiWorkspace.guideCollapsed {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: visible;
+}
+
+/* 채팅 영역은 가이드 상태와 관계없이 항상 전체 700px 사용 */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChat {
+  width: 100%;
+  height: 100%;
+}
+
+/* 데스크톱 가이드: 채팅 패널의 바로 왼쪽에 배치 */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuide,
+.gridDetailSidePanel
+  .gdpAiWorkspace.guideCollapsed
+  .gdpAiGuide {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  bottom: 0;
+  left: auto;
+
+  display: flex;
+  width: 280px;
+  min-width: 280px;
+
+  transform: translateX(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease,
+    visibility 0s linear 0s;
+}
+
+/* X를 누르면 가이드만 사라지고 채팅 위치는 그대로 */
+.gridDetailSidePanel
+  .gdpAiWorkspace.guideCollapsed
+  .gdpAiGuide {
+  display: flex;
+  transform: translateX(18px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease,
+    visibility 0s linear 0.2s;
+}
+
+/*
+  가이드가 열려 있을 때는 상단의 '가이드 닫기' 버튼을 숨긴다.
+  왼쪽 X만 닫기 버튼으로 사용한다.
+*/
+.gridDetailSidePanel
+  .gdpAiWorkspace:not(.guideCollapsed)
+  .gdpGuideToggle {
+  display: none;
+}
+
+/*
+  바깥 패널 접기 버튼은 가이드의 왼쪽 끝으로 이동한다.
+  280px 가이드 + 20px 버튼 너비
+*/
+
+
+/*
+  가이드가 열린 채로 전체 우측 패널을 접으면
+  채팅 700px뿐 아니라 가이드 280px까지 함께 이동한다.
+*/
+
+
+
+
+
+
+/* 조회 가능한 데이터 카드 내부만 스크롤 */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog[open] {
+  max-height: min(52vh, 430px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+/* 스크롤해도 제목은 위에 고정 */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog[open] > summary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid var(--gdp-line);
+  background: var(--gdp-card);
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog[open] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gdp-ink3) transparent;
+}
+
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog[open]::-webkit-scrollbar {
+  width: 6px;
+}
+
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideCatalog[open]::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--gdp-ink3);
+}
+
+
+
+
+/* 태블릿·모바일에서는 왼쪽 외부 배치 대신 내부 drawer */
+@media (max-width: 820px) {
+
+
+  .gridDetailSidePanel.chatMode .sidePanelBody,
+  .gridDetailSidePanel.chatMode .rightPanelChat,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpAiWorkspace,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpAiWorkspace.guideCollapsed {
+    overflow: hidden;
+  }
+
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuide,
+  .gridDetailSidePanel
+    .gdpAiWorkspace.guideCollapsed
+    .gdpAiGuide {
+    position: absolute;
+    inset: 0 auto 0 0;
+    right: auto;
+
+    display: none;
+    width: min(300px, calc(100% - 38px));
+    min-width: 0;
+
+    transform: translateX(-100%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuide.mobileOpen,
+  .gridDetailSidePanel
+    .gdpAiWorkspace.guideCollapsed
+    .gdpAiGuide.mobileOpen {
+    display: flex;
+    transform: translateX(0);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.2);
+    z-index: 6;
+  }
+
+  /*
+    모바일에서는 guideCollapsed가 아니라 mobileOpen으로 표시하므로
+    평상시 사용 가이드 버튼은 다시 표시한다.
+  */
+  .gridDetailSidePanel
+    .gdpAiWorkspace:not(.guideCollapsed)
+    .gdpGuideToggle {
+    display: inline-flex;
+  }
+
+  /* 모바일 가이드가 열린 동안에는 상단 버튼 숨김 */
+  .gridDetailSidePanel
+  .gdpAiGuide.mobileOpen
+    ~ .gdpChat
+    .gdpGuideToggle {
+    display: none;
+  }
+
+  /* 모바일에서는 가이드가 내부 drawer이므로 기본 접기 위치 사용 */
+
+
+}
+
+
+
+
+/* =========================================================
+   GA:ON AI 플로팅 런처 (#26)
+   - 우측 하단 FAB → 대시보드 위에 얹히는 오버레이 채팅
+   - 상세 패널(z-index 1000)보다 위에 뜬다
+   - 모달이 아니다: 뒤 대시보드를 계속 조작할 수 있어야 하므로
+     backdrop을 깔지 않고 포커스도 가두지 않는다
+   ========================================================= */
+
+.aiChatFab {
+  position: fixed;
+  right: 24px;
+  /* Leaflet 저작권 표기(.leaflet-control-attribution)가 화면 맨 아래에 깔린다.
+     24px면 그 위에 겹쳐서 44px로 띄웠다. */
+  bottom: 44px;
+  z-index: 1101;
+
+  width: 56px;              /* 터치 타깃 최소 44px 이상 */
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  /* background-color를 먼저 따로 준다. 그래디언트(background-image) 한 줄이
+     어떤 이유로든 무효가 돼도 단색 초록은 남아 버튼이 사라지지 않는다.
+     var()에도 폴백값을 넣어 이중으로 막는다. */
+  background-color: var(--gdp-green, #1f5121);
+  background-image: linear-gradient(
+    140deg,
+    var(--gdp-green2, #367836),
+    var(--gdp-green, #1f5121)
+  );
+  color: #fff;
+  cursor: pointer;
+
+  /* 지도는 배경색이 계속 바뀐다(밝은 도로 / 어두운 녹지 / 빨간 열섬).
+     흰 링을 둘러 어떤 배경에서도 버튼 경계가 끊기지 않게 한다. */
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.92),
+    0 4px 12px rgba(31, 81, 33, 0.34),
+    0 12px 32px rgba(20, 30, 45, 0.22);
+
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.aiChatFab:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.96),
+    0 6px 16px rgba(31, 81, 33, 0.4),
+    0 16px 40px rgba(20, 30, 45, 0.26);
+}
+
+.aiChatFab:active {
+  transform: translateY(0);
+}
+
+.aiChatFab:focus-visible {
+  outline: 3px solid rgba(54, 120, 54, 0.5);
+  outline-offset: 3px;
+}
+
+/* 우하단 말풍선 배지 — 새싹만으로는 '대화'라는 게 전달되지 않는다.
+   브랜드(새싹)와 기능(말풍선)의 역할을 나눠 하나의 아이콘에 욱여넣지 않았다. */
+.aiChatFabBadge {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: var(--gdp-green, #1f5121);
+  box-shadow: 0 1px 3px rgba(20, 30, 45, 0.28);
+}
+
+/* 닫아둔 사이에 답변이 도착했다는 표시. 색만으로 전달하지 않도록
+   aria-label과 툴팁 문구도 함께 바뀐다. */
+.aiChatFabUnread {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #e8590c;
+  box-shadow: 0 0 0 2.5px #ffffff;
+}
+
+/* 마우스를 올리면 뜨는 이름표. 터치 기기에서는 뜨지 않으므로
+   본 이름은 어디까지나 aria-label이고 이건 보조 수단이다. */
+.aiChatFabTip {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  padding: 6px 11px;
+  border-radius: 9px;
+  background: #191f28;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.aiChatFab:hover .aiChatFabTip,
+.aiChatFab:focus-visible .aiChatFabTip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.aiChatFab.isOpen {
+  background-color: var(--gdp-ink2, #4e5968);
+  background-image: none;
+}
+
+/* 파동 애니메이션은 뺐다. 라벨('AI 도우미')이 붙으면서 시선을 끌 필요가 사라졌고,
+   움직임은 의미를 전달할 때만 쓴다. */
+
+.aiChatDock {
+  position: fixed;
+  right: 24px;
+  bottom: 108px;            /* FAB 높이 52 + 아래 여백 44 + 간격 12 */
+  z-index: 1100;
+
+  width: 380px;
+  height: min(620px, calc(100vh - 200px));
+
+  /* 사용 가이드가 채팅 왼쪽 바깥(right:100%)에 붙으므로 잘리면 안 된다 */
+  overflow: visible;
+}
+
+.aiChatDock[hidden] {
+  display: none;
+}
+
+.aiChatDock:focus {
+  outline: none;            /* 창 자체는 포커스 링을 그리지 않는다(내부 요소가 그린다) */
+}
+
+/* 둥근 모서리와 그림자는 dock이 아니라 채팅 본체에 준다.
+   dock은 overflow:visible이어야 해서 자기 자신을 깎을 수 없다. */
+/* 워크스페이스는 상세 패널 안에서는 가이드와 채팅 사이를 메우는 회색 바닥이었지만,
+   dock에서는 둘이 딱 붙어 있어 메울 틈이 없다. 배경을 두면 채팅의 둥근 모서리
+   바깥으로 각진 회색이 삐져나온다(둘의 박스가 정확히 같다). */
+.aiChatDock .gdpAiWorkspace {
+  background: none;
+}
+
+.aiChatDock .gdpChat {
+  /* .gdpChat 자체는 배경이 없고 헤더·본문 자식이 흰색을 낸다.
+     모서리를 둥글게 깎으면 그 안쪽을 채울 배경이 필요하다. */
+  background: var(--gdp-card);
+  border-radius: var(--gdp-r);
+  overflow: hidden;
+  box-shadow:
+    0 8px 24px rgba(20, 30, 45, 0.14),
+    0 24px 60px rgba(20, 30, 45, 0.16);
+}
+
+/* 가이드 + 채팅을 한 장의 패널처럼 보이게 한다.
+   바깥 모서리만 둥글게, 서로 맞닿는 안쪽 모서리는 각지게. */
+.aiChatDock .gdpAiGuide {
+  border-radius: var(--gdp-r) 0 0 var(--gdp-r);   /* 왼쪽만 */
+}
+
+/* 가이드가 펼쳐져 있으면 채팅의 왼쪽은 가이드와 맞닿는 면이므로 각지게 둔다.
+   (가이드를 접으면 위의 기본 규칙대로 네 모서리가 모두 둥글어진다) */
+.aiChatDock .gdpAiWorkspace:not(.guideCollapsed) .gdpChat {
+  border-radius: 0 var(--gdp-r) var(--gdp-r) 0;
+}
+
+/* 모바일: 떠 있는 창을 쓸 폭이 없으므로 전체화면으로 전환한다 */
+@media (max-width: 820px) {
+  .aiChatFab {
+    right: 16px;
+    bottom: 36px;           /* 모바일에서도 Leaflet 저작권 표기 위로 */
+  }
+
+  .aiChatDock {
+    right: 0;
+    bottom: 0;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .aiChatDock .gdpChat {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* 채팅이 전체화면이면 FAB이 그 위에 겹친다 → 숨기고 창 안의 닫기 버튼을 쓴다 */
+  .aiChatDock:not([hidden]) ~ .aiChatFab {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aiChatFab,
+  .aiChatFab:hover {
+    transition: none;
+    transform: none;
+  }
+}
+/* 상세 패널이 열려 있으면 dock과 FAB을 패널 왼쪽으로 밀어낸다.
+   패널 위에 겹쳐 뜨면 "대시보드를 보면서 채팅한다"는 이 기능의 목적 자체가 깨진다.
+   404px = 패널 폭 380 + 여백 24 (.gridDetailSidePanel 참고) */
+.gisShell.panelOpen .aiChatDock,
+.gisShell.panelOpen .aiChatFab {
+  right: 404px;
+}
+
+.aiChatDock,
+.aiChatFab {
+  transition-property: right, transform, box-shadow;
+  transition-duration: 0.3s, 0.18s, 0.18s;
+  transition-timing-function: ease;   /* 패널 접힘(0.3s ease)과 속도를 맞춘다 */
+}
+
+@media (max-width: 820px) {
+  /* 모바일은 패널이 전체를 덮으므로 밀어낼 공간이 없다 */
+  .gisShell.panelOpen .aiChatDock,
+  .gisShell.panelOpen .aiChatFab {
+    right: 16px;
+  }
+  .gisShell.panelOpen .aiChatDock {
+    right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aiChatDock,
+  .aiChatFab {
+    transition: none;
+  }
+}
+/* FAB 안의 마스코트 얼굴. 초록 배경 위에 크림색 얼굴이 올라간다.
+   전신 SVG는 56px에서 몸통·나무가 뭉개져 머리만 잘라낸 mascot-face.svg를 쓴다. */
+.aiChatFabMascot {
+  width: 42px;
+  height: 42px;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* 좁은 화면 보정: 가이드(280) + 채팅(380) + 왼쪽 여백(12) = 672px 가 확보되지 않으면
+   dock을 그만큼 덜 밀어낸다. 안 그러면 가이드가 화면 왼쪽 밖으로 잘려나간다.
+   (1024px에서 실측 -40px 잘림 → 이 규칙으로 +12px 확보)
+   넓은 화면에서는 min()이 404px를 그대로 고른다. */
+.gisShell.panelOpen .aiChatDock {
+  right: min(404px, calc(100vw - 672px));
+}
+/* =========================================================
+   지도 줌·축척 (#26)
+   Leaflet의 top-right 코너 '컨테이너 자체'를 하나의 카드로 만든다.
+   줌(+/−)과 축척이 각각 다른 폭의 카드로 떠 있으면(62 / 48 / 83) 애매하게 보인다.
+   → .rightToolbar와 같은 폭(62px)·같은 카드 언어로 묶어 한 부품처럼 읽히게 한다.
+   ========================================================= */
+
+.leaflet-top.leaflet-right {
+  top: 148px;                    /* 18(툴바 top) + 120(툴바 높이) + 10(간격) */
+  right: 16px;                   /* 툴바와 오른쪽 끝을 맞춘다 */
+  width: 62px;                   /* .rightToolbar와 동일 */
+  padding: 6px;                  /* .rightToolbar와 동일 */
+  border-radius: 16px;           /* .rightToolbar와 동일 */
+  background: #ffffff;
+  box-shadow:
+    0 1px 2px rgba(20, 30, 45, 0.05),
+    0 10px 28px rgba(20, 30, 45, 0.1);
+  box-sizing: border-box;
+
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  pointer-events: auto;          /* 카드 위에서 지도가 끌리지 않게 */
+  transition: right 0.3s ease;   /* 패널 접힘(0.3s)과 속도를 맞춘다 */
+}
+
+.gisShell.panelOpen .leaflet-top.leaflet-right {
+  right: 396px;                  /* 패널 열림 시 .rightToolbar와 동일 */
+}
+
+/* 카드 안의 컨트롤은 껍데기를 벗긴다 — 카드는 바깥 하나뿐이다 */
+.leaflet-top.leaflet-right .leaflet-control {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  float: none;
+  clear: none;
+}
+
+.leaflet-top.leaflet-right .leaflet-control-zoom {
+  display: grid;
+  gap: 4px;
+}
+
+.leaflet-top.leaflet-right .leaflet-control-zoom a {
+  width: 50px;              /* 카드 62 - padding 12 */
+  height: 44px;             /* 터치 타깃 최소 44px */
+  line-height: 44px;
+  border: 0;
+  border-radius: 11px;      /* .rightToolbar button과 동일 */
+  background: #f5f7f9;
+  color: #4e5968;
+  font-size: 18px;
+  font-weight: 700;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.leaflet-top.leaflet-right .leaflet-control-zoom a:hover {
+  background: #eaedf0;
+  color: #191f28;
+}
+
+.leaflet-top.leaflet-right .leaflet-control-zoom a.leaflet-disabled {
+  background: #f5f7f9;
+  color: #c2cad3;
+  cursor: default;
+}
+
+.leaflet-top.leaflet-right .leaflet-control-zoom a:focus-visible {
+  outline: 3px solid rgba(54, 120, 54, 0.45);
+  outline-offset: -3px;
+}
+
+/* 축척: 같은 카드 안 마지막 줄. 위에 얇은 구분선을 둬서
+   '따로 노는' 느낌 대신 같은 묶음의 다른 항목으로 읽히게 한다. */
+.leaflet-top.leaflet-right .leaflet-control-scale {
+  padding-top: 6px;
+  border-top: 1px solid #eceef1;
+  display: flex;
+  justify-content: center;   /* 40px 막대를 50px 슬롯 가운데에 */
+  overflow: hidden;          /* 어떤 축척 값에서도 카드 밖으로 새지 않게 */
+}
+
+.leaflet-top.leaflet-right .leaflet-control-scale-line {
+  padding: 3px 0 0;
+  border: 0;
+  border-top: 2px solid #1f5121;
+  background: none;
+  box-shadow: none;
+  color: #4e5968;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaflet-top.leaflet-right {
+    transition: none;
+  }
+}
+/* =========================================================
+   지도 색 범례 — 가로 램프형 (#26)
+   화면 왼쪽 아래 끝. 좌측 패널이 y=821에서 끝나므로 그 아래 79px 안에 들어가야 한다.
+   → 높이를 60px대로 유지할 것 (초과하면 패널을 파고든다)
+   ========================================================= */
+
+.mapLegend {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 700;
+
+  width: 320px;             /* 좌측 패널과 같은 폭 → 왼쪽 가장자리가 정렬된다 */
+  padding: 8px 12px 7px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(6px);
+  box-shadow:
+    0 1px 2px rgba(20, 30, 45, 0.05),
+    0 8px 24px rgba(20, 30, 45, 0.12);
+}
+
+.mapLegendHead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.mapLegendHead strong {
+  color: #191f28;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  flex: none;
+}
+
+.mapLegendHead > span {
+  color: #8b95a1;
+  font-size: 10px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapLegendEmpty {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mapLegendEmpty i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(20, 30, 45, 0.14);
+}
+
+/* 4구간 가로 램프. 각 칸이 같은 너비라 경계가 25% / 50% / 75%에 온다. */
+.mapLegendRamp {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(20, 30, 45, 0.1);
+}
+
+.mapLegendRamp span {
+  display: block;
+}
+
+.mapLegendTicks {
+  position: relative;
+  height: 14px;
+  margin-top: 2px;
+}
+
+.mapLegendTicks span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);   /* 경계 지점 위에 정확히 올린다 */
+  color: #4e5968;
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 양 끝 방향 표시는 램프 바깥이 아니라 같은 줄의 좌우 끝에 앉힌다 */
+.mapLegendTicks .mapLegendEnd {
+  transform: none;
+  color: #8b95a1;
+  font-weight: 600;
+}
+
+.mapLegendTicks .mapLegendEnd.isLow {
+  left: 0;
+}
+
+.mapLegendTicks .mapLegendEnd.isHigh {
+  left: auto;
+  right: 0;
+}
+
+@media (max-width: 820px) {
+  .mapLegend {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+  }
+}

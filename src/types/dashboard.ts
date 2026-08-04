@@ -9,7 +9,8 @@ export type LayerKey =
   | 'impervious_ratio'
   | 'nearest_shelter_distance_m';
 
-export type GridResolution = '100m' | '250m' | '500m';
+/** 'gu' = 격자 대신 자치구 경계 단위로 본다 */
+export type GridResolution = '100m' | '250m' | '500m' | 'gu';
 
 export type PolicyOptionKey =
   | 'green_ratio_increase'
@@ -86,6 +87,15 @@ export interface SimulationResponse {
 export interface BatchSimulationResponse {
   count: number;
   mean_delta_c: number | null;
+  /** 구성 셀 중 학습범위 clip에 걸려 요청량을 다 반영하지 못한 셀 수 */
+  clipped_count?: number;
+  /** delta_c를 낸 셀 수 (오류 셀 제외) */
+  valid_count?: number;
+  /**
+   * clip된 셀을 뺀 평균. mean_delta_c와 추정오차(0.132℃) 이상 벌어지면 함께 보여준다.
+   * 구별 200셀 표본에서 실제로 0.13~0.35℃ 차이가 났다(관악구는 -0.502 vs -0.177).
+   */
+  mean_delta_c_unclipped?: number | null;
   results: SimulationResponse[];
 }
 

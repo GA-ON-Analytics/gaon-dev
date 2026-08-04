@@ -1,0 +1,2 @@
+# Ollama Tool Calling PoC 전용 의존성
+ollama==0.6.2

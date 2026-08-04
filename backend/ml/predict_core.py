@@ -7,6 +7,19 @@ compact 배포 모델(25MB)로 재예측한다. RandomForest는 비선형이라 
 핵심 안전장치 (LLM 임의 입력 대비):
   1) 각 변수를 학습 분포 범위로 clip (모델이 본 적 없는 값 = 환각 예측 방지)
   2) 예측 신뢰도: 입력이 학습 분포에서 얼마나 벗어났는지 out_of_range 플래그로 알림
+
+건물/불투수/녹지의 합을 1로 정규화하지 않는 이유:
+  세 지표는 출처가 다르고(건물 도형 / 위성 불투수 / NDVI 식생) 물리적으로 겹칠 수 있다.
+  실제로 전체 격자의 24.6%가 이미 합>1이다(최대 1.79). 배타적 자원이 아니다.
+  여기서 정규화하면 "녹지만 +0.05" 요청에 건물이 -0.28 깎이는 등, 사용자가 건드리지도 않은
+  변수를 바꿔 냉각 효과를 허위로 부풀린다. 범위 clip만으로 충분하다.
+
+  ※ 아래 녹지↔불투수 연동(GREEN_TO_IMPERVIOUS, 이슈 #14)은 이 정규화와 다른 것이다.
+    헷갈리기 쉬워 구분해 둔다.
+      정규화       합=1이라는 '가정' · 건물 포함 3개 전부 · 요청량을 전부 흡수 · 고지 없음
+      연동 #14     관측 회귀 기울기 -0.65 · 불투수 하나만 · 부분만 조정 · 경고 문구 + 끄기 가능
+    연동은 "녹지 +5%p면 실제로 불투수가 평균 3.25%p 낮더라"는 관측을 반영하는 것이지,
+    비율 합을 억지로 맞추는 게 아니다. 정규화를 되살리려는 시도는 위 이유로 막아야 한다.
 """
 from __future__ import annotations
 
@@ -56,6 +69,22 @@ def _load_feature_meta_map() -> dict[str, dict[str, Any]]:
         item["name"]: item
         for item in meta
         if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+
+
+def dataset_ranges(feats: list[str], static: pd.DataFrame) -> dict[str, tuple[float, float]]:
+    """데이터셋에서 직접 잰 범위.
+
+    feature_meta.json을 **만드는** 쪽(build_feature_meta)이 쓴다. 거기서 _load()의 ranges를
+    쓰면 meta가 자기 자신을 되먹여, 데이터셋이 바뀌어도 옛 범위가 그대로 굳는다.
+    """
+    measured = static[feats].describe().T[["min", "max"]]
+    return {
+        feature: (
+            float(measured.loc[feature, "min"]),
+            float(measured.loc[feature, "max"]),
+        )
+        for feature in feats
     }
 
 
@@ -137,9 +166,45 @@ def get_grid_features(grid_id: str) -> dict | None:
     return out
 
 
+# 경고 문구는 대시보드 초록 안내창과 챗봇 답변에 그대로 노출된다. 변수명을 영어로 두면
+# 사용자가 무엇이 보정됐는지 알 수 없어 한글 라벨로 바꿔 말한다.
+FEATURE_LABEL = {
+    "green_ratio": "녹지율",
+    "impervious_ratio": "불투수면 비율",
+    "ndvi": "식생 활력도(NDVI)",
+    "albedo": "표면 반사율(albedo)",
+}
+
+# 비율 변수는 %로 말해야 슬라이더(%p)와 같은 단위가 된다. NDVI·albedo는 무단위 지수라 원값.
+_RATIO_FEATURES = {"green_ratio", "impervious_ratio"}
+
+
+def _fmt_value(feature: str, value: float) -> str:
+    if feature in _RATIO_FEATURES:
+        return f"{value * 100:.1f}%"
+    return f"{value:.3f}"
+
+
 def _clip_feature_value(feature: str, value: float, ranges: dict) -> float:
     lo, hi = ranges[feature]
     return min(max(value, lo), hi)
+
+
+def _clip_warning(feature: str, requested: float, applied: float, ranges: dict) -> str:
+    """왜 요청값이 그대로 안 들어갔는지를 사람 말로 설명한다.
+
+    'clip'이라는 낱말과 '학습범위'는 chat_service의 clip 감지 조건이라 반드시 남긴다
+    (_validate_final_answer / _format_tool_answer에서 이 두 단어로 clip 여부를 판정한다).
+    """
+    lo, hi = ranges[feature]
+    label = FEATURE_LABEL.get(feature, feature)
+    bound = "하한" if requested < lo else "상한"
+    return (
+        f"{label}을 {_fmt_value(feature, requested)}로 요청했지만 모델 학습범위"
+        f"({_fmt_value(feature, lo)}~{_fmt_value(feature, hi)})의 {bound}을 벗어나 "
+        f"{_fmt_value(feature, applied)}로 보정(clip)했습니다. "
+        f"모델이 학습 때 본 적 없는 값은 예측 근거가 없어 경계에서 멈춥니다."
+    )
 
 
 def _final_clip_scenario(scen: dict, feats: list, ranges: dict, warnings: list[str]) -> None:
@@ -147,8 +212,7 @@ def _final_clip_scenario(scen: dict, feats: list, ranges: dict, warnings: list[s
         value = float(scen[feature])
         clipped = _clip_feature_value(feature, value, ranges)
         if not np.isclose(value, clipped):
-            lo, hi = ranges[feature]
-            warnings.append(f"{feature}={value:.3f} 최종 학습범위[{lo:.2f},{hi:.2f}] 밖 → clip")
+            warnings.append(_clip_warning(feature, value, clipped, ranges))
             scen[feature] = clipped
 
 
@@ -175,10 +239,29 @@ def _apply_land_cover_coupling(changes: dict, scen: dict, feats: list, ranges: d
     before = float(scen[dst])
     scen[dst] = _clip_feature_value(dst, before + delta, ranges)
     moved = scen[dst] - before
-    if np.isclose(moved, 0.0):
-        return [f"{dst}가 이미 학습범위 끝이라 녹지 연동이 반영되지 않았습니다."]
+    lo, hi = ranges[dst]
+    green_pp = applied_deltas[src] * 100
 
-    return [f"녹지 {applied_deltas[src] * 100:+.1f}%p에 연동해 불투수면을 "
+    if np.isclose(moved, 0.0):
+        bound = "하한" if delta < 0 else "상한"
+        return [f"불투수면 비율이 이미 학습범위 {bound}({_fmt_value(dst, lo if delta < 0 else hi)})"
+                f"이라 녹지 연동을 반영하지 못했습니다(clip). 이 격자에서는 녹지를 늘려도 "
+                f"불투수면을 더 줄일 여지가 없습니다."]
+
+    # 연동분이 clip에 걸려 일부만 반영된 경우. 기울기만 알려주면 사용자가 곱셈으로 검산했을 때
+    # 숫자가 안 맞아 "왜 -0.65가 아니지?"로 읽힌다. 기대값·실제값·멈춘 이유를 함께 말한다.
+    # '학습범위'와 'clip'은 chat_service의 clip 감지 키워드라 반드시 포함한다.
+    if abs(moved) < abs(delta) - 1e-9:
+        bound = "하한" if delta < 0 else "상한"
+        return [f"녹지 {green_pp:+.1f}%p면 관측 기울기 {GREEN_TO_IMPERVIOUS}에 따라 불투수면이 "
+                f"{delta * 100:+.1f}%p 바뀌어야 하지만, 이 격자의 불투수면 비율이 "
+                f"{_fmt_value(dst, before)}에서 학습범위 {bound}"
+                f"({_fmt_value(dst, lo if delta < 0 else hi)})에 닿아 "
+                f"{moved * 100:+.1f}%p까지만 반영(clip)했습니다. "
+                f"모델이 학습 때 본 적 없는 값은 예측 근거가 없어 경계에서 멈춥니다. "
+                f"불투수면을 직접 지정하면 연동하지 않습니다."]
+
+    return [f"녹지 {green_pp:+.1f}%p에 연동해 불투수면을 "
             f"{moved * 100:+.1f}%p 조정했습니다 (관측 기울기 {GREEN_TO_IMPERVIOUS}). "
             f"불투수면을 직접 지정하면 연동하지 않습니다."]
 
@@ -218,7 +301,7 @@ def _apply_and_constrain(base: dict, changes: dict, feats: list, ranges: dict,
         val = scen[k] + float(delta) if _is_delta(delta) else float(_strip(delta))
         lo, hi = ranges[k]
         if val < lo or val > hi:
-            warnings.append(f"{k}={val:.3f} 학습범위[{lo:.2f},{hi:.2f}] 밖 → clip")
+            warnings.append(_clip_warning(k, val, _clip_feature_value(k, val, ranges), ranges))
         scen[k] = _clip_feature_value(k, val, ranges)
         applied_deltas[k] = float(scen[k]) - float(base[k])  # clip 후 실제 반영량
 
