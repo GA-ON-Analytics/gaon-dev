@@ -16,12 +16,21 @@ from typing import Any
 from backend.llm_poc.tools import (
     ALLOWED_GRID_FIELDS,
     GRID_FIELD_SPECS,
+    POLICY_STATE_ADVERSE,
+    POLICY_STATE_INDISTINGUISHABLE,
+    POLICY_STATE_NO_ROOM,
+    POLICY_STATE_RANKED,
+    POLICY_STATE_UNRESPONSIVE,
     TOOL_FUNCTIONS,
     format_grid_field_value,
 )
 
 
-DEFAULT_MODEL_NAME = "qwen3:4b"
+# ④ 문서 답변은 열린 생성이라 모델 크기가 직접 반영된다. 4b는 "데이터 말고 모델
+# 설명해줘"에서 질문을 그대로 되뱉는다(스키마·재시도·지적 재시도 모두 실패).
+# 8b는 같은 질문에 정상 답변한다. 라우터 정확도는 아래 ambiguous 제약을
+# 스키마에 명시해 보완했다.
+DEFAULT_MODEL_NAME = "qwen3:8b"
 MODEL_NAME = os.getenv("GAON_LLM_MODEL") or DEFAULT_MODEL_NAME
 DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
 ROUTER_NUM_PREDICT = 768
@@ -79,8 +88,10 @@ _SIMULATION_FIELD_TERMS = {
     "albedo": ("albedo", "알베도", "반사율", "쿨루프"),
 }
 _SUPPORTED_INTENTS = {
+    "doc_search",
     "field_list",
     "lookup",
+    "policy_ranking",
     "simulation",
     "unsupported",
 }
@@ -90,7 +101,9 @@ _TOOLLESS_INTENTS = {"field_list", "unsupported"}
 # 예전에는 "lookup이면 get_grid_data, 아니면 run_simulation" 삼항식이라 매핑이 코드 흐름에
 # 숨어 있었고, 새 intent가 조용히 run_simulation으로 새도 아무도 몰랐다.
 _INTENT_TOOL = {
+    "doc_search": "search_docs",
     "lookup": "get_grid_data",
+    "policy_ranking": "rank_policies",
     "simulation": "run_simulation",
 }
 # 표가 어긋나는 두 방향을 모두 import 시점에 잡는다.
@@ -158,6 +171,16 @@ _UNRESOLVED_CODES = {
     "conflicting_changes",
     "lookup_field",
 }
+# 정책 변경 요청이 미완성일 때만 나오는 코드들. 이 코드가 있으면 라우터가
+# intent를 뭐라고 찍었든 "바꾸려던 요청인데 정보가 모자라다"는 뜻이다.
+_CHANGE_UNRESOLVED_CODES = {
+    "change_field",
+    "change_operation",
+    "change_source",
+    "change_unit",
+    "change_value",
+    "conflicting_changes",
+}
 _CLARIFICATION_BY_CODE = {
     "ambiguous_request": "요청에서 확정되지 않은 부분을 구체적으로 알려주세요.",
     "change_field": "변경할 지표를 알려주세요.",
@@ -173,7 +196,8 @@ _CLARIFICATION_BY_CODE = {
 }
 SUPPORTED_SCOPE_ANSWER = (
     "현재 요청은 아직 지원하지 않습니다. "
-    "GA:ON AI에서는 격자 데이터 조회와 정책 시뮬레이션을 사용할 수 있습니다. "
+    "GA:ON AI에서는 격자 데이터 조회, 정책 시뮬레이션, 정책 우선순위 추천을 "
+    "사용할 수 있습니다. "
     "AI 화면의 사용 가이드를 확인하거나 "
     "“조회 가능한 데이터 목록 보여줘”라고 입력해 주세요."
 )
@@ -187,11 +211,20 @@ ROUTER_OUTPUT_SCHEMA = {
     "properties": {
         "intent": {
             "type": "string",
-            "enum": ["unsupported", "field_list", "lookup", "simulation"],
+            "enum": [
+                "unsupported",
+                "field_list",
+                "lookup",
+                "simulation",
+                "policy_ranking",
+                "doc_search",
+            ],
             "description": (
                 "허용된 격자 지표의 현재값 조회와 전체 조회는 lookup, "
                 "조회 가능한 데이터 목록 요청은 field_list, 지원 정책 변경은 "
-                "simulation, 그 밖의 요청은 unsupported"
+                "simulation, 어떤 정책이 효과적인지 우선순위를 묻는 요청은 "
+                "policy_ranking, 데이터 정의·뜻·출처·모델 설명 같은 문서 질문은 "
+                "doc_search, 그 밖의 요청은 unsupported"
             ),
         },
         "resolution": {
@@ -202,7 +235,10 @@ ROUTER_OUTPUT_SCHEMA = {
                 "확인이 필요하면 ambiguous, 지원 필드가 아니면 unsupported. "
                 "평균 몇 층=avg_ground_floor_count resolved, 가장 높은 건물의 "
                 "층수=max_ground_floor_count resolved, 식생의 푸르름·활력=ndvi "
-                "resolved이며 단순 식물의 양만 ambiguous"
+                "resolved이며 단순 식물의 양만 ambiguous. "
+                "ambiguous를 쓰려면 intent=lookup이고 candidate_fields가 "
+                "정확히 2개 또는 3개이며 requested_fields=[], changes=[], "
+                "lookup_all=false여야 한다. 이 조건을 못 맞추면 ambiguous를 쓰지 않는다"
             ),
         },
         "candidate_fields": {
@@ -365,6 +401,7 @@ SYSTEM_PROMPT = (
 - 두 필드 이상의 의미가 실제로 가능하면 resolution=ambiguous, requested_fields=[], candidate_fields에 가장 가까운 2~3개만 둔다.
 - 지원 필드와 대응하지 않으면 resolution=unsupported, intent=unsupported이고 candidate_fields, requested_fields, changes를 비운다. 비슷한 다른 필드로 대체하지 않는다.
 - resolved의 candidate_fields는 비우거나 requested_fields와 같아야 한다.
+- resolution=ambiguous는 intent=lookup에서만 쓴다. candidate_fields에 정확히 2~3개를 넣고 requested_fields=[], changes=[], lookup_all=false로 둔다. 이 조건을 못 맞추면 ambiguous를 쓰지 않는다.
 - lookup_evidence는 의미 판정 근거가 된 사용자 원문의 가장 짧은 실제 문자열이다. 전체 조회·field_list·unsupported이면 빈 문자열을 쓸 수 있다.
 - "식물이 얼마나 많은지"는 면적 비율인 green_ratio와 푸르름·활력 지수인 ndvi 중 뜻이 불명확하므로 ambiguous다.
 - "건물 높이"는 평균층수와 최대층수 중 기준이 없으면 avg_ground_floor_count와 max_ground_floor_count 사이의 ambiguous다.
@@ -381,7 +418,10 @@ SYSTEM_PROMPT = (
 - 전체·모두·모든·전부 또는 독립된 "다"로 전체 데이터를 요구하면 lookup_all=true다.
 - 전체 범위를 말고·제외·필요 없고·보여주지 말고 등으로 부정하면 excluded_scope=true, lookup_all=false이고 실제 요청 필드만 requested_fields에 둔다.
 - "조회 가능한 데이터 목록"처럼 지원 조회 필드 목록 자체를 요구하면 intent=field_list, resolution=resolved다. 실제 격자 Tool 조회는 아니다.
-- 데이터 정의·뜻·출처·모델 설명·정책 추천·문서 질문은 아직 지원하지 않으므로 intent=unsupported, resolution=unsupported다.
+- 지표를 지정하지 않고 어떤 정책이 효과적인지·무엇부터 할지 우선순위를 물으면 intent=policy_ranking, resolution=resolved다.
+- 데이터 정의·뜻·계산식·출처, 모델 학습·성능·한계, API 사용법을 물으면 intent=doc_search, resolution=resolved다.
+- 격자의 현재 수치를 묻는 것은 doc_search가 아니라 lookup이다.
+- 위 어디에도 없는 요청만 intent=unsupported, resolution=unsupported다.
 - 인구·인구밀도처럼 카탈로그에 없는 지표는 unsupported다.
 - 데이터 조회를 부정하고 정책 변경을 요청하면 simulation을 우선한다.
 
@@ -405,9 +445,11 @@ SYSTEM_PROMPT = (
 - "가장 높은 건물이 몇 층이야" → lookup/resolved, requested_fields=["max_ground_floor_count"].
 - "물이 스며들지 않는 땅의 비율" → lookup/resolved, requested_fields=["impervious_ratio"].
 - "표면이 햇빛을 얼마나 반사해" → lookup/resolved, requested_fields=["albedo"].
-- "NDVI가 무슨 뜻이야?"와 "녹지율의 출처가 어디야?" → unsupported/unsupported.
+- "NDVI가 무슨 뜻이야?"와 "녹지율의 출처가 어디야?" → doc_search/resolved.
 - "녹지가 차지하는 비율을 5%p 높여줘" → simulation/resolved, green_ratio increase 5 percentage_point.
+- "여기 어떤 정책이 가장 효과적이야"와 "뭐부터 해야 해?" → policy_ranking/resolved.
 - "그거 5플오 해줘"처럼 변경 대상과 방향이 불명확하면 changes=[]와 unresolved=["change_field","change_operation"]을 사용한다.
+- "녹지 한 5 정도 높이고 불투수는 3 낮춰봐"처럼 지표·방향·수치가 다 있으면 단위가 생략돼도 실행한다. green_ratio increase 5 percent, impervious_ratio decrease 3 percent, unresolved=[]다.
 - "녹지율을 올려줘"처럼 수치만 없으면 changes=[]와 unresolved=["change_value"]을 사용한다.
 """
 )
@@ -1197,10 +1239,20 @@ def _parse_normalized_request(
     grounded_fields = _recognized_lookup_fields(original_message)
 
     if resolution == "unsupported":
-        if intent == "simulation" and unresolved and not changes:
+        has_change_unresolved = any(
+            code in _CHANGE_UNRESOLVED_CODES for code in unresolved
+        )
+        if (intent == "simulation" or has_change_unresolved) and unresolved and not changes:
             # 변경 요청임은 알지만 대상·방향 등이 미완성인 기존 재질문
             # 계약은 유지한다. resolution은 필드 의미 판정용이고 실행은
             # unresolved 분기에서 계속 차단된다.
+            #
+            # ★ intent가 simulation이 아니어도 살린다. ④ 도입으로 intent
+            # 선택지가 늘면서 "그거 5플오 해줘" 같은 미완성 변경을 라우터가
+            # unsupported로 찍기 시작했는데, unresolved 코드는 여전히 정확히
+            # 채워 온다. 그 신호를 버리면 재질문 대신 "지원하지 않습니다"가
+            # 나가서 사용자가 뭘 고쳐야 할지 알 수 없다.
+            intent = "simulation"
             resolution = "resolved"
             candidate_fields = []
             requested_fields = []
@@ -1219,6 +1271,22 @@ def _parse_normalized_request(
             excluded_scope = False
     elif resolution == "ambiguous":
         if (
+            intent == "lookup"
+            and len(candidate_fields) == 1
+            and not requested_fields
+            and not changes
+            and not lookup_all
+            and candidate_fields[0] in grounded_fields
+        ):
+            # 후보가 하나뿐이면 애초에 모호하지 않다. 라벨만 틀리고 데이터는
+            # 맞는 경우라 되묻지 말고 확정한다.
+            # ★ 원문에 그 필드의 근거가 있을 때만 살린다. "식물이 얼마나 많은지"
+            # "건물 높이"처럼 진짜 모호한 요청은 grounded_fields가 비어 있어
+            # 여기로 새지 않고 그대로 되묻는다.
+            resolution = "resolved"
+            requested_fields = [candidate_fields[0]]
+            candidate_fields = []
+        elif (
             intent != "lookup"
             or len(candidate_fields) not in {2, 3}
             or requested_fields
@@ -1255,6 +1323,31 @@ def _parse_normalized_request(
         lookup_all = False
         excluded_scope = False
         lookup_evidence = ""
+    elif intent == "doc_search":
+        # 문서 질문은 격자와 무관하다. 조회 필드도 변경 인자도 필요 없다.
+        resolution = "resolved"
+        requested_fields = []
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
+    elif intent == "policy_ranking":
+        # 격자 하나에 정책 4개를 전부 돌려보는 요청이라 조회 필드도 변경 인자도
+        # 필요 없다. 라우터가 실어 보낸 것이 있으면 그대로 흘리지 말고 비운다.
+        # 이 분기가 없으면 새 intent가 아래 어느 elif에도 안 걸려 검증을 통째로
+        # 건너뛴다.
+        resolution = "resolved"
+        requested_fields = []
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
     elif intent == "simulation":
         if resolution != "resolved":
             raise ChatProtocolError(
@@ -1277,14 +1370,27 @@ def _parse_normalized_request(
         if candidate_fields and any(
             field not in _SIMULATION_FIELDS for field in candidate_fields
         ):
-            raise ChatProtocolError(
-                "시뮬레이션 구조화 출력에 정책 레버가 아닌 후보가 포함되었습니다."
-            )
-        candidate_fields = []
-        if not changes and not unresolved:
-            unresolved.extend(
-                ("change_field", "change_operation", "change_value")
-            )
+            # 정책 레버가 아닌 지표를 바꿔달라는 요청이다(공원 면적 등).
+            # ★ 프로토콜 오류로 터뜨리지 않는다. 우리 계약이 깨진 게 아니라
+            # 지원하지 않는 요청일 뿐이고, 사용자에게는 "지원하지 않습니다"가
+            # 정확한 답이다. 터뜨리면 오류 화면이 나간다.
+            # 실측: "공원 면적을 500㎡ 늘려줘"에서 라우터가 후보에는
+            # park_area_within_500m를 두고 changes에는 green_ratio를 지어냈다.
+            intent = "unsupported"
+            resolution = "unsupported"
+            candidate_fields = []
+            requested_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            lookup_all = False
+            excluded_scope = False
+        else:
+            candidate_fields = []
+            if not changes and not unresolved:
+                unresolved.extend(
+                    ("change_field", "change_operation", "change_value")
+                )
     elif intent == "lookup":
         if has_field_list_request:
             intent = "field_list"
@@ -1638,16 +1744,26 @@ def _raise_ollama_error(exc: Exception) -> None:
 def _ollama_chat(
     client: Any,
     messages: list[Any],
+    num_predict: int = ROUTER_NUM_PREDICT,
+    format_schema: Any = None,
 ) -> Any:
+    """Ollama 호출. 기본은 라우터 스키마.
+
+    ★ 스키마를 벗기면 안 된다. format을 None으로 두고 자유 생성을 시켰더니
+    qwen3:4b가 사고 과정("Okay, let's see. The user is asking...")을 통째로
+    답변에 실어 보냈다. think=False로도 막히지 않는다. 형식을 강제하는 것이
+    이 구조에서 딴소리를 막는 유일한 수단이다.
+    """
+
     try:
         return client.chat(
             model=MODEL_NAME,
             messages=messages,
-            format=ROUTER_OUTPUT_SCHEMA,
+            format=ROUTER_OUTPUT_SCHEMA if format_schema is None else format_schema,
             think=False,
             options={
                 "temperature": 0,
-                "num_predict": ROUTER_NUM_PREDICT,
+                "num_predict": num_predict,
             },
             keep_alive=MODEL_KEEP_ALIVE,
         )
@@ -1823,6 +1939,53 @@ def _allowed_content_numbers(
             and math.isfinite(float(confidence))
         ):
             allowed.append(float(confidence) * 100)
+    if tool_name == "rank_policies":
+        # 정책별 적용 내역을 %로 인용할 수 있게 환산값도 허용한다.
+        # _collect_tool_numbers가 원본 비율은 이미 담았다.
+        policies = tool_result.get("policies")
+        if isinstance(policies, list):
+            for policy in policies:
+                if not isinstance(policy, Mapping):
+                    continue
+                requested_delta = policy.get("delta")
+                if (
+                    "ratio" in str(policy.get("feature"))
+                    and isinstance(requested_delta, Real)
+                    and not isinstance(requested_delta, bool)
+                    and math.isfinite(float(requested_delta))
+                ):
+                    allowed.append(float(requested_delta) * 100)
+                applied = policy.get("applied")
+                if not isinstance(applied, Mapping):
+                    continue
+                for feature, values in applied.items():
+                    if not isinstance(values, Mapping):
+                        continue
+                    before = values.get("before")
+                    after = values.get("after")
+                    if (
+                        not isinstance(before, Real)
+                        or isinstance(before, bool)
+                        or not isinstance(after, Real)
+                        or isinstance(after, bool)
+                    ):
+                        continue
+                    before_number = float(before)
+                    after_number = float(after)
+                    if not (
+                        math.isfinite(before_number)
+                        and math.isfinite(after_number)
+                    ):
+                        continue
+                    allowed.append(after_number - before_number)
+                    if "ratio" in str(feature):
+                        allowed.extend(
+                            (
+                                before_number * 100,
+                                after_number * 100,
+                                (after_number - before_number) * 100,
+                            )
+                        )
     return allowed
 
 
@@ -2212,6 +2375,59 @@ def _validate_simulation_answer(
     _validate_supported_numbers(answer, "run_simulation", tool_result)
 
 
+def _validate_doc_search_answer(
+    answer: str,
+    tool_result: Mapping[str, Any],
+) -> None:
+    """문서 답변 검증. 숫자는 보지 않고 '근거를 벗어났는지'만 본다."""
+
+    if len(answer.strip()) < 10:
+        raise ChatProtocolError("문서 답변이 너무 짧습니다.")
+
+    hits = tool_result.get("hits")
+    if not isinstance(hits, list) or not hits:
+        raise ChatProtocolError("문서 발췌 없이 답변이 생성되었습니다.")
+
+    # 출처는 답변 본문에 넣지 않으므로 여기서 문자열로 찾지 않는다.
+    # 모델이 실제 발췌 문서 중 하나를 골랐는지는 DOC_ANSWER_SCHEMA의 enum과
+    # generate_doc_answer의 source 검사가 이미 보장한다.
+
+
+def _validate_policy_ranking_answer(
+    answer: str,
+    tool_result: Mapping[str, Any],
+) -> None:
+    """정책 순위 답변이 Tool 결과 밖으로 나가지 않았는지 확인한다."""
+
+    _validate_supported_numbers(answer, "rank_policies", tool_result)
+
+    grid_id = tool_result.get("grid_id")
+    gu_name = tool_result.get("gu_name")
+    if isinstance(grid_id, str) and grid_id and grid_id not in answer:
+        raise ChatProtocolError("정책 순위 답변에 격자 ID가 없습니다.")
+    if isinstance(gu_name, str) and gu_name and gu_name not in answer:
+        raise ChatProtocolError("정책 순위 답변에 구 이름이 없습니다.")
+
+    scenario_note = tool_result.get("scenario_note")
+    if isinstance(scenario_note, str) and scenario_note not in answer:
+        # 시나리오 크기를 바꾸면 순위가 바뀐다. 크기가 빠진 순위표는 근거 없는 표다.
+        raise ChatProtocolError("정책 순위 답변에 시나리오 크기가 없습니다.")
+
+    policies = tool_result.get("policies")
+    if not isinstance(policies, list):
+        raise ChatProtocolError("정책 순위 Tool 결과에 정책 목록이 없습니다.")
+    for policy in policies:
+        if not isinstance(policy, Mapping):
+            continue
+        label = policy.get("label")
+        # 상태와 무관하게 정책 4개가 모두 답변에 나와야 한다. 빠지면 사용자는
+        # 그 정책을 검토했는지조차 알 수 없다.
+        if isinstance(label, str) and label and label not in answer:
+            raise ChatProtocolError(
+                f"정책 순위 답변에서 정책이 누락되었습니다: {label}"
+            )
+
+
 def _tool_error_answer(tool_result: Mapping[str, Any]) -> str | None:
     if tool_result.get("success") is True:
         return None
@@ -2442,14 +2658,380 @@ def format_simulation_answer(tool_result: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# no_room은 여기에 없다. "왜 못 넣었나"가 정책마다 달라서 한 문장으로 묶을 수 없다.
+_POLICY_STATE_SUMMARIES = {
+    POLICY_STATE_INDISTINGUISHABLE: "차이가 동률 밴드보다 작아 순위를 구분할 수 없습니다",
+    POLICY_STATE_UNRESPONSIVE: "모델이 반응하지 않아 판단할 수 없습니다",
+    POLICY_STATE_ADVERSE: "예상 변화가 온도 상승 방향이라 추천하지 않습니다",
+}
+
+
+def _policy_applied_text(policy: Mapping[str, Any]) -> str:
+    """정책 하나의 실제 적용 내역을 사람이 읽을 수 있게 만든다."""
+
+    applied = policy.get("applied")
+    if not isinstance(applied, Mapping) or not applied:
+        return "실제로 반영된 변경이 없습니다"
+    parts: list[str] = []
+    for feature, values in applied.items():
+        if not isinstance(values, Mapping):
+            continue
+        before = values.get("before")
+        after = values.get("after")
+        if (
+            not isinstance(before, Real)
+            or isinstance(before, bool)
+            or not isinstance(after, Real)
+            or isinstance(after, bool)
+        ):
+            continue
+        spec = GRID_FIELD_SPECS.get(str(feature), {})
+        label = str(spec.get("label") or feature)
+        if spec.get("is_ratio") is True:
+            parts.append(
+                f"{label} {float(before) * 100:.2f}% → {float(after) * 100:.2f}%"
+            )
+        else:
+            parts.append(f"{label} {float(before):.4f} → {float(after):.4f}")
+    return ", ".join(parts) if parts else "실제로 반영된 변경이 없습니다"
+
+
+def _policy_no_room_line(policy: Mapping[str, Any]) -> str:
+    """★ '못 넣었다'와 '효과가 없다'를 구분해서 말한다.
+
+    막힌 이유가 두 가지인데 사용자에게는 전혀 다른 뜻이다.
+    - direct  : 그 지표 자체를 요청한 만큼 넣을 자리가 없다
+    - coupled : 지표는 다 들어갔고, 연동돼 따라가야 할 불투수면이 하한에 걸렸다
+    둘을 뭉뚱그리면 녹지가 전부 반영된 격자에도 "녹지를 못 넣었다"고 답하게 된다.
+    """
+
+    label = str(policy.get("label"))
+    applied_text = _policy_applied_text(policy)
+    reason = policy.get("clip_reason")
+    if reason == "coupled":
+        head = (
+            f"{label}: 요청한 만큼 반영됐지만 연동된 불투수면이 하한에 걸려 "
+            "함께 내려가지 못했습니다"
+        )
+    else:
+        head = f"{label}: 이 격자엔 요청한 만큼 시행할 여지가 없습니다"
+
+    delta_c = policy.get("delta_c")
+    tail = ""
+    if (
+        isinstance(delta_c, Real)
+        and not isinstance(delta_c, bool)
+        and math.isfinite(float(delta_c))
+    ):
+        # 부분 적용만으로도 변화량이 클 수 있다. 숨기면 "효과 없음"으로 읽힌다.
+        tail = (
+            f" 실제 적용 결과의 예상 변화량은 {float(delta_c):.3f}℃지만, "
+            "요청과 다른 크기라 순위에서 제외했습니다."
+        )
+    return f"{head} ({applied_text}).{tail}"
+
+
+def format_policy_ranking_answer(tool_result: Mapping[str, Any]) -> str:
+    """정책 순위 Tool 결과만 사용해 결정적인 한국어 답변을 만든다."""
+
+    error_answer = _tool_error_answer(tool_result)
+    if error_answer is not None:
+        return error_answer
+
+    grid_id = tool_result.get("grid_id")
+    gu_name = tool_result.get("gu_name")
+    if (
+        not isinstance(grid_id, str)
+        or not grid_id
+        or not isinstance(gu_name, str)
+        or not gu_name
+    ):
+        raise ChatProtocolError("정책 순위 Tool 결과의 지역 정보가 올바르지 않습니다.")
+
+    scenario_note = tool_result.get("scenario_note")
+    if not isinstance(scenario_note, str) or not scenario_note:
+        raise ChatProtocolError(
+            "정책 순위 Tool 결과의 시나리오 정보가 올바르지 않습니다."
+        )
+    tie_band = tool_result.get("tie_band_c")
+    if (
+        not isinstance(tie_band, Real)
+        or isinstance(tie_band, bool)
+        or not math.isfinite(float(tie_band))
+    ):
+        raise ChatProtocolError("정책 순위 Tool 결과의 동률 밴드가 올바르지 않습니다.")
+
+    policies = tool_result.get("policies")
+    if not isinstance(policies, list) or not policies:
+        raise ChatProtocolError("정책 순위 Tool 결과에 정책 목록이 없습니다.")
+
+    grouped: dict[str, list[str]] = {}
+    ranked: list[tuple[int, str, float]] = []
+    no_room: list[Mapping[str, Any]] = []
+    for policy in policies:
+        if not isinstance(policy, Mapping):
+            raise ChatProtocolError(
+                "정책 순위 Tool 결과의 정책 항목이 올바르지 않습니다."
+            )
+        label = policy.get("label")
+        state = policy.get("state")
+        if not isinstance(label, str) or not label or not isinstance(state, str):
+            raise ChatProtocolError(
+                "정책 순위 Tool 결과의 정책 이름 또는 상태가 올바르지 않습니다."
+            )
+        if state == POLICY_STATE_RANKED:
+            rank = policy.get("rank")
+            delta_c = policy.get("delta_c")
+            if (
+                not isinstance(rank, int)
+                or isinstance(rank, bool)
+                or rank < 1
+                or not isinstance(delta_c, Real)
+                or isinstance(delta_c, bool)
+                or not math.isfinite(float(delta_c))
+            ):
+                raise ChatProtocolError(
+                    "순위에 오른 정책의 순위 또는 예상 변화량이 올바르지 않습니다."
+                )
+            ranked.append((rank, label, float(delta_c)))
+            continue
+        if state == POLICY_STATE_NO_ROOM:
+            no_room.append(policy)
+            continue
+        if state not in _POLICY_STATE_SUMMARIES:
+            raise ChatProtocolError(f"정책 순위 Tool 결과의 상태가 미지원입니다: {state}")
+        grouped.setdefault(state, []).append(label)
+    ranked.sort(key=lambda item: item[0])
+
+    lines = [f"{grid_id} 격자({gu_name})의 정책 우선순위입니다. ({scenario_note})"]
+    if ranked:
+        for rank, label, delta_c in ranked:
+            lines.append(f"{rank}위 {label}: {delta_c:.3f}℃")
+    else:
+        lines.append("순위를 매길 수 있는 정책이 없습니다.")
+    # ★ 나머지를 상태별로 나눠 말한다. "효과 없음"과 "시행 여지 없음"을 한 문장으로
+    # 묶으면 정책 담당자에게 정반대 뜻으로 전달된다.
+    for policy in no_room:
+        lines.append(_policy_no_room_line(policy))
+    for state, summary in _POLICY_STATE_SUMMARIES.items():
+        labels = grouped.get(state)
+        if labels:
+            lines.append(f"{' · '.join(labels)}: {summary}.")
+    lines.append(
+        f"동률 밴드는 {float(tie_band):.3f}℃이며, 이보다 작은 차이는 "
+        "모델 추정오차 안이라 순위로 구분하지 않습니다."
+    )
+    lines.append(
+        "표시된 값은 절대온도가 아니라 두 모델 예측의 차이인 "
+        "모델 기준 예상 변화량입니다."
+    )
+
+    limitations = tool_result.get("limitations")
+    if isinstance(limitations, list):
+        lines.extend(str(limitation) for limitation in limitations)
+    return "\n".join(lines)
+
+
+DOC_ANSWER_SYSTEM = (
+    """너는 아래 문서 발췌만 근거로 사용자 질문에 답한다.
+
+지켜야 할 것
+- 발췌에 있는 내용만 쓴다. 지어내지 않는다.
+- 발췌로 답할 수 없으면 answer에 "제공된 문서에서 관련 내용을 찾지 못했습니다."라고 쓴다.
+- 수치를 인용하면 "문서 기준"임을 함께 밝힌다. 문서 수치는 작성 시점 값이라 현재와 다를 수 있다.
+- 사고 과정과 영어 문장을 쓰지 않는다.
+
+★ answer에는 위 발췌 본문에서 읽은 내용만 넣는다. 이 지시문의 문장을 복사하지 않는다."""
+)
+# 답변에도 스키마를 씌운다. 자유 생성으로 두면 4b가 사고 과정을 그대로 뱉는다.
+DOC_ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {
+            "type": "string",
+            # ★ description을 "한국어 3~5문장" 같은 명사구로 쓰지 말 것.
+            # 4b가 그 문구를 값으로 그대로 복사한다(실측: "한국어로 3~5개의 완성 문장").
+            # minLength는 쓰지 않는다. llama.cpp 문법 생성에서 출력이 중간에
+            # 잘려 JSON 파싱이 깨지는 경우가 있었다. 길이 검사는 파이썬에서 한다.
+            "description": "발췌에서 읽은 사실을 서술한 한국어 문장들",
+        },
+        "source": {
+            "type": "string",
+            "description": "근거가 된 발췌의 문서 파일 이름",
+        },
+    },
+    "required": ["answer", "source"],
+}
+# 답변 생성이 확률적이라 드물게 엉뚱한 값을 채운다(실측: 질문을 그대로 되뱉거나
+# source에 "발췌 1, 발췌 2"를 적음). 67개 전체 실행에서만 나오고 단독 5회로는
+# 재현되지 않았다. 재현 안 되는 실패는 원인을 못 잡으므로 두 겹으로 막는다.
+DOC_ANSWER_MAX_ATTEMPTS = 2
+
+
+def _doc_answer_schema(tool_result: Mapping[str, Any]) -> dict[str, Any]:
+    """실제 발췌 문서 이름만 source로 쓸 수 있게 스키마를 좁힌다.
+
+    enum을 걸면 "발췌 1, 발췌 2" 같은 값이 문법적으로 불가능해진다.
+    프롬프트로 부탁하는 것보다 형식으로 막는 쪽이 확실하다.
+    """
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "answer": dict(DOC_ANSWER_SCHEMA["properties"]["answer"]),
+            "source": dict(DOC_ANSWER_SCHEMA["properties"]["source"]),
+        },
+        "required": ["answer", "source"],
+    }
+    hits = tool_result.get("hits")
+    if isinstance(hits, list):
+        docs = sorted(
+            {
+                str(hit["doc"])
+                for hit in hits
+                if isinstance(hit, Mapping) and hit.get("doc")
+            }
+        )
+        if docs:
+            schema["properties"]["source"]["enum"] = docs
+    return schema
+
+
+def _doc_answer_is_degenerate(answer: str, question: str) -> bool:
+    """질문을 되뱉었거나 알맹이가 없는 답인지 본다."""
+
+    compact_answer = re.sub(r"\s+", "", answer)
+    compact_question = re.sub(r"\s+", "", question or "")
+    if len(compact_answer) < 20:
+        return True
+    return bool(compact_question) and compact_answer in compact_question
+# ④만 Ollama를 두 번 부른다. ①②③은 파이썬이 문장을 조립하지만 문서 답변은
+# 발췌를 사람 말로 풀어야 하기 때문이다. 라우터와 별개의 짧은 프롬프트를 쓰므로
+# 라우터 예산(여유 911토큰)과는 무관하다.
+DOC_ANSWER_NUM_PREDICT = 512
+
+
+def _doc_answer_prompt(tool_result: Mapping[str, Any]) -> str:
+    hits = tool_result.get("hits")
+    if not isinstance(hits, list) or not hits:
+        raise ChatProtocolError("문서 발췌가 없습니다.")
+    parts = []
+    for index, hit in enumerate(hits, start=1):
+        if not isinstance(hit, Mapping):
+            raise ChatProtocolError("문서 발췌 형식이 올바르지 않습니다.")
+        parts.append(f"[발췌 {index}] {hit.get('text', '')}")
+    question = tool_result.get("question") or ""
+    return "\n\n".join(parts) + f"\n\n질문: {question}"
+
+
+def generate_doc_answer(
+    client: Any,
+    tool_result: Mapping[str, Any],
+    metrics: dict[str, Any] | None = None,
+) -> str:
+    """발췌를 근거로 LLM이 문장을 쓴다. ①②③과 달리 파이썬이 쓰지 않는다."""
+
+    base_messages = [
+        {"role": "system", "content": DOC_ANSWER_SYSTEM},
+        {"role": "user", "content": _doc_answer_prompt(tool_result)},
+    ]
+    messages = list(base_messages)
+    schema = _doc_answer_schema(tool_result)
+    question = str(tool_result.get("question") or "")
+
+    answer = ""
+    source = ""
+    last_error = "문서 답변을 생성하지 못했습니다."
+    started = time.perf_counter()
+    try:
+        for attempt in range(1, DOC_ANSWER_MAX_ATTEMPTS + 1):
+            if metrics is not None:
+                metrics["ollama_call_count"] += 1
+                metrics["doc_answer_attempts"] = attempt
+            response = _ollama_chat(
+                client,
+                messages,
+                num_predict=DOC_ANSWER_NUM_PREDICT,
+                format_schema=schema,
+            )
+            raw = _message_content(_response_message(response)).strip()
+            if not raw:
+                last_error = "문서 답변이 비어 있습니다."
+                continue
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                last_error = "문서 답변이 약속한 형식이 아닙니다."
+                continue
+            if not isinstance(payload, Mapping):
+                last_error = "문서 답변이 객체가 아닙니다."
+                continue
+            candidate = str(payload.get("answer") or "").strip()
+            if _doc_answer_is_degenerate(candidate, question):
+                # 생성이 확률적이라 같은 입력으로 다시 뽑으면 대개 정상이 나온다.
+                # 실패한 답을 메시지에 남긴다. 남기지 않으면 E2E에서만 재현되는
+                # 실패를 진단할 방법이 없다.
+                last_error = (
+                    "문서 답변이 질문을 되풀이했거나 내용이 없습니다: "
+                    f"{candidate[:120]!r}"
+                )
+                # ★ 같은 입력으로 그냥 다시 부르면 소용없다. 실측에서 두 번 다
+                # 글자 하나까지 같은 답이 나왔다. 무엇이 틀렸는지 대화에 넣어야
+                # 입력이 달라지고 다른 답이 나온다.
+                messages = base_messages + [
+                    {"role": "assistant", "content": raw},
+                    {
+                        "role": "user",
+                        "content": (
+                            "answer에 질문 문장을 그대로 옮겼다. 질문을 반복하지 말고 "
+                            "위 발췌 본문에서 읽은 사실만으로 다시 작성하라."
+                        ),
+                    },
+                ]
+                continue
+            answer = candidate
+            source = str(payload.get("source") or "").strip()
+            break
+    finally:
+        if metrics is not None:
+            metrics["llm_answer_seconds"] = round(time.perf_counter() - started, 6)
+    if not answer:
+        raise ChatProtocolError(last_error)
+    # ★ 출처는 화면에 내보내지 않는다. 사용자에게 파일 이름은 의미가 없다.
+    # 다만 모델이 출처를 대게 하는 것 자체는 유지한다. 발췌를 실제로 읽었는지
+    # 확인하는 유일한 신호이고, 아래 _validate_doc_search_answer가 그것으로
+    # 환각을 잡는다. 검증에는 쓰고 표시만 뺀다.
+    if not source:
+        raise ChatProtocolError("문서 답변이 근거 문서를 대지 않았습니다.")
+
+    limitations = tool_result.get("limitations")
+    if isinstance(limitations, list):
+        answer = "\n".join([answer, *(str(item) for item in limitations)])
+    return answer
+
+
 def _format_tool_answer(
     tool_name: str,
     tool_result: Mapping[str, Any],
+    client: Any | None = None,
+    metrics: dict[str, Any] | None = None,
 ) -> str:
     if tool_name == "get_grid_data":
         return format_grid_data_answer(tool_result)
     if tool_name == "run_simulation":
         return format_simulation_answer(tool_result)
+    if tool_name == "rank_policies":
+        return format_policy_ranking_answer(tool_result)
+    if tool_name == "search_docs":
+        # ★ 여기가 ④의 구조 변경 지점이다. 원래 이 함수에는 client가 없었고,
+        # client는 _run_chat_with_client 안에만 있었다. 발췌를 사람 말로 풀려면
+        # LLM이 필요하므로 인자로 받아 내려온다.
+        error_answer = _tool_error_answer(tool_result)
+        if error_answer is not None:
+            return error_answer
+        if client is None:
+            raise ChatProtocolError("문서 답변 생성에는 LLM 클라이언트가 필요합니다.")
+        return generate_doc_answer(client, tool_result, metrics)
     raise ChatProtocolError(f"답변 formatter를 지원하지 않는 도구입니다: {tool_name}")
 
 
@@ -2471,6 +3053,14 @@ def _validate_final_answer(
         _validate_grid_answer(answer, tool_result)
     elif tool_name == "run_simulation":
         _validate_simulation_answer(answer, tool_result)
+    elif tool_name == "rank_policies":
+        _validate_policy_ranking_answer(answer, tool_result)
+    elif tool_name == "search_docs":
+        # ★ 숫자 검증기를 걸지 않는다. 문서 인용문에는 Tool 반환값에서 유도할 수
+        # 없는 숫자(작성 시점 R², 격자 수 등)가 섞여 있어 무조건 실패로 걸린다.
+        # 위에서 이미 돌린 _validate_no_reasoning_trace는 유지한다. ④는 LLM이
+        # 직접 문장을 쓰는 유일한 경로라 추론 누출 검사가 오히려 더 필요하다.
+        _validate_doc_search_answer(answer, tool_result)
     else:
         raise ChatProtocolError(
             f"최종 답변 검증을 지원하지 않는 도구입니다: {tool_name}"
@@ -2777,6 +3367,15 @@ def _run_chat_with_client(
             )
             assumptions = []
             preparation_error = None
+        elif normalized_request.intent == "policy_ranking":
+            # rank_policies는 grid_id만 받는다. 시나리오 크기는 Tool 안에 있다.
+            assumptions = []
+            preparation_error = None
+        elif normalized_request.intent == "doc_search":
+            # 문서 검색은 격자와 무관하다. grid_id를 넘기지 말고 질문을 넘긴다.
+            tool_arguments = {"question": router_message}
+            assumptions = []
+            preparation_error = None
         else:
             tool_arguments, assumptions, preparation_error = (
                 _prepare_simulation_arguments(
@@ -2808,7 +3407,12 @@ def _run_chat_with_client(
 
     formatter_started = time.perf_counter()
     try:
-        final_content = _format_tool_answer(tool_name, tool_result)
+        final_content = _format_tool_answer(
+            tool_name,
+            tool_result,
+            client=client,
+            metrics=metrics,
+        )
         if tool_result.get("success") is True:
             final_content = _append_assumptions(final_content, assumptions)
     finally:

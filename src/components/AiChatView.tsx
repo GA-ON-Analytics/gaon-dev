@@ -54,6 +54,16 @@ const SIMULATION_EXAMPLES = [
   'NDVI를 0.05 높이면 어떻게 돼?',
   '불투수율을 3%p 낮추고 알베도를 0.02 높여줘'
 ] as const;
+const POLICY_RANKING_EXAMPLES = [
+  '어떤 정책이 가장 효과적이야?',
+  '뭐부터 해야 해?',
+  '정책 우선순위 알려줘'
+] as const;
+const DOC_SEARCH_EXAMPLES = [
+  'NDVI가 무슨 뜻이야?',
+  '녹지율 데이터 출처가 어디야?',
+  '왜 딥러닝을 안 쓰고 다른 방법을 골랐어?'
+] as const;
 const FEATURE_CATEGORY_ORDER = ['건축', '토지·용도', '녹지·피복', '공원·지형'] as const;
 
 export interface AiChatViewProps {
@@ -627,19 +637,34 @@ function AiUsageGuide({
           </div>
         </section>
 
-        <section className="gdpGuideComing">
-          <div>
+        <section className="gdpGuideFeature">
+          <div className="gdpGuideFeatureTitle">
             <span>기능 3</span>
             <strong>정책 우선순위 추천</strong>
           </div>
-          <b>준비 중</b>
+          <p>정책 4개를 이 격자에 적용해 효과가 큰 순서로 알려드립니다.</p>
+          <div className="gdpGuideExamples">
+            {POLICY_RANKING_EXAMPLES.map((question) => (
+              <button type="button" key={question} onClick={() => onExample(question)}>
+                {question}
+              </button>
+            ))}
+          </div>
         </section>
-        <section className="gdpGuideComing">
-          <div>
+
+        <section className="gdpGuideFeature">
+          <div className="gdpGuideFeatureTitle">
             <span>기능 4</span>
             <strong>모델·데이터 문서 질문</strong>
           </div>
-          <b>준비 중</b>
+          <p>지표의 뜻과 계산식, 모델 학습 방법과 한계를 문서에서 찾아 답합니다.</p>
+          <div className="gdpGuideExamples">
+            {DOC_SEARCH_EXAMPLES.map((question) => (
+              <button type="button" key={question} onClick={() => onExample(question)}>
+                {question}
+              </button>
+            ))}
+          </div>
         </section>
 
         <details className="gdpGuideCatalog">
