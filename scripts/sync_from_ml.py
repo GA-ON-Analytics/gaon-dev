@@ -21,6 +21,7 @@ ML 레포 위치는 --ml-root, 환경변수 GAON_ML_ROOT, 기본값 ``../GAON`` 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -84,13 +85,41 @@ def resolve_ml_root(explicit: str | None) -> Path:
 
 
 def _digest(path: Path) -> str:
-    import hashlib
-
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
     return digest.hexdigest()[:12]
+
+
+# 줄바꿈만 다른 것을 "다름"으로 세지 않기 위해 정규화해 비교할 확장자.
+# geojson·csv·json은 텍스트라 git이 체크아웃할 때 LF를 CRLF로 바꾼다.
+_TEXT_SUFFIXES = {".geojson", ".json", ".csv", ".md", ".txt"}
+
+
+def _text_digest(path: Path) -> str:
+    """CRLF/LF 차이를 무시한 내용 지문.
+
+    ★ 원시 바이트로 비교하면 안 된다. 이 레포는 core.autocrlf=true이고
+    .gitattributes가 없어서, git이 LF로 저장한 파일을 Windows 워킹트리에
+    CRLF로 풀어놓는다. ML 산출물은 LF 그대로다.
+
+    그래서 내용이 완전히 같아도 바이트는 항상 달라진다. 실제로 그 때문에
+    "53건 다름"이라는 거짓 보고가 나왔고, 필요 없는 복사를 한 뒤 git이
+    다시 LF로 정규화해 커밋에는 1건만 남았다.
+    """
+
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block.replace(b"\r\n", b"\n"))
+    return digest.hexdigest()[:12]
+
+
+def _content_digest(path: Path) -> str:
+    if path.suffix.lower() in _TEXT_SUFFIXES:
+        return _text_digest(path)
+    return _digest(path)
 
 
 def _mb(path: Path) -> float:
@@ -102,7 +131,7 @@ def compare(source: Path, target: Path) -> str:
         return "ML에 없음"
     if not target.exists():
         return "앱에 없음 → 새로 복사"
-    return "동일" if _digest(source) == _digest(target) else "다름 → 갱신"
+    return "동일" if _content_digest(source) == _content_digest(target) else "다름 → 갱신"
 
 
 def build_map_overview(source: Path, target: Path, dry_run: bool) -> str:
@@ -141,13 +170,19 @@ def build_map_overview(source: Path, target: Path, dry_run: bool) -> str:
     if data.get("crs"):
         slim["crs"] = data["crs"]
 
+    payload = json.dumps(slim, ensure_ascii=False, separators=(",", ":"))
+
+    # 내용이 같으면 다시 쓰지 않는다. 40MB 파일을 매번 새로 쓰면 내용이
+    # 그대로여도 git이 변경으로 잡아 diff가 지저분해진다.
+    if target.exists():
+        current = target.read_text(encoding="utf-8").replace("\r\n", "\n")
+        if current == payload:
+            return f"이미 최신 ({len(features):,}건)"
+
     if dry_run:
         return f"생성 예정 ({len(features):,}건, 속성 {len(MAP_KEEP_PROPERTIES)}개)"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(slim, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    target.write_text(payload, encoding="utf-8")
     return f"생성 완료 ({len(features):,}건, {_mb(target):.1f}MB)"
 
 
