@@ -20,7 +20,36 @@ from backend.llm_poc.tools import ALLOWED_GRID_FIELDS, GRID_FIELD_SPECS
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = Path(__file__).resolve().parent
-PUBLIC_DIR = ROOT_DIR / "public"
+
+
+def _resolve_public_dir() -> Path:
+    """정적 데이터가 실제로 있는 폴더를 고른다.
+
+    ★ 개발과 배포의 폴더 이름이 다르다.
+
+        로컬     ROOT/public/dashboard      (레포 원본)
+        배포     ROOT/dist/dashboard        (CD가 dist/만 rsync 한다)
+
+    이걸 ``public``으로 고정하면 배포 서버에서 ``/api/dashboard/*``와
+    ``/api/seoul-gu``가 전부 404가 된다. 프론트에 정적 폴백이 있어 대부분은
+    가려지지만, **구 단위만은 폴백 대상이 다른 파일**이라 실제로 깨진다.
+
+        /api/seoul-gu          →  seoul_gu_level.geojson  (분석값 포함)
+        폴백 /seoul_gu.geojson  →  경계만 (gu_priority_score 없음)
+
+    그래서 배포 사이트에서 격자 크기 '구'가 "데이터 준비중"으로 나왔다.
+    """
+
+    candidate = ROOT_DIR / "public"
+    if (candidate / "dashboard").is_dir():
+        return candidate
+    fallback = ROOT_DIR / "dist"
+    if (fallback / "dashboard").is_dir():
+        return fallback
+    return candidate
+
+
+PUBLIC_DIR = _resolve_public_dir()
 LEGACY_SEOUL_GU_PATH = PUBLIC_DIR / "seoul_gu.geojson"
 DASHBOARD_DIR = PUBLIC_DIR / "dashboard"
 DASHBOARD_MANIFEST_PATH = DASHBOARD_DIR / "manifest.csv"
