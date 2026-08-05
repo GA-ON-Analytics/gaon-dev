@@ -385,8 +385,19 @@ function formatAnyProperty(properties: GridAnalysisProperties | null, key: keyof
   return String(value);
 }
 
-function formatLayerProperty(properties: GridAnalysisProperties | null, layer: LayerKey) {
-  return formatAnyProperty(properties, layer);
+function formatLayerProperty(
+  properties: GridAnalysisProperties | null,
+  layer: LayerKey,
+  isDistrictOverview = false
+) {
+  // 구 단위는 같은 개념을 다른 필드에 담는다(DISTRICT_FIELD_BY_LAYER).
+  // 지도 색칠·툴팁은 이미 별칭을 쓰는데 지표 목록만 빠져 있었다.
+  return formatAnyProperty(
+    properties,
+    (isDistrictOverview
+      ? districtFieldOf(layer)
+      : layer) as keyof GridAnalysisProperties
+  );
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -1058,6 +1069,22 @@ export function MapDashboard() {
     selectedDistrict,
     selectedGridResolution
   ]);
+
+  // ★ 반드시 위 '구 전환' useEffect 뒤에 선언한다. 위 effect가 구를 바꿀 때마다
+  //   selectedGridProperties를 null로 지우므로, 클릭 핸들러에서 값을 넣으면
+  //   곧바로 덮어써진다(실제로 그래서 지표 목록이 계속 '선택 전'이었다).
+  //   상태를 직접 넣는 대신 선택된 구에서 파생시켜 순서 문제를 없앤다.
+  useEffect(() => {
+    if (!isGuResolution(selectedGridResolution)) return;
+    if (!geoJson || selectedDistrict === ALL_DISTRICTS) return;
+
+    const feature = geoJson.features.find(
+      (candidate) => getDistrictName(candidate as Feature<Geometry>) === selectedDistrict
+    );
+    if (feature) {
+      setSelectedGridProperties(getFeatureProperties(feature as Feature<Geometry>));
+    }
+  }, [geoJson, selectedDistrict, selectedGridResolution]);
 
   const center = selectedDistrictMeta?.center ?? DEFAULT_CENTER;
   const targetZoom = isAllDistricts ? SEOUL_OVERVIEW_ZOOM : DISTRICT_DETAIL_ZOOM;
@@ -1786,7 +1813,11 @@ function SearchPanel({
               </span>
               <b>
                 {selectedGridProperties
-                  ? formatLayerProperty(selectedGridProperties, indicator.key)
+                  ? formatLayerProperty(
+                      selectedGridProperties,
+                      indicator.key,
+                      isGuResolution(selectedGridResolution)
+                    )
                   : '선택 전'}
               </b>
             </button>
