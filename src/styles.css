@@ -3656,12 +3656,10 @@ td {
 /* 범례는 rail의 맨 아래로 민다. 전에는 검색 패널 바로 다음에 붙어서, 패널이
    길수록 범례가 화면 중앙 쪽으로 올라갔다. rail이 뷰포트 하단까지 닿아 있으므로
    margin-top:auto만으로 화면 좌하단에 붙는다.
-   width는 rail(--left-panel-width)이 좁은 폭에서 calc(100vw - 24px)까지 커지므로
-   따로 묶는다. 안 묶으면 범례가 화면을 가로질러 지도를 덮는다. */
+   폭은 따로 묶지 않는다. .mapLegend{width:100%}가 rail(--left-panel-width)을
+   그대로 채워 대시보드 패널과 가로 길이가 같아진다. */
 .leftOverlayRail .mapLegend {
   margin-top: auto;
-  align-self: flex-start;
-  width: min(340px, calc(100vw - 24px));
 }
 
 .mapLegend {
