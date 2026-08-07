@@ -17,6 +17,52 @@ export type PolicyOptionKey =
   | 'impervious_ratio_reduction'
   | 'park_area_expansion';
 
+/** 100m 격자에서만 제공하는 표준 정책 시나리오 식별자. */
+export type PolicyId =
+  | 'paved_to_green'
+  | 'road_to_green'
+  | 'vegetation_improvement'
+  | 'small_park'
+  | 'green_roof'
+  | 'cool_roof';
+
+/** 현재 정책 프리셋이 직접 변경할 수 있는 실제 RandomForest 입력 변수. */
+export type PolicyFeature =
+  | 'green_ratio'
+  | 'impervious_ratio'
+  | 'road_ratio'
+  | 'ndvi'
+  | 'albedo'
+  | 'building_ratio';
+
+export interface PolicyMinimumRequirement {
+  feature: PolicyFeature;
+  minimum: number;
+  unavailableMessage: string;
+}
+
+export interface PolicyPreset {
+  id: PolicyId;
+  name: string;
+  description: string;
+  changes: Readonly<Partial<Record<PolicyFeature, number>>>;
+  affectedFeatures: readonly PolicyFeature[];
+  assumptions: readonly string[];
+  sourceUrl: string;
+  scenarioLabel: string;
+  minimumRequirements: readonly PolicyMinimumRequirement[];
+}
+
+export interface PolicyApplicability {
+  applicable: boolean;
+  reason?: string;
+}
+
+export interface FeatureRange {
+  min: number;
+  max: number;
+}
+
 export interface SimulationScenarioParameters {
   green_ratio_delta: number;
   impervious_ratio_delta: number;

@@ -5,9 +5,18 @@ import {
   simulateBatchGridPolicy,
   simulateGridPolicy
 } from '../services/api';
+import {
+  POLICY_FEATURE_LABELS,
+  POLICY_PRESETS,
+  policyApplicability,
+  policySimulationRequest
+} from '../config/policyPresets';
 import type {
+  FeatureRange,
   GridAnalysisProperties,
   GridResolution,
+  PolicyFeature,
+  PolicyPreset,
   SimulationChangedFeature,
   SimulationResponse
 } from '../types/dashboard';
@@ -742,7 +751,6 @@ function readMemberIds(raw: unknown): string[] {
 // 지금까지는 '적용'을 눌러야 요청량이 잘렸는지 알 수 있었다. 학습범위는 /api/features가
 // 이미 min/max로 주므로(백엔드 변경 불필요) 끌기 전에 한계를 트랙에 칠해 보여준다.
 // 앱 수명 동안 안 바뀌는 값이라 모듈에 한 번만 캐시한다.
-type FeatureRange = { min: number; max: number };
 let featureRangesCache: Record<string, FeatureRange> | null = null;
 let featureRangesPromise: Promise<Record<string, FeatureRange>> | null = null;
 
@@ -894,6 +902,251 @@ function formatDelta(delta: number): string {
   return `${sign}${Math.abs(delta).toFixed(3)}℃`;
 }
 
+function formatAnomaly(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '−' : '';
+  return `${sign}${Math.abs(value).toFixed(3)}℃`;
+}
+
+function isPolicyRatio(feature: PolicyFeature): boolean {
+  return (
+    feature === 'green_ratio' ||
+    feature === 'impervious_ratio' ||
+    feature === 'road_ratio' ||
+    feature === 'building_ratio'
+  );
+}
+
+function formatPolicyDelta(feature: PolicyFeature, delta: number): string {
+  const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
+  const value = Math.abs(delta);
+  return isPolicyRatio(feature)
+    ? `${sign}${(value * 100).toFixed(0)}%p`
+    : `${sign}${value.toFixed(2)}`;
+}
+
+function formatPolicyFeatureValue(feature: PolicyFeature, value: number): string {
+  return isPolicyRatio(feature) ? `${(value * 100).toFixed(1)}%` : value.toFixed(3);
+}
+
+function PolicyPresetSection({
+  gridId,
+  properties,
+  featureRanges
+}: {
+  gridId: string;
+  properties: GridAnalysisProperties;
+  featureRanges: Record<string, FeatureRange> | null;
+}) {
+  const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyPreset['id'] | null>(null);
+  const [policyResult, setPolicyResult] = useState<SimulationResponse | null>(null);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [policyWarnings, setPolicyWarnings] = useState<string[]>([]);
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const requestVersionRef = useRef(0);
+
+  // 격자가 바뀌면 이전 정책 선택과 비동기 결과를 모두 무효화한다.
+  useEffect(() => {
+    requestVersionRef.current += 1;
+    setSelectedPolicyId(null);
+    setPolicyResult(null);
+    setPolicyError(null);
+    setPolicyWarnings([]);
+    setPolicyLoading(false);
+  }, [gridId]);
+
+  const selectedPolicy: PolicyPreset | null =
+    POLICY_PRESETS.find((preset) => preset.id === selectedPolicyId) ?? null;
+  const selectedApplicability = selectedPolicy
+    ? policyApplicability(selectedPolicy, properties, featureRanges)
+    : null;
+
+  function selectPolicy(preset: PolicyPreset) {
+    requestVersionRef.current += 1;
+    setSelectedPolicyId(preset.id);
+    setPolicyResult(null);
+    setPolicyError(null);
+    setPolicyWarnings([]);
+    setPolicyLoading(false);
+  }
+
+  async function runPolicy() {
+    if (!selectedPolicy) return;
+    const applicability = policyApplicability(selectedPolicy, properties, featureRanges);
+    if (!applicability.applicable) {
+      setPolicyError(applicability.reason ?? '현재 격자에는 이 정책을 적용할 수 없습니다.');
+      return;
+    }
+
+    const requestVersion = ++requestVersionRef.current;
+    setPolicyLoading(true);
+    setPolicyResult(null);
+    setPolicyError(null);
+    setPolicyWarnings([]);
+
+    try {
+      const response = await simulateGridPolicy(
+        policySimulationRequest(gridId, selectedPolicy)
+      );
+      if (requestVersionRef.current !== requestVersion) return;
+      if (typeof response.error === 'string') {
+        setPolicyError('선택한 격자를 정책 시뮬레이션할 수 없어요.');
+        return;
+      }
+      setPolicyResult(response);
+      setPolicyWarnings(response.warnings ?? []);
+    } catch (requestError) {
+      if (requestVersionRef.current !== requestVersion) return;
+      if (requestError instanceof ApiRequestError && requestError.status === 501) {
+        setPolicyError('ML 모델이 아직 연결되지 않았어요.');
+      } else {
+        setPolicyError('정책 시뮬레이션 요청 중 오류가 났어요. 백엔드 서버를 확인해 주세요.');
+      }
+    } finally {
+      if (requestVersionRef.current === requestVersion) setPolicyLoading(false);
+    }
+  }
+
+  const appliedFeatures = selectedPolicy && policyResult
+    ? selectedPolicy.affectedFeatures.flatMap((feature) => {
+        const values = policyResult.changed_features[feature];
+        return values ? [{ feature, values }] : [];
+      })
+    : [];
+
+  return (
+    <section className="policyPresetSection" aria-labelledby="policy-preset-title">
+      <div className="sec-title" id="policy-preset-title">
+        정책 시나리오
+        <InfoTip
+          align="left"
+          down
+          text={
+            '100m 격자 하나에 동일한 강도의 정책을 적용해 비교합니다.\n\n' +
+            '정책별 변화량은 실제 효과를 보장하는 값이 아니라 비교용 표준 시나리오입니다.'
+          }
+        />
+      </div>
+      <p className="policyPresetNotice">
+        정책 변수 변화량은 100m 격자에서 정책을 동일한 조건으로 비교하기 위한 표준 시나리오입니다.
+      </p>
+
+      <div className="policyPresetGrid">
+        {POLICY_PRESETS.map((preset) => {
+          const applicability = policyApplicability(preset, properties, featureRanges);
+          const selected = preset.id === selectedPolicyId;
+          return (
+            <button
+              type="button"
+              className={`policyPresetButton${selected ? ' selected' : ''}`}
+              aria-pressed={selected}
+              onClick={() => selectPolicy(preset)}
+              key={preset.id}
+            >
+              <span>{preset.name}</span>
+              {!applicability.applicable && <small>적용 불가</small>}
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedPolicy && selectedApplicability && (
+        <div className="policyPresetDetail">
+          <div className="policyPresetHeading">
+            <div>
+              <strong>{selectedPolicy.name}</strong>
+              <span>{selectedPolicy.scenarioLabel}</span>
+            </div>
+            <a href={selectedPolicy.sourceUrl} target="_blank" rel="noreferrer">
+              정책 사례 보기
+            </a>
+          </div>
+          <p className="policyPresetDescription">{selectedPolicy.description}</p>
+
+          <div className="policyChangeList">
+            <span className="policyListTitle">변경 조건</span>
+            {selectedPolicy.affectedFeatures.map((feature) => (
+              <div key={feature}>
+                <span>{POLICY_FEATURE_LABELS[feature]}</span>
+                <b>{formatPolicyDelta(feature, selectedPolicy.changes[feature] ?? 0)}</b>
+              </div>
+            ))}
+          </div>
+
+          <details className="policyAssumptions">
+            <summary>시나리오 가정</summary>
+            <ul>
+              {selectedPolicy.assumptions.map((assumption) => (
+                <li key={assumption}>{assumption}</li>
+              ))}
+            </ul>
+          </details>
+          <p className="policySourceNote">
+            정책 사례는 실제 시행 사례를 보여주며, 위 변화량 자체의 근거를 뜻하지 않습니다.
+          </p>
+
+          {!selectedApplicability.applicable && (
+            <p className="gdpNote policyUnavailable">{selectedApplicability.reason}</p>
+          )}
+
+          <button
+            className="policyRunButton"
+            type="button"
+            onClick={runPolicy}
+            disabled={!selectedApplicability.applicable || policyLoading}
+          >
+            {policyLoading ? '계산 중…' : '정책 시뮬레이션 실행'}
+          </button>
+        </div>
+      )}
+
+      {policyResult && (
+        <div className="policyResult" aria-live="polite">
+          <div className="policyResultTitle">정책 시뮬레이션 결과</div>
+          <dl className="policyAnomalyRows">
+            <div>
+              <dt>현재 열 이상치</dt>
+              <dd>{formatAnomaly(policyResult.before_anomaly)}</dd>
+            </div>
+            <div>
+              <dt>정책 적용 후 열 이상치</dt>
+              <dd>{formatAnomaly(policyResult.after_anomaly)}</dd>
+            </div>
+            <div className="policyDeltaRow">
+              <dt>예상 변화</dt>
+              <dd>{formatDelta(policyResult.delta_c)}</dd>
+            </div>
+          </dl>
+          <p className="policyAnomalyNote">
+            열 이상치는 같은 날짜·같은 자치구의 평균 지표면온도 대비 편차입니다.
+          </p>
+
+          <div className="policyAppliedFeatures">
+            <span className="policyListTitle">모델에 실제 적용된 값</span>
+            {appliedFeatures.length > 0 ? (
+              appliedFeatures.map(({ feature, values }) => (
+                <div key={feature}>
+                  <span>{POLICY_FEATURE_LABELS[feature]}</span>
+                  <b>
+                    {formatPolicyFeatureValue(feature, values.before)} →{' '}
+                    {formatPolicyFeatureValue(feature, values.after)}
+                  </b>
+                </div>
+              ))
+            ) : (
+              <p>모델에 반영된 feature 변화가 없습니다.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {policyWarnings.map((warning) => (
+        <p className="gdpNote sc-note" key={warning}>{warning}</p>
+      ))}
+      {policyError && <p className="gdpNote gdpSimError">{policyError}</p>}
+    </section>
+  );
+}
+
 function SimulationCard({
   properties,
   selectedGridResolution,
@@ -1013,7 +1266,17 @@ function SimulationCard({
 
   return (
     <div className="card gdpSim">
-      <div className="sec-title">
+      {selectedGridResolution === '100m' && (
+        <PolicyPresetSection
+          key={gridId}
+          gridId={gridId}
+          properties={properties}
+          featureRanges={featureRanges}
+        />
+      )}
+      <div
+        className={`sec-title${selectedGridResolution === '100m' ? ' manualSimulationTitle' : ''}`}
+      >
         직접 시뮬레이션
         <InfoTip
           align="left"
