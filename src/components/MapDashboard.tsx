@@ -1917,13 +1917,15 @@ export function MapDashboard() {
           onLayerChange={setSelectedLayer}
           onGridSearch={handleGridSearch}
         />
-        {/* 검색 패널과 범례를 같은 세로 rail에 배치해 높이가 부족해도 서로 겹치지 않는다. */}
+        {/* 범례는 rail의 맨 아래로 민다(CSS margin-top:auto). rail이 이미 뷰포트
+            하단까지 닿아 있어 결과적으로 화면 좌하단에 붙고, rail 안에 있으니
+            검색 패널이 범례를 덮지 않는다. rail 밖으로 빼면 좌하단에는 가지만
+            데스크톱에서 왼쪽 패널 위로 겹친다. */}
         {!loading && !error && (
           <MapLegend
             layer={selectedLayer}
             layerLabel={getLayerLabel(selectedLayer)}
             colorOf={colorByLayerValue}
-            neutralColor={NEUTRAL_COLOR}
             quantile={isGuMode ? districtQuantiles : null}
           />
         )}
