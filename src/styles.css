@@ -2155,6 +2155,98 @@ td {
 .gridDetailSidePanel .gdpIncomplete .gdpNote{ margin-top:8px; background:transparent; }
 
 /* 직접 시뮬레이션 (목업 detail-panel-mockup.html 이식) */
+.gridDetailSidePanel .policyPresetSection{ margin-bottom:20px; }
+.gridDetailSidePanel .policyPresetNotice{
+  margin:-6px 0 13px; color:var(--gdp-ink3); font-size:11px; line-height:1.5;
+}
+.gridDetailSidePanel .policyPresetGrid{
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
+}
+.gridDetailSidePanel .policyPresetButton{
+  min-height:54px; padding:9px 10px; border:1px solid var(--gdp-line); border-radius:11px;
+  background:var(--gdp-card); color:var(--gdp-ink2); cursor:pointer;
+  display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:3px;
+  text-align:left; font:inherit;
+}
+.gridDetailSidePanel .policyPresetButton span{ font-size:11.5px; line-height:1.35; font-weight:700; }
+.gridDetailSidePanel .policyPresetButton small{ color:var(--gdp-danger); font-size:9.5px; font-weight:700; }
+.gridDetailSidePanel .policyPresetButton:hover{ border-color:var(--gdp-green); background:var(--gdp-green-soft); }
+.gridDetailSidePanel .policyPresetButton.selected{
+  border-color:var(--gdp-green); background:var(--gdp-green-soft); color:var(--gdp-green);
+  box-shadow:inset 0 0 0 1px var(--gdp-green);
+}
+.gridDetailSidePanel .policyPresetButton:focus-visible{
+  outline:2px solid var(--gdp-green); outline-offset:2px;
+}
+.gridDetailSidePanel .policyPresetDetail{
+  margin-top:11px; padding:13px; border:1px solid var(--gdp-line); border-radius:12px;
+  background:var(--gdp-sub);
+}
+.gridDetailSidePanel .policyPresetHeading{
+  display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+}
+.gridDetailSidePanel .policyPresetHeading > div{ display:flex; flex-direction:column; gap:3px; }
+.gridDetailSidePanel .policyPresetHeading strong{ font-size:13px; line-height:1.35; }
+.gridDetailSidePanel .policyPresetHeading span{ color:var(--gdp-ink3); font-size:10px; line-height:1.4; }
+.gridDetailSidePanel .policyPresetHeading a{
+  color:var(--gdp-green); font-size:10px; font-weight:700; white-space:nowrap;
+  text-underline-offset:2px;
+}
+.gridDetailSidePanel .policyPresetDescription{
+  margin:10px 0 12px; color:var(--gdp-ink2); font-size:11px; line-height:1.5;
+}
+.gridDetailSidePanel .policyChangeList,
+.gridDetailSidePanel .policyAppliedFeatures{ display:flex; flex-direction:column; gap:7px; }
+.gridDetailSidePanel .policyListTitle{
+  color:var(--gdp-ink3); font-size:10px; font-weight:700; letter-spacing:.02em;
+}
+.gridDetailSidePanel .policyChangeList > div,
+.gridDetailSidePanel .policyAppliedFeatures > div{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  color:var(--gdp-ink2); font-size:11px;
+}
+.gridDetailSidePanel .policyChangeList b,
+.gridDetailSidePanel .policyAppliedFeatures b{
+  color:var(--gdp-green); font-size:11.5px; font-variant-numeric:tabular-nums;
+}
+.gridDetailSidePanel .policyAssumptions{ margin-top:11px; color:var(--gdp-ink3); font-size:10px; }
+.gridDetailSidePanel .policyAssumptions summary{ cursor:pointer; font-weight:700; }
+.gridDetailSidePanel .policyAssumptions ul{ margin:7px 0 0; padding-left:17px; line-height:1.55; }
+.gridDetailSidePanel .policySourceNote{
+  margin:9px 0 0; color:var(--gdp-ink3); font-size:9.5px; line-height:1.45;
+}
+.gridDetailSidePanel .policyUnavailable{ color:var(--gdp-danger); background:var(--gdp-danger-soft); }
+.gridDetailSidePanel .policyRunButton{
+  width:100%; margin-top:12px; padding:11px; border:0; border-radius:11px;
+  background:var(--gdp-green); color:#fff; cursor:pointer; font-size:12px; font-weight:700;
+}
+.gridDetailSidePanel .policyRunButton:hover{ background:var(--gdp-green2); }
+.gridDetailSidePanel .policyRunButton:disabled{ opacity:.5; cursor:not-allowed; }
+.gridDetailSidePanel .policyResult{
+  margin-top:12px; padding:13px; border-radius:12px; background:var(--gdp-green-soft);
+}
+.gridDetailSidePanel .policyResultTitle{ color:var(--gdp-green); font-size:12px; font-weight:800; }
+.gridDetailSidePanel .policyAnomalyRows{ display:flex; flex-direction:column; margin:10px 0 0; }
+.gridDetailSidePanel .policyAnomalyRows > div{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:7px 0; border-bottom:1px solid rgba(31,81,33,.12);
+}
+.gridDetailSidePanel .policyAnomalyRows > div:last-child{ border-bottom:0; }
+.gridDetailSidePanel .policyAnomalyRows dt{ color:var(--gdp-ink2); font-size:11px; }
+.gridDetailSidePanel .policyAnomalyRows dd{
+  margin:0; color:var(--gdp-ink); font-size:12px; font-weight:800; font-variant-numeric:tabular-nums;
+}
+.gridDetailSidePanel .policyAnomalyRows .policyDeltaRow dd{ color:var(--gdp-green); font-size:16px; }
+.gridDetailSidePanel .policyAnomalyNote{
+  margin:7px 0 12px; color:var(--gdp-ink3); font-size:9.5px; line-height:1.45;
+}
+.gridDetailSidePanel .policyAppliedFeatures{
+  padding-top:10px; border-top:1px solid rgba(31,81,33,.12);
+}
+.gridDetailSidePanel .policyAppliedFeatures p{ margin:0; color:var(--gdp-ink3); font-size:10px; }
+.gridDetailSidePanel .manualSimulationTitle{
+  margin-top:20px; padding-top:18px; border-top:1px solid var(--gdp-line);
+}
 .gridDetailSidePanel .sim-ctrl{ display:flex; flex-direction:column; gap:16px; margin-bottom:16px; }
 .gridDetailSidePanel .sr-top{ display:flex; justify-content:space-between; font-size:13px; margin-bottom:9px; }
 .gridDetailSidePanel .sr-lab{ color:var(--gdp-ink2); }
