@@ -1,0 +1,4691 @@
+{
+  "version": 2,
+  "dongs": [
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "개포1동",
+      "center": [
+        37.478241,
+        127.062293
+      ],
+      "grid_count": 149,
+      "center_grid_id": "11680_00929"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "개포2동",
+      "center": [
+        37.482765,
+        127.067339
+      ],
+      "grid_count": 227,
+      "center_grid_id": "11680_01252"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "개포3동",
+      "center": [
+        37.494895,
+        127.08086
+      ],
+      "grid_count": 139,
+      "center_grid_id": "11680_02149"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "개포4동",
+      "center": [
+        37.475926,
+        127.054397
+      ],
+      "grid_count": 176,
+      "center_grid_id": "11680_00729"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "논현1동",
+      "center": [
+        37.511883,
+        127.026714
+      ],
+      "grid_count": 133,
+      "center_grid_id": "11680_03034"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "논현2동",
+      "center": [
+        37.515529,
+        127.036055
+      ],
+      "grid_count": 146,
+      "center_grid_id": "11680_03218"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "대치1동",
+      "center": [
+        37.493531,
+        127.059381
+      ],
+      "grid_count": 82,
+      "center_grid_id": "11680_01998"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "대치2동",
+      "center": [
+        37.500453,
+        127.06499
+      ],
+      "grid_count": 192,
+      "center_grid_id": "11680_02493"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "대치4동",
+      "center": [
+        37.501628,
+        127.054806
+      ],
+      "grid_count": 70,
+      "center_grid_id": "11680_02536"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "도곡1동",
+      "center": [
+        37.488928,
+        127.040741
+      ],
+      "grid_count": 112,
+      "center_grid_id": "11680_01640"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "도곡2동",
+      "center": [
+        37.488084,
+        127.048676
+      ],
+      "grid_count": 103,
+      "center_grid_id": "11680_01579"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "삼성1동",
+      "center": [
+        37.516063,
+        127.059822
+      ],
+      "grid_count": 198,
+      "center_grid_id": "11680_03239"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "삼성2동",
+      "center": [
+        37.511523,
+        127.049083
+      ],
+      "grid_count": 125,
+      "center_grid_id": "11680_03054"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "세곡동",
+      "center": [
+        37.470883,
+        127.104003
+      ],
+      "grid_count": 681,
+      "center_grid_id": "11680_00417"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "수서동",
+      "center": [
+        37.485555,
+        127.101074
+      ],
+      "grid_count": 163,
+      "center_grid_id": "11680_01416"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "신사동",
+      "center": [
+        37.525866,
+        127.018342
+      ],
+      "grid_count": 230,
+      "center_grid_id": "11680_03768"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "압구정동",
+      "center": [
+        37.527696,
+        127.033787
+      ],
+      "grid_count": 252,
+      "center_grid_id": "11680_03875"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "역삼1동",
+      "center": [
+        37.499996,
+        127.036589
+      ],
+      "grid_count": 248,
+      "center_grid_id": "11680_02468"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "역삼2동",
+      "center": [
+        37.498437,
+        127.045208
+      ],
+      "grid_count": 113,
+      "center_grid_id": "11680_02364"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "일원1동",
+      "center": [
+        37.493502,
+        127.090864
+      ],
+      "grid_count": 102,
+      "center_grid_id": "11680_02026"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "일원본동",
+      "center": [
+        37.482838,
+        127.08377
+      ],
+      "grid_count": 235,
+      "center_grid_id": "11680_01267"
+    },
+    {
+      "district": "강남구",
+      "sig_code": "11680",
+      "dong_name": "청담동",
+      "center": [
+        37.525921,
+        127.052403
+      ],
+      "grid_count": 245,
+      "center_grid_id": "11680_03747"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "강일동",
+      "center": [
+        37.569097,
+        127.171712
+      ],
+      "grid_count": 247,
+      "center_grid_id": "11740_02395"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "고덕1동",
+      "center": [
+        37.563126,
+        127.150712
+      ],
+      "grid_count": 155,
+      "center_grid_id": "11740_02064"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "고덕2동",
+      "center": [
+        37.565571,
+        127.163122
+      ],
+      "grid_count": 252,
+      "center_grid_id": "11740_02228"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "길동",
+      "center": [
+        37.539786,
+        127.147357
+      ],
+      "grid_count": 168,
+      "center_grid_id": "11740_00593"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "둔촌1동",
+      "center": [
+        37.522894,
+        127.139561
+      ],
+      "grid_count": 101,
+      "center_grid_id": "11740_00068"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "둔촌2동",
+      "center": [
+        37.531338,
+        127.147902
+      ],
+      "grid_count": 167,
+      "center_grid_id": "11740_00318"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "명일1동",
+      "center": [
+        37.549712,
+        127.145645
+      ],
+      "grid_count": 65,
+      "center_grid_id": "11740_01226"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "명일2동",
+      "center": [
+        37.548392,
+        127.155861
+      ],
+      "grid_count": 89,
+      "center_grid_id": "11740_01106"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "상일1동",
+      "center": [
+        37.550675,
+        127.1649
+      ],
+      "grid_count": 186,
+      "center_grid_id": "11740_01309"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "상일2동",
+      "center": [
+        37.551997,
+        127.177643
+      ],
+      "grid_count": 112,
+      "center_grid_id": "11740_01384"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "성내1동",
+      "center": [
+        37.528541,
+        127.12507
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11740_00207"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "성내2동",
+      "center": [
+        37.534331,
+        127.12798
+      ],
+      "grid_count": 67,
+      "center_grid_id": "11740_00421"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "성내3동",
+      "center": [
+        37.528461,
+        127.133866
+      ],
+      "grid_count": 68,
+      "center_grid_id": "11740_00215"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "암사1동",
+      "center": [
+        37.551037,
+        127.135449
+      ],
+      "grid_count": 79,
+      "center_grid_id": "11740_01282"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "암사2동",
+      "center": [
+        37.557716,
+        127.12235
+      ],
+      "grid_count": 235,
+      "center_grid_id": "11740_01697"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "암사3동",
+      "center": [
+        37.561749,
+        127.138815
+      ],
+      "grid_count": 181,
+      "center_grid_id": "11740_02000"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "천호1동",
+      "center": [
+        37.546527,
+        127.137189
+      ],
+      "grid_count": 68,
+      "center_grid_id": "11740_00962"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "천호2동",
+      "center": [
+        37.544222,
+        127.121746
+      ],
+      "grid_count": 199,
+      "center_grid_id": "11740_00779"
+    },
+    {
+      "district": "강동구",
+      "sig_code": "11740",
+      "dong_name": "천호3동",
+      "center": [
+        37.539313,
+        127.134379
+      ],
+      "grid_count": 54,
+      "center_grid_id": "11740_00581"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "미아동",
+      "center": [
+        37.629053,
+        127.026856
+      ],
+      "grid_count": 89,
+      "center_grid_id": "11305_00665"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "번1동",
+      "center": [
+        37.638504,
+        127.030562
+      ],
+      "grid_count": 71,
+      "center_grid_id": "11305_01133"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "번2동",
+      "center": [
+        37.627744,
+        127.034758
+      ],
+      "grid_count": 96,
+      "center_grid_id": "11305_00627"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "번3동",
+      "center": [
+        37.623152,
+        127.043116
+      ],
+      "grid_count": 125,
+      "center_grid_id": "11305_00371"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "삼각산동",
+      "center": [
+        37.616402,
+        127.015231
+      ],
+      "grid_count": 68,
+      "center_grid_id": "11305_00116"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "삼양동",
+      "center": [
+        37.624506,
+        127.014489
+      ],
+      "grid_count": 95,
+      "center_grid_id": "11305_00428"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "송중동",
+      "center": [
+        37.617452,
+        127.033702
+      ],
+      "grid_count": 118,
+      "center_grid_id": "11305_00161"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "송천동",
+      "center": [
+        37.618176,
+        127.024647
+      ],
+      "grid_count": 93,
+      "center_grid_id": "11305_00184"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "수유1동",
+      "center": [
+        37.629457,
+        127.01041
+      ],
+      "grid_count": 173,
+      "center_grid_id": "11305_00695"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "수유2동",
+      "center": [
+        37.645238,
+        127.019415
+      ],
+      "grid_count": 65,
+      "center_grid_id": "11305_01472"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "수유3동",
+      "center": [
+        37.641207,
+        127.023934
+      ],
+      "grid_count": 78,
+      "center_grid_id": "11305_01259"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "우이동",
+      "center": [
+        37.661732,
+        126.999202
+      ],
+      "grid_count": 1103,
+      "center_grid_id": "11305_02009"
+    },
+    {
+      "district": "강북구",
+      "sig_code": "11305",
+      "dong_name": "인수동",
+      "center": [
+        37.63671,
+        127.003521
+      ],
+      "grid_count": 302,
+      "center_grid_id": "11305_01062"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "가양1동",
+      "center": [
+        37.572064,
+        126.835807
+      ],
+      "grid_count": 508,
+      "center_grid_id": "11500_03287"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "가양2동",
+      "center": [
+        37.567291,
+        126.856145
+      ],
+      "grid_count": 92,
+      "center_grid_id": "11500_02888"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "가양3동",
+      "center": [
+        37.56068,
+        126.861402
+      ],
+      "grid_count": 47,
+      "center_grid_id": "11500_02321"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "공항동",
+      "center": [
+        37.555738,
+        126.794274
+      ],
+      "grid_count": 1126,
+      "center_grid_id": "11500_01784"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "등촌1동",
+      "center": [
+        37.556165,
+        126.859757
+      ],
+      "grid_count": 66,
+      "center_grid_id": "11500_01842"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "등촌2동",
+      "center": [
+        37.544901,
+        126.859812
+      ],
+      "grid_count": 97,
+      "center_grid_id": "11500_00721"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "등촌3동",
+      "center": [
+        37.561501,
+        126.846683
+      ],
+      "grid_count": 106,
+      "center_grid_id": "11500_02396"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "발산1동",
+      "center": [
+        37.550293,
+        126.825286
+      ],
+      "grid_count": 299,
+      "center_grid_id": "11500_01209"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "방화1동",
+      "center": [
+        37.568558,
+        126.815481
+      ],
+      "grid_count": 157,
+      "center_grid_id": "11500_03002"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "방화2동",
+      "center": [
+        37.582915,
+        126.803309
+      ],
+      "grid_count": 660,
+      "center_grid_id": "11500_03879"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "방화3동",
+      "center": [
+        37.583419,
+        126.818194
+      ],
+      "grid_count": 261,
+      "center_grid_id": "11500_03893"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "염창동",
+      "center": [
+        37.555841,
+        126.871068
+      ],
+      "grid_count": 195,
+      "center_grid_id": "11500_01852"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "우장산동",
+      "center": [
+        37.55021,
+        126.841675
+      ],
+      "grid_count": 125,
+      "center_grid_id": "11500_01223"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "화곡1동",
+      "center": [
+        37.533837,
+        126.841421
+      ],
+      "grid_count": 134,
+      "center_grid_id": "11500_00149"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "화곡2동",
+      "center": [
+        37.532493,
+        126.854851
+      ],
+      "grid_count": 49,
+      "center_grid_id": "11500_00135"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "화곡3동",
+      "center": [
+        37.544311,
+        126.834873
+      ],
+      "grid_count": 56,
+      "center_grid_id": "11500_00635"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "화곡4동",
+      "center": [
+        37.536078,
+        126.858248
+      ],
+      "grid_count": 90,
+      "center_grid_id": "11500_00245"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "화곡6동",
+      "center": [
+        37.551606,
+        126.85129
+      ],
+      "grid_count": 104,
+      "center_grid_id": "11500_01330"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "화곡8동",
+      "center": [
+        37.533697,
+        126.848589
+      ],
+      "grid_count": 62,
+      "center_grid_id": "11500_00155"
+    },
+    {
+      "district": "강서구",
+      "sig_code": "11500",
+      "dong_name": "화곡본동",
+      "center": [
+        37.543018,
+        126.84798
+      ],
+      "grid_count": 97,
+      "center_grid_id": "11500_00522"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "낙성대동",
+      "center": [
+        37.468325,
+        126.961124
+      ],
+      "grid_count": 224,
+      "center_grid_id": "11620_01625"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "난곡동",
+      "center": [
+        37.470415,
+        126.920422
+      ],
+      "grid_count": 100,
+      "center_grid_id": "11620_01795"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "난향동",
+      "center": [
+        37.461694,
+        126.918116
+      ],
+      "grid_count": 90,
+      "center_grid_id": "11620_01109"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "남현동",
+      "center": [
+        37.463372,
+        126.97747
+      ],
+      "grid_count": 355,
+      "center_grid_id": "11620_01228"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "대학동",
+      "center": [
+        37.453562,
+        126.950523
+      ],
+      "grid_count": 873,
+      "center_grid_id": "11620_00586"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "미성동",
+      "center": [
+        37.474338,
+        126.916259
+      ],
+      "grid_count": 146,
+      "center_grid_id": "11620_02056"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "보라매동",
+      "center": [
+        37.490439,
+        126.932117
+      ],
+      "grid_count": 84,
+      "center_grid_id": "11620_03020"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "삼성동",
+      "center": [
+        37.461433,
+        126.930688
+      ],
+      "grid_count": 264,
+      "center_grid_id": "11620_01053"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "서림동",
+      "center": [
+        37.472764,
+        126.941319
+      ],
+      "grid_count": 93,
+      "center_grid_id": "11620_01948"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "서원동",
+      "center": [
+        37.480379,
+        126.932776
+      ],
+      "grid_count": 64,
+      "center_grid_id": "11620_02487"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "성현동",
+      "center": [
+        37.489976,
+        126.950809
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11620_03000"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "신림동",
+      "center": [
+        37.487138,
+        126.926784
+      ],
+      "grid_count": 57,
+      "center_grid_id": "11620_02850"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "신사동",
+      "center": [
+        37.486155,
+        126.919166
+      ],
+      "grid_count": 66,
+      "center_grid_id": "11620_02798"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "신원동",
+      "center": [
+        37.478992,
+        126.927121
+      ],
+      "grid_count": 57,
+      "center_grid_id": "11620_02363"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "은천동",
+      "center": [
+        37.487587,
+        126.940666
+      ],
+      "grid_count": 79,
+      "center_grid_id": "11620_02862"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "인헌동",
+      "center": [
+        37.469265,
+        126.96791
+      ],
+      "grid_count": 108,
+      "center_grid_id": "11620_01700"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "조원동",
+      "center": [
+        37.483113,
+        126.906527
+      ],
+      "grid_count": 82,
+      "center_grid_id": "11620_02633"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "중앙동",
+      "center": [
+        37.484059,
+        126.951405
+      ],
+      "grid_count": 38,
+      "center_grid_id": "11620_02672"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "청룡동",
+      "center": [
+        37.477726,
+        126.944681
+      ],
+      "grid_count": 119,
+      "center_grid_id": "11620_02323"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "청림동",
+      "center": [
+        37.489407,
+        126.958935
+      ],
+      "grid_count": 37,
+      "center_grid_id": "11620_02965"
+    },
+    {
+      "district": "관악구",
+      "sig_code": "11620",
+      "dong_name": "행운동",
+      "center": [
+        37.480519,
+        126.962195
+      ],
+      "grid_count": 79,
+      "center_grid_id": "11620_02513"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "광장동",
+      "center": [
+        37.547544,
+        127.10443
+      ],
+      "grid_count": 262,
+      "center_grid_id": "11215_00956"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "구의1동",
+      "center": [
+        37.540953,
+        127.085125
+      ],
+      "grid_count": 58,
+      "center_grid_id": "11215_00656"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "구의2동",
+      "center": [
+        37.551803,
+        127.095264
+      ],
+      "grid_count": 137,
+      "center_grid_id": "11215_01144"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "구의3동",
+      "center": [
+        37.53653,
+        127.095337
+      ],
+      "grid_count": 106,
+      "center_grid_id": "11215_00472"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "군자동",
+      "center": [
+        37.553522,
+        127.07377
+      ],
+      "grid_count": 83,
+      "center_grid_id": "11215_01204"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "능동",
+      "center": [
+        37.550846,
+        127.082255
+      ],
+      "grid_count": 112,
+      "center_grid_id": "11215_01094"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "자양1동",
+      "center": [
+        37.536429,
+        127.080071
+      ],
+      "grid_count": 57,
+      "center_grid_id": "11215_00459"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "자양2동",
+      "center": [
+        37.530161,
+        127.082386
+      ],
+      "grid_count": 178,
+      "center_grid_id": "11215_00214"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "자양3동",
+      "center": [
+        37.531464,
+        127.070477
+      ],
+      "grid_count": 120,
+      "center_grid_id": "11215_00271"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "자양4동",
+      "center": [
+        37.533872,
+        127.063048
+      ],
+      "grid_count": 135,
+      "center_grid_id": "11215_00334"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "중곡1동",
+      "center": [
+        37.562103,
+        127.077849
+      ],
+      "grid_count": 64,
+      "center_grid_id": "11215_01546"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "중곡2동",
+      "center": [
+        37.558529,
+        127.084484
+      ],
+      "grid_count": 55,
+      "center_grid_id": "11215_01442"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "중곡3동",
+      "center": [
+        37.567459,
+        127.081243
+      ],
+      "grid_count": 66,
+      "center_grid_id": "11215_01676"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "중곡4동",
+      "center": [
+        37.562996,
+        127.094884
+      ],
+      "grid_count": 243,
+      "center_grid_id": "11215_01561"
+    },
+    {
+      "district": "광진구",
+      "sig_code": "11215",
+      "dong_name": "화양동",
+      "center": [
+        37.543603,
+        127.073166
+      ],
+      "grid_count": 119,
+      "center_grid_id": "11215_00766"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "가리봉동",
+      "center": [
+        37.482921,
+        126.888082
+      ],
+      "grid_count": 52,
+      "center_grid_id": "11530_00334"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "개봉1동",
+      "center": [
+        37.500697,
+        126.851749
+      ],
+      "grid_count": 134,
+      "center_grid_id": "11530_01540"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "개봉2동",
+      "center": [
+        37.493024,
+        126.858011
+      ],
+      "grid_count": 81,
+      "center_grid_id": "11530_00975"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "개봉3동",
+      "center": [
+        37.486178,
+        126.85395
+      ],
+      "grid_count": 97,
+      "center_grid_id": "11530_00482"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "고척1동",
+      "center": [
+        37.500301,
+        126.863602
+      ],
+      "grid_count": 118,
+      "center_grid_id": "11530_01551"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "고척2동",
+      "center": [
+        37.505236,
+        126.854237
+      ],
+      "grid_count": 113,
+      "center_grid_id": "11530_01920"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "구로1동",
+      "center": [
+        37.493103,
+        126.873879
+      ],
+      "grid_count": 117,
+      "center_grid_id": "11530_00989"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "구로2동",
+      "center": [
+        37.495886,
+        126.878938
+      ],
+      "grid_count": 170,
+      "center_grid_id": "11530_01213"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "구로3동",
+      "center": [
+        37.485249,
+        126.894499
+      ],
+      "grid_count": 118,
+      "center_grid_id": "11530_00443"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "구로4동",
+      "center": [
+        37.491428,
+        126.889464
+      ],
+      "grid_count": 52,
+      "center_grid_id": "11530_00861"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "구로5동",
+      "center": [
+        37.502245,
+        126.887086
+      ],
+      "grid_count": 115,
+      "center_grid_id": "11530_01704"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "수궁동",
+      "center": [
+        37.498805,
+        126.825618
+      ],
+      "grid_count": 279,
+      "center_grid_id": "11530_01450"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "신도림동",
+      "center": [
+        37.510663,
+        126.883056
+      ],
+      "grid_count": 155,
+      "center_grid_id": "11530_02130"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "오류1동",
+      "center": [
+        37.497008,
+        126.842142
+      ],
+      "grid_count": 74,
+      "center_grid_id": "11530_01253"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "오류2동",
+      "center": [
+        37.483985,
+        126.836562
+      ],
+      "grid_count": 313,
+      "center_grid_id": "11530_00362"
+    },
+    {
+      "district": "구로구",
+      "sig_code": "11530",
+      "dong_name": "항동",
+      "center": [
+        37.481,
+        126.823671
+      ],
+      "grid_count": 153,
+      "center_grid_id": "11530_00214"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "가산동",
+      "center": [
+        37.475612,
+        126.883918
+      ],
+      "grid_count": 284,
+      "center_grid_id": "11545_01156"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "독산1동",
+      "center": [
+        37.465687,
+        126.891087
+      ],
+      "grid_count": 214,
+      "center_grid_id": "11545_00854"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "독산2동",
+      "center": [
+        37.463104,
+        126.904836
+      ],
+      "grid_count": 64,
+      "center_grid_id": "11545_00810"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "독산3동",
+      "center": [
+        37.47596,
+        126.905061
+      ],
+      "grid_count": 104,
+      "center_grid_id": "11545_01206"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "독산4동",
+      "center": [
+        37.46941,
+        126.90447
+      ],
+      "grid_count": 63,
+      "center_grid_id": "11545_00974"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "시흥1동",
+      "center": [
+        37.450928,
+        126.900189
+      ],
+      "grid_count": 161,
+      "center_grid_id": "11545_00382"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "시흥2동",
+      "center": [
+        37.450514,
+        126.920294
+      ],
+      "grid_count": 149,
+      "center_grid_id": "11545_00369"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "시흥3동",
+      "center": [
+        37.439758,
+        126.906032
+      ],
+      "grid_count": 133,
+      "center_grid_id": "11545_00081"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "시흥4동",
+      "center": [
+        37.459528,
+        126.909171
+      ],
+      "grid_count": 89,
+      "center_grid_id": "11545_00707"
+    },
+    {
+      "district": "금천구",
+      "sig_code": "11545",
+      "dong_name": "시흥5동",
+      "center": [
+        37.44844,
+        126.912581
+      ],
+      "grid_count": 136,
+      "center_grid_id": "11545_00302"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "공릉1동",
+      "center": [
+        37.623821,
+        127.072768
+      ],
+      "grid_count": 127,
+      "center_grid_id": "11350_00329"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "공릉2동",
+      "center": [
+        37.632181,
+        127.09261
+      ],
+      "grid_count": 721,
+      "center_grid_id": "11350_00853"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "상계10동",
+      "center": [
+        37.659829,
+        127.058611
+      ],
+      "grid_count": 86,
+      "center_grid_id": "11350_02260"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "상계1동",
+      "center": [
+        37.68316,
+        127.06652
+      ],
+      "grid_count": 564,
+      "center_grid_id": "11350_03312"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "상계2동",
+      "center": [
+        37.656256,
+        127.065801
+      ],
+      "grid_count": 57,
+      "center_grid_id": "11350_02125"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "상계3·4동",
+      "center": [
+        37.676436,
+        127.083321
+      ],
+      "grid_count": 538,
+      "center_grid_id": "11350_03020"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "상계5동",
+      "center": [
+        37.666181,
+        127.070825
+      ],
+      "grid_count": 91,
+      "center_grid_id": "11350_02544"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "상계6·7동",
+      "center": [
+        37.646773,
+        127.061484
+      ],
+      "grid_count": 154,
+      "center_grid_id": "11350_01766"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "상계8동",
+      "center": [
+        37.666126,
+        127.052995
+      ],
+      "grid_count": 73,
+      "center_grid_id": "11350_02528"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "상계9동",
+      "center": [
+        37.667053,
+        127.06231
+      ],
+      "grid_count": 73,
+      "center_grid_id": "11350_02577"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "월계1동",
+      "center": [
+        37.621952,
+        127.057926
+      ],
+      "grid_count": 128,
+      "center_grid_id": "11350_00219"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "월계2동",
+      "center": [
+        37.634512,
+        127.050954
+      ],
+      "grid_count": 218,
+      "center_grid_id": "11350_01001"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "월계3동",
+      "center": [
+        37.625032,
+        127.064837
+      ],
+      "grid_count": 115,
+      "center_grid_id": "11350_00372"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "중계1동",
+      "center": [
+        37.649527,
+        127.07375
+      ],
+      "grid_count": 62,
+      "center_grid_id": "11350_01881"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "중계2·3동",
+      "center": [
+        37.643629,
+        127.065872
+      ],
+      "grid_count": 95,
+      "center_grid_id": "11350_01599"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "중계4동",
+      "center": [
+        37.659468,
+        127.083334
+      ],
+      "grid_count": 156,
+      "center_grid_id": "11350_02246"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "중계본동",
+      "center": [
+        37.649116,
+        127.085123
+      ],
+      "grid_count": 223,
+      "center_grid_id": "11350_01857"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "하계1동",
+      "center": [
+        37.638257,
+        127.075522
+      ],
+      "grid_count": 155,
+      "center_grid_id": "11350_01265"
+    },
+    {
+      "district": "노원구",
+      "sig_code": "11350",
+      "dong_name": "하계2동",
+      "center": [
+        37.635067,
+        127.06478
+      ],
+      "grid_count": 49,
+      "center_grid_id": "11350_01075"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "도봉1동",
+      "center": [
+        37.685788,
+        127.027195
+      ],
+      "grid_count": 876,
+      "center_grid_id": "11320_01746"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "도봉2동",
+      "center": [
+        37.68165,
+        127.048101
+      ],
+      "grid_count": 125,
+      "center_grid_id": "11320_01567"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "방학1동",
+      "center": [
+        37.665195,
+        127.04337
+      ],
+      "grid_count": 107,
+      "center_grid_id": "11320_00986"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "방학2동",
+      "center": [
+        37.668294,
+        127.032257
+      ],
+      "grid_count": 114,
+      "center_grid_id": "11320_01099"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "방학3동",
+      "center": [
+        37.663296,
+        127.025237
+      ],
+      "grid_count": 203,
+      "center_grid_id": "11320_00904"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "쌍문1동",
+      "center": [
+        37.654353,
+        127.020432
+      ],
+      "grid_count": 127,
+      "center_grid_id": "11320_00545"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "쌍문2동",
+      "center": [
+        37.656593,
+        127.037427
+      ],
+      "grid_count": 58,
+      "center_grid_id": "11320_00634"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "쌍문3동",
+      "center": [
+        37.647066,
+        127.03069
+      ],
+      "grid_count": 56,
+      "center_grid_id": "11320_00262"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "쌍문4동",
+      "center": [
+        37.655667,
+        127.029516
+      ],
+      "grid_count": 56,
+      "center_grid_id": "11320_00628"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "창1동",
+      "center": [
+        37.645801,
+        127.042606
+      ],
+      "grid_count": 107,
+      "center_grid_id": "11320_00244"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "창2동",
+      "center": [
+        37.641773,
+        127.03696
+      ],
+      "grid_count": 75,
+      "center_grid_id": "11320_00114"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "창3동",
+      "center": [
+        37.637324,
+        127.041523
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11320_00047"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "창4동",
+      "center": [
+        37.651089,
+        127.05061
+      ],
+      "grid_count": 132,
+      "center_grid_id": "11320_00422"
+    },
+    {
+      "district": "도봉구",
+      "sig_code": "11320",
+      "dong_name": "창5동",
+      "center": [
+        37.656606,
+        127.042575
+      ],
+      "grid_count": 74,
+      "center_grid_id": "11320_00639"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "답십리1동",
+      "center": [
+        37.570338,
+        127.049869
+      ],
+      "grid_count": 86,
+      "center_grid_id": "11230_00224"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "답십리2동",
+      "center": [
+        37.569709,
+        127.06119
+      ],
+      "grid_count": 88,
+      "center_grid_id": "11230_00196"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "용신동",
+      "center": [
+        37.576218,
+        127.033942
+      ],
+      "grid_count": 181,
+      "center_grid_id": "11230_00493"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "이문1동",
+      "center": [
+        37.597637,
+        127.061392
+      ],
+      "grid_count": 105,
+      "center_grid_id": "11230_01386"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "이문2동",
+      "center": [
+        37.602878,
+        127.066653
+      ],
+      "grid_count": 85,
+      "center_grid_id": "11230_01495"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "장안1동",
+      "center": [
+        37.566428,
+        127.068082
+      ],
+      "grid_count": 147,
+      "center_grid_id": "11230_00102"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "장안2동",
+      "center": [
+        37.574697,
+        127.072158
+      ],
+      "grid_count": 109,
+      "center_grid_id": "11230_00430"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "전농1동",
+      "center": [
+        37.580482,
+        127.050389
+      ],
+      "grid_count": 111,
+      "center_grid_id": "11230_00748"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "전농2동",
+      "center": [
+        37.580958,
+        127.061124
+      ],
+      "grid_count": 98,
+      "center_grid_id": "11230_00757"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "제기동",
+      "center": [
+        37.584931,
+        127.036541
+      ],
+      "grid_count": 126,
+      "center_grid_id": "11230_00940"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "청량리동",
+      "center": [
+        37.588484,
+        127.04579
+      ],
+      "grid_count": 131,
+      "center_grid_id": "11230_01090"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "회기동",
+      "center": [
+        37.594202,
+        127.052234
+      ],
+      "grid_count": 78,
+      "center_grid_id": "11230_01278"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "휘경1동",
+      "center": [
+        37.591788,
+        127.062107
+      ],
+      "grid_count": 54,
+      "center_grid_id": "11230_01200"
+    },
+    {
+      "district": "동대문구",
+      "sig_code": "11230",
+      "dong_name": "휘경2동",
+      "center": [
+        37.586868,
+        127.065045
+      ],
+      "grid_count": 115,
+      "center_grid_id": "11230_01038"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "노량진1동",
+      "center": [
+        37.511634,
+        126.950411
+      ],
+      "grid_count": 175,
+      "center_grid_id": "11590_01597"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "노량진2동",
+      "center": [
+        37.510848,
+        126.937635
+      ],
+      "grid_count": 66,
+      "center_grid_id": "11590_01547"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "대방동",
+      "center": [
+        37.506946,
+        126.927814
+      ],
+      "grid_count": 167,
+      "center_grid_id": "11590_01363"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "사당1동",
+      "center": [
+        37.480242,
+        126.975834
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11590_00070"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "사당2동",
+      "center": [
+        37.495872,
+        126.973441
+      ],
+      "grid_count": 294,
+      "center_grid_id": "11590_00668"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "사당3동",
+      "center": [
+        37.489105,
+        126.970604
+      ],
+      "grid_count": 88,
+      "center_grid_id": "11590_00298"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "사당4동",
+      "center": [
+        37.480802,
+        126.969917
+      ],
+      "grid_count": 44,
+      "center_grid_id": "11590_00082"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "사당5동",
+      "center": [
+        37.486827,
+        126.965861
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11590_00208"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "상도1동",
+      "center": [
+        37.499072,
+        126.954699
+      ],
+      "grid_count": 158,
+      "center_grid_id": "11590_00894"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "상도2동",
+      "center": [
+        37.503422,
+        126.94164
+      ],
+      "grid_count": 75,
+      "center_grid_id": "11590_01166"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "상도3동",
+      "center": [
+        37.498313,
+        126.934337
+      ],
+      "grid_count": 69,
+      "center_grid_id": "11590_00817"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "상도4동",
+      "center": [
+        37.497537,
+        126.939996
+      ],
+      "grid_count": 92,
+      "center_grid_id": "11590_00822"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "신대방1동",
+      "center": [
+        37.49072,
+        126.909754
+      ],
+      "grid_count": 88,
+      "center_grid_id": "11590_00347"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "신대방2동",
+      "center": [
+        37.494335,
+        126.92192
+      ],
+      "grid_count": 110,
+      "center_grid_id": "11590_00558"
+    },
+    {
+      "district": "동작구",
+      "sig_code": "11590",
+      "dong_name": "흑석동",
+      "center": [
+        37.505294,
+        126.963698
+      ],
+      "grid_count": 174,
+      "center_grid_id": "11590_01290"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "공덕동",
+      "center": [
+        37.549927,
+        126.957205
+      ],
+      "grid_count": 117,
+      "center_grid_id": "11440_00712"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "대흥동",
+      "center": [
+        37.551078,
+        126.940165
+      ],
+      "grid_count": 89,
+      "center_grid_id": "11440_00763"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "도화동",
+      "center": [
+        37.538668,
+        126.94882
+      ],
+      "grid_count": 74,
+      "center_grid_id": "11440_00058"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "망원1동",
+      "center": [
+        37.553266,
+        126.899727
+      ],
+      "grid_count": 115,
+      "center_grid_id": "11440_00932"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "망원2동",
+      "center": [
+        37.559077,
+        126.900492
+      ],
+      "grid_count": 68,
+      "center_grid_id": "11440_01338"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "상암동",
+      "center": [
+        37.571526,
+        126.877837
+      ],
+      "grid_count": 896,
+      "center_grid_id": "11440_02086"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "서강동",
+      "center": [
+        37.54666,
+        126.925476
+      ],
+      "grid_count": 154,
+      "center_grid_id": "11440_00444"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "서교동",
+      "center": [
+        37.554688,
+        126.923145
+      ],
+      "grid_count": 179,
+      "center_grid_id": "11440_01023"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "성산1동",
+      "center": [
+        37.562747,
+        126.911219
+      ],
+      "grid_count": 84,
+      "center_grid_id": "11440_01555"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "성산2동",
+      "center": [
+        37.568219,
+        126.903228
+      ],
+      "grid_count": 208,
+      "center_grid_id": "11440_01895"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "신수동",
+      "center": [
+        37.545965,
+        126.934559
+      ],
+      "grid_count": 81,
+      "center_grid_id": "11440_00397"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "아현동",
+      "center": [
+        37.550478,
+        126.953191
+      ],
+      "grid_count": 78,
+      "center_grid_id": "11440_00708"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "연남동",
+      "center": [
+        37.562804,
+        126.922556
+      ],
+      "grid_count": 79,
+      "center_grid_id": "11440_01565"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "염리동",
+      "center": [
+        37.550253,
+        126.947543
+      ],
+      "grid_count": 54,
+      "center_grid_id": "11440_00704"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "용강동",
+      "center": [
+        37.541259,
+        126.94251
+      ],
+      "grid_count": 83,
+      "center_grid_id": "11440_00152"
+    },
+    {
+      "district": "마포구",
+      "sig_code": "11440",
+      "dong_name": "합정동",
+      "center": [
+        37.547798,
+        126.908492
+      ],
+      "grid_count": 187,
+      "center_grid_id": "11440_00484"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "남가좌1동",
+      "center": [
+        37.571372,
+        126.91623
+      ],
+      "grid_count": 57,
+      "center_grid_id": "11410_00664"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "남가좌2동",
+      "center": [
+        37.579024,
+        126.920731
+      ],
+      "grid_count": 81,
+      "center_grid_id": "11410_01059"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "북가좌1동",
+      "center": [
+        37.57559,
+        126.907607
+      ],
+      "grid_count": 67,
+      "center_grid_id": "11410_00855"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "북가좌2동",
+      "center": [
+        37.581073,
+        126.913646
+      ],
+      "grid_count": 88,
+      "center_grid_id": "11410_01146"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "북아현동",
+      "center": [
+        37.559298,
+        126.955083
+      ],
+      "grid_count": 50,
+      "center_grid_id": "11410_00111"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "신촌동",
+      "center": [
+        37.565995,
+        126.939258
+      ],
+      "grid_count": 287,
+      "center_grid_id": "11410_00360"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "연희동",
+      "center": [
+        37.572322,
+        126.931514
+      ],
+      "grid_count": 298,
+      "center_grid_id": "11410_00726"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "천연동",
+      "center": [
+        37.571971,
+        126.957005
+      ],
+      "grid_count": 114,
+      "center_grid_id": "11410_00700"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "충현동",
+      "center": [
+        37.564314,
+        126.959569
+      ],
+      "grid_count": 117,
+      "center_grid_id": "11410_00300"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "홍은1동",
+      "center": [
+        37.600949,
+        126.947756
+      ],
+      "grid_count": 181,
+      "center_grid_id": "11410_01818"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "홍은2동",
+      "center": [
+        37.586879,
+        126.931962
+      ],
+      "grid_count": 223,
+      "center_grid_id": "11410_01446"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "홍제1동",
+      "center": [
+        37.583634,
+        126.944458
+      ],
+      "grid_count": 124,
+      "center_grid_id": "11410_01308"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "홍제2동",
+      "center": [
+        37.583674,
+        126.951485
+      ],
+      "grid_count": 71,
+      "center_grid_id": "11410_01314"
+    },
+    {
+      "district": "서대문구",
+      "sig_code": "11410",
+      "dong_name": "홍제3동",
+      "center": [
+        37.59201,
+        126.950309
+      ],
+      "grid_count": 128,
+      "center_grid_id": "11410_01603"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "내곡동",
+      "center": [
+        37.4523,
+        127.069294
+      ],
+      "grid_count": 1324,
+      "center_grid_id": "11650_00954"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "반포1동",
+      "center": [
+        37.505333,
+        127.016778
+      ],
+      "grid_count": 102,
+      "center_grid_id": "11650_04460"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "반포2동",
+      "center": [
+        37.507609,
+        126.996507
+      ],
+      "grid_count": 146,
+      "center_grid_id": "11650_04518"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "반포3동",
+      "center": [
+        37.512702,
+        127.004387
+      ],
+      "grid_count": 128,
+      "center_grid_id": "11650_04711"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "반포4동",
+      "center": [
+        37.499176,
+        127.001654
+      ],
+      "grid_count": 142,
+      "center_grid_id": "11650_04165"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "반포본동",
+      "center": [
+        37.505236,
+        126.987057
+      ],
+      "grid_count": 109,
+      "center_grid_id": "11650_04434"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "방배1동",
+      "center": [
+        37.48517,
+        126.996088
+      ],
+      "grid_count": 68,
+      "center_grid_id": "11650_03509"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "방배2동",
+      "center": [
+        37.472094,
+        126.989525
+      ],
+      "grid_count": 216,
+      "center_grid_id": "11650_02447"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "방배3동",
+      "center": [
+        37.474776,
+        126.997857
+      ],
+      "grid_count": 244,
+      "center_grid_id": "11650_02824"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "방배4동",
+      "center": [
+        37.489648,
+        126.99106
+      ],
+      "grid_count": 95,
+      "center_grid_id": "11650_03688"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "방배본동",
+      "center": [
+        37.495033,
+        126.98905
+      ],
+      "grid_count": 77,
+      "center_grid_id": "11650_03949"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "서초1동",
+      "center": [
+        37.486621,
+        127.020389
+      ],
+      "grid_count": 138,
+      "center_grid_id": "11650_03577"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "서초2동",
+      "center": [
+        37.489353,
+        127.027733
+      ],
+      "grid_count": 132,
+      "center_grid_id": "11650_03720"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "서초3동",
+      "center": [
+        37.485682,
+        127.009663
+      ],
+      "grid_count": 297,
+      "center_grid_id": "11650_03521"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "서초4동",
+      "center": [
+        37.499234,
+        127.020005
+      ],
+      "grid_count": 93,
+      "center_grid_id": "11650_04181"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "양재1동",
+      "center": [
+        37.470134,
+        127.023873
+      ],
+      "grid_count": 608,
+      "center_grid_id": "11650_02478"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "양재2동",
+      "center": [
+        37.45389,
+        127.046059
+      ],
+      "grid_count": 779,
+      "center_grid_id": "11650_01035"
+    },
+    {
+      "district": "서초구",
+      "sig_code": "11650",
+      "dong_name": "잠원동",
+      "center": [
+        37.51668,
+        127.011723
+      ],
+      "grid_count": 197,
+      "center_grid_id": "11650_04818"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "금호1가동",
+      "center": [
+        37.55334,
+        127.024499
+      ],
+      "grid_count": 43,
+      "center_grid_id": "11200_01031"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "금호2·3가동",
+      "center": [
+        37.552859,
+        127.019447
+      ],
+      "grid_count": 68,
+      "center_grid_id": "11200_00977"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "금호4가동",
+      "center": [
+        37.54478,
+        127.023416
+      ],
+      "grid_count": 85,
+      "center_grid_id": "11200_00575"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "마장동",
+      "center": [
+        37.567112,
+        127.040123
+      ],
+      "grid_count": 108,
+      "center_grid_id": "11200_01654"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "사근동",
+      "center": [
+        37.558822,
+        127.04541
+      ],
+      "grid_count": 120,
+      "center_grid_id": "11200_01338"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "성수1가1동",
+      "center": [
+        37.540196,
+        127.041549
+      ],
+      "grid_count": 195,
+      "center_grid_id": "11200_00292"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "성수1가2동",
+      "center": [
+        37.54934,
+        127.041514
+      ],
+      "grid_count": 90,
+      "center_grid_id": "11200_00799"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "성수2가1동",
+      "center": [
+        37.535708,
+        127.055696
+      ],
+      "grid_count": 135,
+      "center_grid_id": "11200_00089"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "성수2가3동",
+      "center": [
+        37.545802,
+        127.0585
+      ],
+      "grid_count": 113,
+      "center_grid_id": "11200_00606"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "송정동",
+      "center": [
+        37.554286,
+        127.060438
+      ],
+      "grid_count": 77,
+      "center_grid_id": "11200_00865"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "옥수동",
+      "center": [
+        37.542067,
+        127.02204
+      ],
+      "grid_count": 210,
+      "center_grid_id": "11200_00323"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "왕십리2동",
+      "center": [
+        37.561456,
+        127.028409
+      ],
+      "grid_count": 36,
+      "center_grid_id": "11200_01458"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "왕십리도선동",
+      "center": [
+        37.566922,
+        127.030136
+      ],
+      "grid_count": 81,
+      "center_grid_id": "11200_01646"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "용답동",
+      "center": [
+        37.561207,
+        127.054989
+      ],
+      "grid_count": 256,
+      "center_grid_id": "11200_01481"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "응봉동",
+      "center": [
+        37.550672,
+        127.034125
+      ],
+      "grid_count": 56,
+      "center_grid_id": "11200_00891"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "행당1동",
+      "center": [
+        37.559699,
+        127.035226
+      ],
+      "grid_count": 54,
+      "center_grid_id": "11200_01375"
+    },
+    {
+      "district": "성동구",
+      "sig_code": "11200",
+      "dong_name": "행당2동",
+      "center": [
+        37.556517,
+        127.029571
+      ],
+      "grid_count": 49,
+      "center_grid_id": "11200_01230"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "길음1동",
+      "center": [
+        37.60869,
+        127.019612
+      ],
+      "grid_count": 82,
+      "center_grid_id": "11290_01532"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "길음2동",
+      "center": [
+        37.608033,
+        127.026985
+      ],
+      "grid_count": 69,
+      "center_grid_id": "11290_01539"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "돈암1동",
+      "center": [
+        37.599317,
+        127.024196
+      ],
+      "grid_count": 49,
+      "center_grid_id": "11290_00834"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "돈암2동",
+      "center": [
+        37.596546,
+        127.012321
+      ],
+      "grid_count": 54,
+      "center_grid_id": "11290_00632"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "동선동",
+      "center": [
+        37.593867,
+        127.018017
+      ],
+      "grid_count": 75,
+      "center_grid_id": "11290_00473"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "보문동",
+      "center": [
+        37.582769,
+        127.019782
+      ],
+      "grid_count": 59,
+      "center_grid_id": "11290_00083"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "삼선동",
+      "center": [
+        37.586383,
+        127.011252
+      ],
+      "grid_count": 101,
+      "center_grid_id": "11290_00168"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "석관동",
+      "center": [
+        37.607702,
+        127.060959
+      ],
+      "grid_count": 173,
+      "center_grid_id": "11290_01493"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "성북동",
+      "center": [
+        37.596043,
+        126.994822
+      ],
+      "grid_count": 310,
+      "center_grid_id": "11290_00617"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "안암동",
+      "center": [
+        37.587652,
+        127.027469
+      ],
+      "grid_count": 148,
+      "center_grid_id": "11290_00209"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "월곡1동",
+      "center": [
+        37.607467,
+        127.037171
+      ],
+      "grid_count": 80,
+      "center_grid_id": "11290_01472"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "월곡2동",
+      "center": [
+        37.603525,
+        127.044567
+      ],
+      "grid_count": 141,
+      "center_grid_id": "11290_01195"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "장위1동",
+      "center": [
+        37.615616,
+        127.044028
+      ],
+      "grid_count": 78,
+      "center_grid_id": "11290_02099"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "장위2동",
+      "center": [
+        37.612474,
+        127.053015
+      ],
+      "grid_count": 69,
+      "center_grid_id": "11290_01861"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "장위3동",
+      "center": [
+        37.618391,
+        127.053718
+      ],
+      "grid_count": 74,
+      "center_grid_id": "11290_02237"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "정릉1동",
+      "center": [
+        37.606033,
+        127.017921
+      ],
+      "grid_count": 39,
+      "center_grid_id": "11290_01307"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "정릉2동",
+      "center": [
+        37.6042,
+        127.008303
+      ],
+      "grid_count": 108,
+      "center_grid_id": "11290_01230"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "정릉3동",
+      "center": [
+        37.614934,
+        126.994518
+      ],
+      "grid_count": 348,
+      "center_grid_id": "11290_02016"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "정릉4동",
+      "center": [
+        37.622132,
+        126.994858
+      ],
+      "grid_count": 382,
+      "center_grid_id": "11290_02352"
+    },
+    {
+      "district": "성북구",
+      "sig_code": "11290",
+      "dong_name": "종암동",
+      "center": [
+        37.59753,
+        127.033283
+      ],
+      "grid_count": 147,
+      "center_grid_id": "11290_00714"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "가락1동",
+      "center": [
+        37.495059,
+        127.107221
+      ],
+      "grid_count": 148,
+      "center_grid_id": "11710_00960"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "가락2동",
+      "center": [
+        37.496481,
+        127.131205
+      ],
+      "grid_count": 93,
+      "center_grid_id": "11710_01040"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "가락본동",
+      "center": [
+        37.496907,
+        127.121001
+      ],
+      "grid_count": 102,
+      "center_grid_id": "11710_01090"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "거여1동",
+      "center": [
+        37.495157,
+        127.141954
+      ],
+      "grid_count": 49,
+      "center_grid_id": "11710_00991"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "거여2동",
+      "center": [
+        37.492472,
+        127.14706
+      ],
+      "grid_count": 52,
+      "center_grid_id": "11710_00834"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "마천1동",
+      "center": [
+        37.495213,
+        127.155201
+      ],
+      "grid_count": 64,
+      "center_grid_id": "11710_01003"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "마천2동",
+      "center": [
+        37.500594,
+        127.151956
+      ],
+      "grid_count": 99,
+      "center_grid_id": "11710_01390"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "문정1동",
+      "center": [
+        37.488357,
+        127.127272
+      ],
+      "grid_count": 62,
+      "center_grid_id": "11710_00580"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "문정2동",
+      "center": [
+        37.479229,
+        127.117297
+      ],
+      "grid_count": 246,
+      "center_grid_id": "11710_00222"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "방이1동",
+      "center": [
+        37.509526,
+        127.122082
+      ],
+      "grid_count": 60,
+      "center_grid_id": "11710_02068"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "방이2동",
+      "center": [
+        37.512657,
+        127.114134
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11710_02322"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "삼전동",
+      "center": [
+        37.501776,
+        127.089894
+      ],
+      "grid_count": 104,
+      "center_grid_id": "11710_01488"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "석촌동",
+      "center": [
+        37.502695,
+        127.104577
+      ],
+      "grid_count": 92,
+      "center_grid_id": "11710_01501"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "송파1동",
+      "center": [
+        37.506779,
+        127.110211
+      ],
+      "grid_count": 69,
+      "center_grid_id": "11710_01864"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "송파2동",
+      "center": [
+        37.502746,
+        127.117023
+      ],
+      "grid_count": 59,
+      "center_grid_id": "11710_01512"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "오금동",
+      "center": [
+        37.50415,
+        127.133984
+      ],
+      "grid_count": 170,
+      "center_grid_id": "11710_01683"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "오륜동",
+      "center": [
+        37.517654,
+        127.129214
+      ],
+      "grid_count": 323,
+      "center_grid_id": "11710_02674"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "위례동",
+      "center": [
+        37.480337,
+        127.142358
+      ],
+      "grid_count": 288,
+      "center_grid_id": "11710_00306"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "잠실2동",
+      "center": [
+        37.518047,
+        127.080076
+      ],
+      "grid_count": 291,
+      "center_grid_id": "11710_02697"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "잠실3동",
+      "center": [
+        37.516639,
+        127.094924
+      ],
+      "grid_count": 155,
+      "center_grid_id": "11710_02575"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "잠실4동",
+      "center": [
+        37.519845,
+        127.108997
+      ],
+      "grid_count": 80,
+      "center_grid_id": "11710_02790"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "잠실6동",
+      "center": [
+        37.519813,
+        127.099304
+      ],
+      "grid_count": 157,
+      "center_grid_id": "11710_02781"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "잠실7동",
+      "center": [
+        37.507011,
+        127.073959
+      ],
+      "grid_count": 78,
+      "center_grid_id": "11710_01832"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "잠실본동",
+      "center": [
+        37.505939,
+        127.081943
+      ],
+      "grid_count": 108,
+      "center_grid_id": "11710_01775"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "장지동",
+      "center": [
+        37.483867,
+        127.131835
+      ],
+      "grid_count": 132,
+      "center_grid_id": "11710_00428"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "풍납1동",
+      "center": [
+        37.538285,
+        127.113634
+      ],
+      "grid_count": 120,
+      "center_grid_id": "11710_03508"
+    },
+    {
+      "district": "송파구",
+      "sig_code": "11710",
+      "dong_name": "풍납2동",
+      "center": [
+        37.530661,
+        127.108117
+      ],
+      "grid_count": 268,
+      "center_grid_id": "11710_03334"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "목1동",
+      "center": [
+        37.52696,
+        126.876934
+      ],
+      "grid_count": 143,
+      "center_grid_id": "11470_01112"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "목2동",
+      "center": [
+        37.542927,
+        126.87569
+      ],
+      "grid_count": 107,
+      "center_grid_id": "11470_01772"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "목3동",
+      "center": [
+        37.545372,
+        126.866457
+      ],
+      "grid_count": 68,
+      "center_grid_id": "11470_01843"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "목4동",
+      "center": [
+        37.53457,
+        126.867622
+      ],
+      "grid_count": 65,
+      "center_grid_id": "11470_01460"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "목5동",
+      "center": [
+        37.537322,
+        126.878999
+      ],
+      "grid_count": 189,
+      "center_grid_id": "11470_01580"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신월1동",
+      "center": [
+        37.531239,
+        126.834552
+      ],
+      "grid_count": 70,
+      "center_grid_id": "11470_01339"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신월2동",
+      "center": [
+        37.522415,
+        126.84587
+      ],
+      "grid_count": 65,
+      "center_grid_id": "11470_00891"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신월3동",
+      "center": [
+        37.533124,
+        126.828251
+      ],
+      "grid_count": 100,
+      "center_grid_id": "11470_01409"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신월4동",
+      "center": [
+        37.521803,
+        126.839662
+      ],
+      "grid_count": 46,
+      "center_grid_id": "11470_00837"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신월5동",
+      "center": [
+        37.541719,
+        126.829713
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11470_01729"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신월6동",
+      "center": [
+        37.516405,
+        126.841423
+      ],
+      "grid_count": 48,
+      "center_grid_id": "11470_00547"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신월7동",
+      "center": [
+        37.517075,
+        126.831231
+      ],
+      "grid_count": 129,
+      "center_grid_id": "11470_00588"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신정1동",
+      "center": [
+        37.518313,
+        126.860054
+      ],
+      "grid_count": 75,
+      "center_grid_id": "11470_00662"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신정2동",
+      "center": [
+        37.518839,
+        126.874556
+      ],
+      "grid_count": 63,
+      "center_grid_id": "11470_00723"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신정3동",
+      "center": [
+        37.512594,
+        126.842011
+      ],
+      "grid_count": 293,
+      "center_grid_id": "11470_00349"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신정4동",
+      "center": [
+        37.525959,
+        126.857181
+      ],
+      "grid_count": 105,
+      "center_grid_id": "11470_01095"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신정6동",
+      "center": [
+        37.51567,
+        126.87028
+      ],
+      "grid_count": 88,
+      "center_grid_id": "11470_00522"
+    },
+    {
+      "district": "양천구",
+      "sig_code": "11470",
+      "dong_name": "신정7동",
+      "center": [
+        37.510264,
+        126.865428
+      ],
+      "grid_count": 132,
+      "center_grid_id": "11470_00227"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "당산1동",
+      "center": [
+        37.523917,
+        126.896805
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11560_01341"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "당산2동",
+      "center": [
+        37.534661,
+        126.90181
+      ],
+      "grid_count": 163,
+      "center_grid_id": "11560_02028"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "대림1동",
+      "center": [
+        37.492986,
+        126.90496
+      ],
+      "grid_count": 53,
+      "center_grid_id": "11560_00095"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "대림2동",
+      "center": [
+        37.489819,
+        126.900786
+      ],
+      "grid_count": 68,
+      "center_grid_id": "11560_00041"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "대림3동",
+      "center": [
+        37.500461,
+        126.897491
+      ],
+      "grid_count": 97,
+      "center_grid_id": "11560_00251"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "도림동",
+      "center": [
+        37.509074,
+        126.901443
+      ],
+      "grid_count": 59,
+      "center_grid_id": "11560_00525"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "문래동",
+      "center": [
+        37.515747,
+        126.890929
+      ],
+      "grid_count": 195,
+      "center_grid_id": "11560_00773"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "신길1동",
+      "center": [
+        37.512296,
+        126.919519
+      ],
+      "grid_count": 77,
+      "center_grid_id": "11560_00637"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "신길3동",
+      "center": [
+        37.506826,
+        126.904311
+      ],
+      "grid_count": 46,
+      "center_grid_id": "11560_00442"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "신길4동",
+      "center": [
+        37.506863,
+        126.913337
+      ],
+      "grid_count": 33,
+      "center_grid_id": "11560_00450"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "신길5동",
+      "center": [
+        37.500971,
+        126.905457
+      ],
+      "grid_count": 54,
+      "center_grid_id": "11560_00284"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "신길6동",
+      "center": [
+        37.498625,
+        126.914525
+      ],
+      "grid_count": 71,
+      "center_grid_id": "11560_00216"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "신길7동",
+      "center": [
+        37.507797,
+        126.918795
+      ],
+      "grid_count": 69,
+      "center_grid_id": "11560_00456"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "양평1동",
+      "center": [
+        37.525682,
+        126.88599
+      ],
+      "grid_count": 105,
+      "center_grid_id": "11560_01459"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "양평2동",
+      "center": [
+        37.54256,
+        126.890141
+      ],
+      "grid_count": 319,
+      "center_grid_id": "11560_02401"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "여의동",
+      "center": [
+        37.52846,
+        126.927801
+      ],
+      "grid_count": 874,
+      "center_grid_id": "11560_01679"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "영등포동",
+      "center": [
+        37.523504,
+        126.909278
+      ],
+      "grid_count": 134,
+      "center_grid_id": "11560_01289"
+    },
+    {
+      "district": "영등포구",
+      "sig_code": "11560",
+      "dong_name": "영등포본동",
+      "center": [
+        37.513606,
+        126.908207
+      ],
+      "grid_count": 87,
+      "center_grid_id": "11560_00704"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "남영동",
+      "center": [
+        37.54456,
+        126.974743
+      ],
+      "grid_count": 113,
+      "center_grid_id": "11170_01928"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "보광동",
+      "center": [
+        37.527061,
+        127.00146
+      ],
+      "grid_count": 74,
+      "center_grid_id": "11170_00876"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "서빙고동",
+      "center": [
+        37.517926,
+        126.990179
+      ],
+      "grid_count": 288,
+      "center_grid_id": "11170_00366"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "용문동",
+      "center": [
+        37.538148,
+        126.958381
+      ],
+      "grid_count": 30,
+      "center_grid_id": "11170_01565"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "용산2가동",
+      "center": [
+        37.539058,
+        126.98561
+      ],
+      "grid_count": 200,
+      "center_grid_id": "11170_01646"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "원효로1동",
+      "center": [
+        37.537766,
+        126.966309
+      ],
+      "grid_count": 62,
+      "center_grid_id": "11170_01572"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "원효로2동",
+      "center": [
+        37.534217,
+        126.952912
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11170_01314"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "이촌1동",
+      "center": [
+        37.514728,
+        126.969886
+      ],
+      "grid_count": 311,
+      "center_grid_id": "11170_00191"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "이촌2동",
+      "center": [
+        37.523062,
+        126.954107
+      ],
+      "grid_count": 138,
+      "center_grid_id": "11170_00622"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "이태원1동",
+      "center": [
+        37.533381,
+        126.992935
+      ],
+      "grid_count": 53,
+      "center_grid_id": "11170_01285"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "이태원2동",
+      "center": [
+        37.541928,
+        126.992317
+      ],
+      "grid_count": 88,
+      "center_grid_id": "11170_01803"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "청파동",
+      "center": [
+        37.548733,
+        126.966823
+      ],
+      "grid_count": 97,
+      "center_grid_id": "11170_02133"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "한강로동",
+      "center": [
+        37.530594,
+        126.967498
+      ],
+      "grid_count": 290,
+      "center_grid_id": "11170_01075"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "한남동",
+      "center": [
+        37.537458,
+        127.006316
+      ],
+      "grid_count": 330,
+      "center_grid_id": "11170_01549"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "효창동",
+      "center": [
+        37.543601,
+        126.960627
+      ],
+      "grid_count": 46,
+      "center_grid_id": "11170_01916"
+    },
+    {
+      "district": "용산구",
+      "sig_code": "11170",
+      "dong_name": "후암동",
+      "center": [
+        37.550342,
+        126.980932
+      ],
+      "grid_count": 96,
+      "center_grid_id": "11170_02217"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "갈현1동",
+      "center": [
+        37.624515,
+        126.913806
+      ],
+      "grid_count": 95,
+      "center_grid_id": "11380_01805"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "갈현2동",
+      "center": [
+        37.617733,
+        126.912477
+      ],
+      "grid_count": 103,
+      "center_grid_id": "11380_01488"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "구산동",
+      "center": [
+        37.612279,
+        126.908409
+      ],
+      "grid_count": 146,
+      "center_grid_id": "11380_01219"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "녹번동",
+      "center": [
+        37.604343,
+        126.934658
+      ],
+      "grid_count": 185,
+      "center_grid_id": "11380_00866"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "대조동",
+      "center": [
+        37.61237,
+        126.924417
+      ],
+      "grid_count": 84,
+      "center_grid_id": "11380_01234"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "불광1동",
+      "center": [
+        37.617561,
+        126.935866
+      ],
+      "grid_count": 325,
+      "center_grid_id": "11380_01509"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "불광2동",
+      "center": [
+        37.624546,
+        126.929978
+      ],
+      "grid_count": 142,
+      "center_grid_id": "11380_01781"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "수색동",
+      "center": [
+        37.584977,
+        126.892561
+      ],
+      "grid_count": 157,
+      "center_grid_id": "11380_00128"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "신사1동",
+      "center": [
+        37.598332,
+        126.907731
+      ],
+      "grid_count": 87,
+      "center_grid_id": "11380_00624"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "신사2동",
+      "center": [
+        37.593352,
+        126.906979
+      ],
+      "grid_count": 109,
+      "center_grid_id": "11380_00439"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "역촌동",
+      "center": [
+        37.605134,
+        126.912011
+      ],
+      "grid_count": 112,
+      "center_grid_id": "11380_00884"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "응암1동",
+      "center": [
+        37.597075,
+        126.927143
+      ],
+      "grid_count": 117,
+      "center_grid_id": "11380_00572"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "응암2동",
+      "center": [
+        37.59164,
+        126.923066
+      ],
+      "grid_count": 78,
+      "center_grid_id": "11380_00391"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "응암3동",
+      "center": [
+        37.589823,
+        126.918164
+      ],
+      "grid_count": 80,
+      "center_grid_id": "11380_00327"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "증산동",
+      "center": [
+        37.583038,
+        126.90708
+      ],
+      "grid_count": 87,
+      "center_grid_id": "11380_00089"
+    },
+    {
+      "district": "은평구",
+      "sig_code": "11380",
+      "dong_name": "진관동",
+      "center": [
+        37.642389,
+        126.934094
+      ],
+      "grid_count": 1205,
+      "center_grid_id": "11380_02688"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "가회동",
+      "center": [
+        37.583826,
+        126.985816
+      ],
+      "grid_count": 57,
+      "center_grid_id": "11110_00953"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "교남동",
+      "center": [
+        37.57139,
+        126.964012
+      ],
+      "grid_count": 41,
+      "center_grid_id": "11110_00139"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "무악동",
+      "center": [
+        37.576495,
+        126.958375
+      ],
+      "grid_count": 44,
+      "center_grid_id": "11110_00489"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "부암동",
+      "center": [
+        37.595873,
+        126.964795
+      ],
+      "grid_count": 240,
+      "center_grid_id": "11110_01436"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "사직동",
+      "center": [
+        37.573887,
+        126.970007
+      ],
+      "grid_count": 127,
+      "center_grid_id": "11110_00316"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "삼청동",
+      "center": [
+        37.586496,
+        126.981207
+      ],
+      "grid_count": 149,
+      "center_grid_id": "11110_01081"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "숭인1동",
+      "center": [
+        37.577353,
+        127.016979
+      ],
+      "grid_count": 27,
+      "center_grid_id": "11110_00602"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "숭인2동",
+      "center": [
+        37.574874,
+        127.01934
+      ],
+      "grid_count": 46,
+      "center_grid_id": "11110_00420"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "이화동",
+      "center": [
+        37.58029,
+        127.002252
+      ],
+      "grid_count": 80,
+      "center_grid_id": "11110_00769"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "종로1·2·3·4가동",
+      "center": [
+        37.577997,
+        126.989266
+      ],
+      "grid_count": 249,
+      "center_grid_id": "11110_00640"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "종로5·6가동",
+      "center": [
+        37.57291,
+        127.00399
+      ],
+      "grid_count": 63,
+      "center_grid_id": "11110_00288"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "창신1동",
+      "center": [
+        37.573021,
+        127.014232
+      ],
+      "grid_count": 29,
+      "center_grid_id": "11110_00297"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "창신2동",
+      "center": [
+        37.576259,
+        127.010752
+      ],
+      "grid_count": 28,
+      "center_grid_id": "11110_00473"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "창신3동",
+      "center": [
+        37.5793,
+        127.013012
+      ],
+      "grid_count": 23,
+      "center_grid_id": "11110_00723"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "청운효자동",
+      "center": [
+        37.58467,
+        126.968844
+      ],
+      "grid_count": 254,
+      "center_grid_id": "11110_00982"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "평창동",
+      "center": [
+        37.615514,
+        126.967842
+      ],
+      "grid_count": 945,
+      "center_grid_id": "11110_02070"
+    },
+    {
+      "district": "종로구",
+      "sig_code": "11110",
+      "dong_name": "혜화동",
+      "center": [
+        37.586575,
+        126.997098
+      ],
+      "grid_count": 116,
+      "center_grid_id": "11110_01095"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "광희동",
+      "center": [
+        37.565766,
+        127.002906
+      ],
+      "grid_count": 76,
+      "center_grid_id": "11140_00836"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "다산동",
+      "center": [
+        37.554623,
+        127.008629
+      ],
+      "grid_count": 55,
+      "center_grid_id": "11140_00216"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "동화동",
+      "center": [
+        37.560525,
+        127.018785
+      ],
+      "grid_count": 39,
+      "center_grid_id": "11140_00588"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "명동",
+      "center": [
+        37.562903,
+        126.983091
+      ],
+      "grid_count": 104,
+      "center_grid_id": "11140_00712"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "소공동",
+      "center": [
+        37.564628,
+        126.97462
+      ],
+      "grid_count": 103,
+      "center_grid_id": "11140_00811"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "신당5동",
+      "center": [
+        37.563,
+        127.021648
+      ],
+      "grid_count": 35,
+      "center_grid_id": "11140_00746"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "신당동",
+      "center": [
+        37.565018,
+        127.013651
+      ],
+      "grid_count": 55,
+      "center_grid_id": "11140_00845"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "약수동",
+      "center": [
+        37.549699,
+        127.010629
+      ],
+      "grid_count": 56,
+      "center_grid_id": "11140_00058"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "을지로동",
+      "center": [
+        37.566143,
+        126.996672
+      ],
+      "grid_count": 66,
+      "center_grid_id": "11140_00884"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "장충동",
+      "center": [
+        37.555435,
+        127.001059
+      ],
+      "grid_count": 108,
+      "center_grid_id": "11140_00260"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "중림동",
+      "center": [
+        37.556697,
+        126.966398
+      ],
+      "grid_count": 57,
+      "center_grid_id": "11140_00329"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "청구동",
+      "center": [
+        37.556456,
+        127.015285
+      ],
+      "grid_count": 35,
+      "center_grid_id": "11140_00322"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "필동",
+      "center": [
+        37.55681,
+        126.994474
+      ],
+      "grid_count": 151,
+      "center_grid_id": "11140_00354"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "황학동",
+      "center": [
+        37.568706,
+        127.020324
+      ],
+      "grid_count": 43,
+      "center_grid_id": "11140_01056"
+    },
+    {
+      "district": "중구",
+      "sig_code": "11140",
+      "dong_name": "회현동",
+      "center": [
+        37.557379,
+        126.976927
+      ],
+      "grid_count": 98,
+      "center_grid_id": "11140_00390"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "망우3동",
+      "center": [
+        37.591714,
+        127.102916
+      ],
+      "grid_count": 97,
+      "center_grid_id": "11260_00673"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "망우본동",
+      "center": [
+        37.602766,
+        127.105702
+      ],
+      "grid_count": 302,
+      "center_grid_id": "11260_01203"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "면목2동",
+      "center": [
+        37.589149,
+        127.078628
+      ],
+      "grid_count": 78,
+      "center_grid_id": "11260_00576"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "면목3·8동",
+      "center": [
+        37.584715,
+        127.096777
+      ],
+      "grid_count": 169,
+      "center_grid_id": "11260_00415"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "면목4동",
+      "center": [
+        37.573565,
+        127.085147
+      ],
+      "grid_count": 95,
+      "center_grid_id": "11260_00063"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "면목5동",
+      "center": [
+        37.581941,
+        127.07769
+      ],
+      "grid_count": 75,
+      "center_grid_id": "11260_00301"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "면목7동",
+      "center": [
+        37.575807,
+        127.091428
+      ],
+      "grid_count": 133,
+      "center_grid_id": "11260_00135"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "면목본동",
+      "center": [
+        37.588738,
+        127.088851
+      ],
+      "grid_count": 84,
+      "center_grid_id": "11260_00549"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "묵1동",
+      "center": [
+        37.612832,
+        127.083578
+      ],
+      "grid_count": 131,
+      "center_grid_id": "11260_01647"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "묵2동",
+      "center": [
+        37.610913,
+        127.074343
+      ],
+      "grid_count": 79,
+      "center_grid_id": "11260_01555"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "상봉1동",
+      "center": [
+        37.60224,
+        127.088218
+      ],
+      "grid_count": 78,
+      "center_grid_id": "11260_01148"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "상봉2동",
+      "center": [
+        37.594566,
+        127.081916
+      ],
+      "grid_count": 74,
+      "center_grid_id": "11260_00773"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "신내1동",
+      "center": [
+        37.610414,
+        127.10364
+      ],
+      "grid_count": 277,
+      "center_grid_id": "11260_01497"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "신내2동",
+      "center": [
+        37.609029,
+        127.090998
+      ],
+      "grid_count": 91,
+      "center_grid_id": "11260_01487"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "중화1동",
+      "center": [
+        37.602236,
+        127.083085
+      ],
+      "grid_count": 70,
+      "center_grid_id": "11260_01143"
+    },
+    {
+      "district": "중랑구",
+      "sig_code": "11260",
+      "dong_name": "중화2동",
+      "center": [
+        37.599938,
+        127.075146
+      ],
+      "grid_count": 109,
+      "center_grid_id": "11260_01020"
+    }
+  ]
+}

@@ -307,10 +307,10 @@ function storeGuideCollapsed(collapsed: boolean): void {
   }
 }
 
-function usesMobileGuideLayout(): boolean {
+function usesDrawerGuideLayout(): boolean {
   return (
     typeof window !== 'undefined' &&
-    window.matchMedia('(max-width: 820px)').matches
+    window.matchMedia('(max-width: 1180px)').matches
   );
 }
 
@@ -822,15 +822,15 @@ export default function AiChatView({
   }
 
   function toggleGuide(): void {
-    if (usesMobileGuideLayout()) {
-      setMobileGuideOpen(true);
+    if (usesDrawerGuideLayout()) {
+      setMobileGuideOpen((current) => !current);
       return;
     }
     setGuideCollapsed((current) => !current);
   }
 
   function closeGuide(): void {
-    if (usesMobileGuideLayout()) {
+    if (usesDrawerGuideLayout()) {
       setMobileGuideOpen(false);
       return;
     }
