@@ -3782,6 +3782,14 @@ td {
     width: auto;
   }
 
+  /* 이 폭에서 레일은 --left-panel-width가 calc(100vw - 24px)라 화면을 가로지른다.
+     범례는 .mapLegend{width:100%}라 레일을 그대로 따라가 지도를 덮었다.
+     범례만 폭을 묶어 좌하단에 남긴다. */
+  .leftOverlayRail .mapLegend {
+    width: min(320px, calc(100vw - 24px));
+    align-self: flex-start;
+  }
+
   .heatIslandPanel {
     flex: 0 1 auto;
     max-height: min(50dvh, 430px);

@@ -243,6 +243,53 @@ GRID_FIELD_SPECS: dict[str, dict[str, Any]] = {
         "is_ratio": False,
     },
 }
+
+# ── 지표 출처 ────────────────────────────────────────────────────────────────
+#
+# 챗봇이 "이 데이터 출처가 어디야?"에 답하려면 출처가 데이터로 있어야 한다.
+# 지금까지 GRID_FIELD_SPECS에는 label·description·unit·category만 있어서,
+# 출처 질문은 코퍼스 문서 검색(RAG)으로 흘렀다. 문서 수치는 작성 시점 값이라
+# 출처처럼 변하지 않는 사실을 RAG로 답하게 두면 틀릴 여지만 는다.
+#
+# 아래 값은 전부 `GAON_ML_전과정_정리_ko.md` 4.2절 표에서 그대로 옮긴 것이다.
+# ★ 추정해서 채우지 말 것. 새 필드가 생기면 그 문서를 먼저 갱신하고 여기 옮긴다.
+_GEE_DW = "Google Earth Engine · Dynamic World"
+_VWORLD = "국토교통부 VWorld"
+
+_FIELD_SOURCES: dict[str, str] = {
+    "building_ratio": f"{_VWORLD} 건물 `lt_c_spbd`",
+    "avg_ground_floor_count": f"{_VWORLD} 건물 `lt_c_spbd`",
+    "max_ground_floor_count": f"{_VWORLD} 건물 `lt_c_spbd`",
+    "floor_area_ratio_proxy": f"파생 (바닥면적 × 층수 ÷ 격자면적, 원자료 {_VWORLD} 건물)",
+    "road_ratio": f"{_VWORLD} 도로 `lt_c_upisuq151`",
+    "zoning_residential_ratio": f"{_VWORLD} 용도지역 `lt_c_uq111`",
+    "zoning_commercial_ratio": f"{_VWORLD} 용도지역",
+    "zoning_industrial_ratio": f"{_VWORLD} 용도지역",
+    "zoning_green_ratio": f"{_VWORLD} 용도지역",
+    "ndvi": "Google Earth Engine · Sentinel-2",
+    "green_ratio": _GEE_DW,
+    "impervious_ratio": _GEE_DW,
+    "nearest_park_distance_m": f"{_VWORLD} 공원 `lt_c_upisuq161`",
+    "park_area_within_500m": f"{_VWORLD} 공원 `lt_c_upisuq161`",
+    "nearest_stream_distance_m": f"{_VWORLD} 하천 `lt_c_wkmstrm`",
+    "elevation_m": "Google Earth Engine · SRTM DEM",
+    "slope_deg": "Google Earth Engine · SRTM DEM",
+    "albedo": "Google Earth Engine · Landsat 표면반사율",
+}
+
+for _field, _spec in GRID_FIELD_SPECS.items():
+    _spec["source"] = _FIELD_SOURCES[_field]
+
+# 출처 없는 필드가 조용히 생기면 챗봇이 그 지표만 출처를 못 댄다.
+# 필드를 추가하고 출처를 빠뜨리는 실수를 import 시점에 잡는다.
+if _FIELD_SOURCES.keys() != GRID_FIELD_SPECS.keys():
+    raise RuntimeError(
+        "_FIELD_SOURCES가 GRID_FIELD_SPECS와 어긋났습니다. "
+        f"출처 없음={sorted(GRID_FIELD_SPECS.keys() - _FIELD_SOURCES.keys())} "
+        f"필드 없음={sorted(_FIELD_SOURCES.keys() - GRID_FIELD_SPECS.keys())}"
+    )
+
+
 def _model_grid_fields() -> tuple[str, ...]:
     """현재 predict_core가 공개한 모델 입력 필드만 조회 대상으로 삼는다."""
 
