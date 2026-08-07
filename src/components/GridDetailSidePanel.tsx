@@ -405,7 +405,10 @@ function GridDetailSidePanel({
             <div className="tiles">
               <div className="tile">
                 <div className="t-lab">
-                  녹지화 시 저감 가능
+                  {/* 라벨 칸이 110px이다. '녹지화 시 저감 가능'은 123px이라 두 줄로 접히면서
+                      '능' 한 글자와 ⓘ만 둘째 줄에 남았다. '녹지화 시 저감'은 109px로 1px밖에
+                      안 남아 윈도우/맥 폰트 차이에서 바로 깨진다. 105px인 이 라벨을 쓴다. */}
+                  녹지화 저감량
                   {/*
                     "모든 격자에 같은 조건" 이라고 쓰면 안 된다.
                     build_seoul_dashboard.py 의 (Xs[c] + d).clip(0, 1) 때문에
