@@ -1,6 +1,7 @@
 import type { FeatureCollection } from 'geojson';
 import type {
   BatchSimulationResponse,
+  DongSearchIndex,
   GridResolution,
   SimulationRequest,
   SimulationResponse
@@ -49,6 +50,16 @@ async function fetchJson<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function fetchPublicJson<T>(path: string): Promise<T> {
+  const response = await fetch(path);
+
+  if (!response.ok) {
+    throw new ApiRequestError(path, response.status, await readResponseBody(response));
+  }
+
+  return response.json() as Promise<T>;
+}
+
 async function fetchJsonWithFallback<T>(path: string, fallbackPath: string): Promise<T> {
   try {
     return await fetchJson<T>(path);
@@ -80,6 +91,11 @@ async function postJson<TResponse, TBody>(
 
 export function getGeoJson(): Promise<FeatureCollection> {
   return fetchJsonWithFallback<FeatureCollection>('/api/seoul-gu', '/seoul_gu.geojson');
+}
+
+/** 기존 100m 상세 GeoJSON의 행정동 필드로 생성한 정적 검색 인덱스. */
+export function getDongSearchIndex(): Promise<DongSearchIndex> {
+  return fetchPublicJson<DongSearchIndex>('/dashboard/location_search.json');
 }
 
 export function getDistrictGrid(sigCode: string): Promise<FeatureCollection> {

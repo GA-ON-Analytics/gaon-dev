@@ -12,6 +12,21 @@ export type LayerKey =
 /** 'gu' = 격자 대신 자치구 경계 단위로 본다 */
 export type GridResolution = '100m' | '250m' | '500m' | 'gu';
 
+/** 구별 100m 격자의 행정동 필드로 만든 경량 지역 검색 항목. */
+export interface DongSearchIndexEntry {
+  district: string;
+  sig_code: string;
+  dong_name: string;
+  center: [number, number];
+  grid_count: number;
+  center_grid_id?: string;
+}
+
+export interface DongSearchIndex {
+  version: number;
+  dongs: DongSearchIndexEntry[];
+}
+
 export type PolicyOptionKey =
   | 'green_ratio_increase'
   | 'impervious_ratio_reduction'

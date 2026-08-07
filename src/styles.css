@@ -494,11 +494,46 @@ td {
 }
 
 .gisShell {
+  --left-panel-width: 284px;
+  --detail-panel-width: 332px;
+  --panel-edge-gap: 14px;
+  --detail-panel-offset: calc(var(--detail-panel-width) + var(--panel-edge-gap));
+  --overlay-gap: 10px;
+  --map-tool-width: 54px;
+  --map-tool-button-height: 40px;
+  --map-tool-card-padding: 4px;
+  --map-tool-inner-gap: 5px;
+  --map-tool-group-gap: 12px;
+  --chat-dock-width: 320px;
+  --chat-dock-height: 510px;
+  --chat-guide-width: 230px;
+  --chat-fab-size: 48px;
+  --chat-edge-gap: 20px;
+  --chat-bottom-gap: 40px;
   position: fixed;
   inset: 0;
   overflow: hidden;
   background: #dfe8dd;
   color: #222;
+}
+
+/* 검색 패널과 범례는 같은 세로 레일에서 공간을 나눠 쓴다. */
+.leftOverlayRail {
+  position: absolute;
+  top: var(--panel-edge-gap);
+  bottom: var(--panel-edge-gap);
+  left: var(--panel-edge-gap);
+  z-index: 700;
+  display: flex;
+  flex-direction: column;
+  gap: var(--overlay-gap);
+  width: var(--left-panel-width);
+  min-height: 0;
+  pointer-events: none;
+}
+
+.leftOverlayRail > * {
+  pointer-events: auto;
 }
 
 .gisMap {
@@ -627,45 +662,46 @@ td {
   --gdp-line: #eceef1;
   --gdp-green: #1f5121;
   --gdp-green-soft: #e4f1e5;
-  position: absolute;
-  top: 18px;
-  left: 16px;
-  z-index: 700;
-  width: 320px;
+  position: relative;
+  z-index: 1;
+  flex: 0 1 auto;
+  width: 100%;
+  min-height: 0;
   border: 0;
   border-radius: 18px;
   background: var(--gdp-card);
   box-shadow: 0 1px 2px rgba(20, 30, 45, 0.05), 0 10px 28px rgba(20, 30, 45, 0.1);
   color: var(--gdp-ink);
-  font-size: 12.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
 .heatIslandPanel {
-  width: 320px;
-  max-height: calc(100vh - 36px);
+  width: 100%;
+  max-height: none;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .heatPanelHeader {
-  padding: 18px 20px 14px;
+  padding: 14px 16px 11px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* 브랜드 로고 마크. 대시보드에서 GA:ON을 알아볼 수 있는 유일한 지점이라 헤더에 둔다. */
 .heatPanelLogo {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   flex: none;
   border-radius: 11px;   /* 원본 avatar의 라운드 사각과 맞춤 */
 }
 
 .heatPanelHeader p {
-  margin: 0 0 6px;
+  margin: 0 0 3px;
   color: var(--gdp-green);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -674,7 +710,7 @@ td {
 .heatPanelHeader h1 {
   margin: 0;
   color: var(--gdp-ink);
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.24;
   letter-spacing: -0.02em;
@@ -683,14 +719,14 @@ td {
 .heatControlBlock {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
-  padding: 4px 20px 16px;
+  gap: 8px;
+  padding: 3px 16px 12px;
 }
 
 .heatControlBlock label {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
 }
 
@@ -699,17 +735,39 @@ td {
   font-weight: 700;
 }
 
-/* 격자 코드 검색. .heatControlBlock label과 같은 64px + 나머지 2열 격자를 맞춘다 */
+/* 지역 검색: 자치구와 행정동을 한 입력에서 찾는다. */
+.heatControlBlock .locationSearch {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.heatControlBlock .locationSearch > span {
+  padding-top: 9px;
+  color: var(--gdp-ink2);
+  font-weight: 700;
+}
+
+/* 정확한 100m grid_id 검색은 지역 검색과 분리하되 같은 2열 정렬을 쓴다. */
 .heatControlBlock .gridCodeSearch {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
 }
 
 .heatControlBlock .gridCodeSearch > span {
+  padding-top: 2px;
   color: var(--gdp-ink2);
   font-weight: 700;
+  line-height: 1.35;
+}
+
+.locationSearchControl {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 
 .gcsRow {
@@ -721,26 +779,96 @@ td {
 .gcsRow input {
   flex: 1;
   min-width: 0;
-  min-height: 36px;
-  padding: 0 10px;
+  min-height: 32px;
+  padding: 0 9px;
   border: 1px solid rgba(0, 0, 0, 0.14);
   border-radius: 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
 .gcsRow button {
   flex: 0 0 auto;
-  min-height: 36px;
-  padding: 0 12px;
+  min-height: 32px;
+  padding: 0 10px;
   border: 0;
   border-radius: 10px;
   background: var(--gdp-green);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.locationSearchResults {
+  --gdp-card: #fff;
+  --gdp-line: #eceef1;
+  --gdp-ink: #191f28;
+  --gdp-ink3: #8b95a1;
+  --gdp-green: #1f5121;
+  --gdp-green-soft: #e4f1e5;
+  position: fixed;
+  z-index: 710;
+  display: grid;
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--gdp-line);
+  border-radius: 10px;
+  background: var(--gdp-card);
+  box-shadow: 0 8px 20px rgba(20, 30, 45, 0.1);
+  color: var(--gdp-ink);
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+}
+
+.locationSearchResults button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 0;
+  border-bottom: 1px solid var(--gdp-line);
+  background: transparent;
+  color: var(--gdp-ink);
+  text-align: left;
+}
+
+.locationSearchResults button:last-of-type {
+  border-bottom: 0;
+}
+
+.locationSearchResults button:hover,
+.locationSearchResults button.active {
+  background: var(--gdp-green-soft);
+  color: var(--gdp-green);
+}
+
+.locationSearchResults button span {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locationSearchResults button small,
+.locationSearchNotice {
+  flex: none;
+  color: var(--gdp-ink3);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.locationSearchResults p {
+  margin: 0;
+  padding: 10px;
+  color: var(--gdp-ink3);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .gcsRow button:disabled {
@@ -750,7 +878,7 @@ td {
 
 .gcsError {
   margin: -6px 0 0;
-  padding: 0 20px 10px;
+  padding: 0 16px 8px;
   color: #c92a2a;
   font-size: 11px;
   line-height: 1.5;
@@ -759,13 +887,13 @@ td {
 .fixedGridSize {
   display: flex;
   align-items: center;
-  min-height: 36px;
+  min-height: 32px;
   border: 0;
   border-radius: 10px;
   background: var(--gdp-green-soft);
   color: var(--gdp-green);
-  padding: 0 12px;
-  font-size: 12px;
+  padding: 0 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.3;
   white-space: nowrap;      /* 한 줄 유지 */
@@ -777,8 +905,8 @@ td {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 4px 20px 0;
-  padding: 11px 14px;
+  margin: 3px 16px 0;
+  padding: 9px 11px;
   border: 0;
   border-radius: 12px;
   background: var(--gdp-green-soft);
@@ -793,7 +921,7 @@ td {
 .selectionGuide .sgText {
   min-width: 0;
   color: var(--gdp-green);
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -802,8 +930,8 @@ td {
 
 /* 왼쪽 패널 맨 아래 안내 푸터 (예전 지도 위 안내바 대체) */
 .panelFootNote {
-  margin: 14px 20px 18px;
-  padding-top: 13px;
+  margin: 10px 16px 14px;
+  padding-top: 10px;
   border-top: 1px solid var(--gdp-line);
   color: var(--gdp-ink3);
   font-size: 11px;
@@ -845,18 +973,18 @@ td {
 .gisLeftPanel select,
 .gisLeftPanel button {
   min-width: 0;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .gisLeftPanel select {
   width: 100%;
-  min-height: 36px;
+  min-height: 32px;
   border: 0;
   border-radius: 10px;
   background: var(--gdp-sub);
   color: var(--gdp-ink);
   font-weight: 700;
-  padding: 0 12px;
+  padding: 0 10px;
   cursor: pointer;
 }
 
@@ -867,7 +995,7 @@ td {
 }
 
 .indicatorPanel {
-  margin: 14px 20px 18px;
+  margin: 10px 16px 14px;
   border: 0;
   background: transparent;
 }
@@ -877,24 +1005,37 @@ td {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 0 2px 10px;
+  padding: 0 2px 7px;
 }
 
 .indicatorHeader strong {
   color: var(--gdp-ink);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .indicatorHeader span {
   color: var(--gdp-green);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .indicatorList {
   display: grid;
-  gap: 6px;
+  gap: 9px;
+}
+
+.indicatorGroup h2 {
+  margin: 0 0 5px 2px;
+  color: var(--gdp-ink3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.indicatorGroup > div {
+  display: grid;
+  gap: 5px;
 }
 
 .indicatorList button {
@@ -902,8 +1043,8 @@ td {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 50px;
-  padding: 9px 12px;
+  min-height: 42px;
+  padding: 7px 10px;
   border: 0;
   border-radius: 12px;
   background: var(--gdp-sub);
@@ -940,7 +1081,7 @@ td {
 .indicatorList strong {
   display: inline-flex;
   align-items: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -960,7 +1101,7 @@ td {
 .indicatorList small {
   overflow: hidden;
   color: var(--gdp-ink3);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -970,10 +1111,10 @@ td {
 /* 현재값: 흰 알약으로 데이터 읽기값임을 또렷하게 */
 .indicatorList b {
   color: var(--gdp-ink);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
-  padding: 4px 9px;
+  padding: 3px 7px;
   border-radius: 8px;
   background: var(--gdp-card);
   box-shadow: 0 1px 2px rgba(20, 30, 45, 0.06);
@@ -1464,29 +1605,30 @@ td {
 
 .rightToolbar {
   position: absolute;
-  top: 18px;
-  right: 16px;
+  top: var(--panel-edge-gap);
+  right: var(--panel-edge-gap);
   z-index: 700;
   display: grid;
-  gap: 6px;
-  width: 62px;
-  padding: 6px;
+  gap: var(--map-tool-inner-gap);
+  width: var(--map-tool-width);
+  padding: var(--map-tool-card-padding);
   border: 0;
   border-radius: 16px;
   background: #ffffff;
   box-shadow: 0 1px 2px rgba(20, 30, 45, 0.05), 0 10px 28px rgba(20, 30, 45, 0.1);
+  transition: right 0.3s ease;
 }
 
 .rightToolbar button {
   display: grid;
   gap: 3px;
-  min-height: 48px;
+  min-height: var(--map-tool-button-height);
   place-items: center;
   border: 0;
   border-radius: 11px;
   background: #f5f7f9;
   color: #4e5968;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.12s ease;
@@ -1497,7 +1639,7 @@ td {
 }
 
 .rightToolbar span {
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1;
 }
 
@@ -1675,7 +1817,7 @@ td {
 }
 
 .gisShell .leaflet-bottom.leaflet-right {
-  right: 16px;
+  right: var(--panel-edge-gap);
   bottom: 14px;
 }
 
@@ -1690,21 +1832,9 @@ td {
 }
 
 @media (max-width: 760px) {
-  .gisLeftPanel {
-    top: 10px;
-    left: 10px;
-    width: calc(100vw - 82px);
-    max-width: 320px;
-  }
-
   .datasetRail,
   .topMenu {
     display: none;
-  }
-
-  .rightToolbar {
-    top: 10px;
-    right: 396px;
   }
 }
 
@@ -1713,7 +1843,7 @@ td {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 380px;
+  width: var(--detail-panel-width);
   background: #ffffff;
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
   z-index: 1000;
@@ -1733,7 +1863,7 @@ td {
 
 .rightPanelDashboard {
   height: 100%;
-  padding: 20px;
+  padding: 16px;
   overflow-y: auto;
   overflow-x: hidden;   /* 툴팁 등이 삐져나가도 가로 스크롤 안 생기게 */
   overscroll-behavior: contain;
@@ -1766,23 +1896,19 @@ td {
   padding: 0;
 }
 
-/* 사이드바가 펴지면 오른쪽 UI들이 왼쪽으로 함께 이동 */
-.topMenu,
-.rightToolbar {
+/* 상단 메뉴만 상세 패널을 피한다. 지도 도구는 항상 기본 위치를 유지한다. */
+.topMenu {
   transition: right 0.3s ease;
 }
 .gisShell.panelOpen .topMenu {
-  right: 396px;                   /* 380(패널) + 16(간격) */
-}
-.gisShell.panelOpen .rightToolbar {
-  right: 396px;
+  right: calc(var(--detail-panel-width) + var(--panel-edge-gap));
 }
 
 .leaflet-bottom.leaflet-right {
   transition: transform 0.3s ease;
 }
 .gisShell.panelOpen .leaflet-bottom.leaflet-right {
-  transform: translateX(-396px);  /* 줌/축척도 왼쪽으로 */
+  transform: translateX(calc(0px - var(--detail-panel-offset)));
 }
 
 .rightToolbar button.active {
@@ -1978,13 +2104,13 @@ td {
   background:var(--gdp-page);   /* 패널 배경 흰색 → 연회색 (흰 카드가 떠 보이게) */
 }
 .gridDetailSidePanel .gridReport{
-  gap:12px; color:var(--gdp-ink); font-variant-numeric:tabular-nums;
+  gap:10px; color:var(--gdp-ink); font-variant-numeric:tabular-nums;
 }
 
 /* 카드 껍데기 & 공통 글자 (패널 안에서만 적용) */
 .gridDetailSidePanel .card{
   background:var(--gdp-card); border-radius:var(--gdp-r);
-  padding:22px; box-shadow:var(--gdp-shadow);
+  padding:18px; box-shadow:var(--gdp-shadow);
 }
 .gridDetailSidePanel .eyebrow{
   font-size:11px; font-weight:700; letter-spacing:.06em;
@@ -1994,13 +2120,13 @@ td {
 .gridDetailSidePanel .muted{ color:var(--gdp-ink3); }
 
 /* --- 히어로 카드 --- */
-.gridDetailSidePanel .gu{ font-size:21px; font-weight:800; letter-spacing:-.02em; margin-top:8px; }
+.gridDetailSidePanel .gu{ font-size:19px; font-weight:800; letter-spacing:-.02em; margin-top:7px; }
 .gridDetailSidePanel .id{ font-size:12px; color:var(--gdp-ink3); margin-top:4px; }
 .gridDetailSidePanel .hero-main{
-  display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-top:20px;
+  display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-top:16px;
 }
 .gridDetailSidePanel .ht-num{
-  font-size:42px; font-weight:800; letter-spacing:-.03em; line-height:.95; color:var(--gdp-hot);
+  font-size:36px; font-weight:800; letter-spacing:-.03em; line-height:.95; color:var(--gdp-hot);
 }
 .gridDetailSidePanel .ht-num span{ font-size:22px; font-weight:700; margin-left:2px; }
 .gridDetailSidePanel .ht-sub{ font-size:12px; color:var(--gdp-ink2); margin-top:9px; }
@@ -2026,9 +2152,9 @@ td {
 
 /* --- 핵심 타일 2개 --- */
 .gridDetailSidePanel .tiles{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.gridDetailSidePanel .tile{ background:var(--gdp-sub); border-radius:14px; padding:15px 16px; }
+.gridDetailSidePanel .tile{ background:var(--gdp-sub); border-radius:13px; padding:13px 14px; }
 .gridDetailSidePanel .tile .t-lab{ font-size:12px; color:var(--gdp-ink3); margin-bottom:7px; }
-.gridDetailSidePanel .tile .t-num{ font-size:22px; font-weight:800; letter-spacing:-.02em; }
+.gridDetailSidePanel .tile .t-num{ font-size:20px; font-weight:800; letter-spacing:-.02em; }
 .gridDetailSidePanel .t-num.hot{ color:var(--gdp-hot); }
 .gridDetailSidePanel .t-num.cool{ color:var(--gdp-cool); }
 .gridDetailSidePanel .t-num.t-na{ font-size:15px; color:var(--gdp-ink3); }
@@ -2163,7 +2289,7 @@ td {
   display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
 }
 .gridDetailSidePanel .policyPresetButton{
-  min-height:54px; padding:9px 10px; border:1px solid var(--gdp-line); border-radius:11px;
+  min-height:50px; padding:8px 9px; border:1px solid var(--gdp-line); border-radius:11px;
   background:var(--gdp-card); color:var(--gdp-ink2); cursor:pointer;
   display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:3px;
   text-align:left; font:inherit;
@@ -2185,11 +2311,11 @@ td {
 .gridDetailSidePanel .policyPresetHeading{
   display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
 }
-.gridDetailSidePanel .policyPresetHeading > div{ display:flex; flex-direction:column; gap:3px; }
+.gridDetailSidePanel .policyPresetHeading > div{ display:flex; flex:1; min-width:0; flex-direction:column; gap:3px; }
 .gridDetailSidePanel .policyPresetHeading strong{ font-size:13px; line-height:1.35; }
 .gridDetailSidePanel .policyPresetHeading span{ color:var(--gdp-ink3); font-size:10px; line-height:1.4; }
 .gridDetailSidePanel .policyPresetHeading a{
-  color:var(--gdp-green); font-size:10px; font-weight:700; white-space:nowrap;
+  flex:none; color:var(--gdp-green); font-size:10px; font-weight:700; white-space:nowrap;
   text-underline-offset:2px;
 }
 .gridDetailSidePanel .policyPresetDescription{
@@ -2217,7 +2343,7 @@ td {
 }
 .gridDetailSidePanel .policyUnavailable{ color:var(--gdp-danger); background:var(--gdp-danger-soft); }
 .gridDetailSidePanel .policyRunButton{
-  width:100%; margin-top:12px; padding:11px; border:0; border-radius:11px;
+  width:100%; min-height:44px; margin-top:12px; padding:10px; border:0; border-radius:11px;
   background:var(--gdp-green); color:#fff; cursor:pointer; font-size:12px; font-weight:700;
 }
 .gridDetailSidePanel .policyRunButton:hover{ background:var(--gdp-green2); }
@@ -2386,8 +2512,8 @@ td {
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatHeader{
   flex:none;
-  min-height:72px;
-  padding:13px 14px;
+  min-height:60px;
+  padding:10px 12px;
   border-bottom:1px solid var(--gdp-line);
   background:var(--gdp-card);
   display:flex;
@@ -2405,8 +2531,8 @@ td {
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatBack{
   min-width:0;
-  height:36px;
-  padding:0 9px;
+  height:34px;
+  padding:0 8px;
   border-radius:11px;
   display:inline-flex;
   align-items:center;
@@ -2416,8 +2542,8 @@ td {
   white-space:nowrap;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset{
-  min-height:34px;
-  padding:7px 10px;
+  min-height:32px;
+  padding:6px 8px;
   border-radius:10px;
   font-size:11px;
   font-weight:700;
@@ -2432,7 +2558,7 @@ td {
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatTitle{
   margin:0;
   color:var(--gdp-green);
-  font-size:15px;
+  font-size:14px;
   line-height:1.35;
   font-weight:800;
 }
@@ -2451,13 +2577,13 @@ td {
   overflow-y:auto;
   overflow-x:hidden;
   overscroll-behavior:contain;
-  padding:16px;
+  padding:12px;
   box-sizing:border-box;
   scroll-behavior:smooth;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatIntro{
-  margin-bottom:14px;
-  padding:14px 15px;
+  margin-bottom:12px;
+  padding:11px 12px;
   border:1px solid rgba(31, 81, 33,.12);
   border-radius:15px;
   background:var(--gdp-green-soft);
@@ -2502,7 +2628,7 @@ td {
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessages{
   display:flex;
   flex-direction:column;
-  gap:12px;
+  gap:10px;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessage{
   min-width:0;
@@ -2513,12 +2639,12 @@ td {
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessage.user{ align-items:flex-end; }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatBubble{
   max-width:90%;
-  padding:11px 13px;
+  padding:9px 11px;
   border-radius:15px 15px 15px 4px;
   background:var(--gdp-card);
   color:var(--gdp-ink);
   box-shadow:var(--gdp-shadow);
-  font-size:13px;
+  font-size:12px;
   line-height:1.65;
   white-space:pre-wrap;
   overflow-wrap:anywhere;
@@ -2609,7 +2735,7 @@ td {
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatComposer{
   flex:none;
-  padding:12px 14px 14px;
+  padding:10px 12px 12px;
   border-top:1px solid var(--gdp-line);
   background:var(--gdp-card);
   display:flex;
@@ -2670,7 +2796,7 @@ td {
   height:100%;
   min-height:0;
   display:grid;
-  grid-template-columns:280px minmax(0,1fr);
+  grid-template-columns:var(--chat-guide-width) minmax(0,1fr);
   overflow:hidden;
   background:var(--gdp-sub);
 }
@@ -2691,8 +2817,8 @@ td {
   z-index:3;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader{
-  min-height:72px;
-  padding:13px 14px;
+  min-height:60px;
+  padding:10px 12px;
   border-bottom:1px solid var(--gdp-line);
   display:flex;
   align-items:center;
@@ -2713,7 +2839,7 @@ td {
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader strong{
   color:var(--gdp-ink);
-  font-size:16px;
+  font-size:14px;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader button{
   width:32px;
@@ -2731,7 +2857,7 @@ td {
   flex:1;
   overflow-y:auto;
   overscroll-behavior:contain;
-  padding:14px;
+  padding:12px;
   display:flex;
   flex-direction:column;
   gap:12px;
@@ -2956,7 +3082,7 @@ td {
   overflow: visible;
 }
 
-/* 채팅 영역은 가이드 상태와 관계없이 항상 전체 700px 사용 */
+/* 채팅 영역은 가이드 상태와 관계없이 dock 전체 폭을 사용 */
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChat {
   width: 100%;
   height: 100%;
@@ -2974,8 +3100,8 @@ td {
   left: auto;
 
   display: flex;
-  width: 280px;
-  min-width: 280px;
+  width: var(--chat-guide-width);
+  min-width: var(--chat-guide-width);
 
   transform: translateX(0);
   opacity: 1;
@@ -3066,8 +3192,8 @@ td {
 
 
 
-/* 태블릿·모바일에서는 왼쪽 외부 배치 대신 내부 drawer */
-@media (max-width: 820px) {
+/* 중간 폭부터는 왼쪽 외부 가이드 대신 채팅 안쪽 drawer를 쓴다. */
+@media (max-width: 1180px) {
 
 
   .gridDetailSidePanel.chatMode .sidePanelBody,
@@ -3086,7 +3212,7 @@ td {
     right: auto;
 
     display: none;
-    width: min(300px, calc(100% - 38px));
+    width: min(var(--chat-guide-width), calc(100% - 38px));
     min-width: 0;
 
     transform: translateX(-100%);
@@ -3096,7 +3222,7 @@ td {
   }
 
   :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuide.mobileOpen,
-  .gridDetailSidePanel
+  :is(.gridDetailSidePanel,.aiChatDock)
     .gdpAiWorkspace.guideCollapsed
     .gdpAiGuide.mobileOpen {
     display: flex;
@@ -3107,6 +3233,15 @@ td {
 
     box-shadow: 8px 0 24px rgba(0, 0, 0, 0.2);
     z-index: 6;
+  }
+
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideBackdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: block;
+    border: 0;
+    background: rgba(25,31,40,.28);
   }
 
   /*
@@ -3145,14 +3280,13 @@ td {
 
 .aiChatFab {
   position: fixed;
-  right: 24px;
-  /* Leaflet 저작권 표기(.leaflet-control-attribution)가 화면 맨 아래에 깔린다.
-     24px면 그 위에 겹쳐서 44px로 띄웠다. */
-  bottom: 44px;
+  right: var(--chat-edge-gap);
+  /* Leaflet 저작권 표기와 겹치지 않게 아래 여백을 변수로 관리한다. */
+  bottom: var(--chat-bottom-gap);
   z-index: 1101;
 
-  width: 56px;              /* 터치 타깃 최소 44px 이상 */
-  height: 56px;
+  width: var(--chat-fab-size);              /* 터치 타깃 최소 44px 이상 */
+  height: var(--chat-fab-size);
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -3266,12 +3400,12 @@ td {
 
 .aiChatDock {
   position: fixed;
-  right: 24px;
-  bottom: 108px;            /* FAB 높이 52 + 아래 여백 44 + 간격 12 */
+  right: var(--chat-edge-gap);
+  bottom: calc(var(--chat-bottom-gap) + var(--chat-fab-size) + 12px);
   z-index: 1100;
 
-  width: 380px;
-  height: min(620px, calc(100vh - 200px));
+  width: var(--chat-dock-width);
+  height: min(var(--chat-dock-height), calc(100vh - 140px));
 
   /* 사용 가이드가 채팅 왼쪽 바깥(right:100%)에 붙으므로 잘리면 안 된다 */
   overflow: visible;
@@ -3351,12 +3485,10 @@ td {
     transform: none;
   }
 }
-/* 상세 패널이 열려 있으면 dock과 FAB을 패널 왼쪽으로 밀어낸다.
-   패널 위에 겹쳐 뜨면 "대시보드를 보면서 채팅한다"는 이 기능의 목적 자체가 깨진다.
-   404px = 패널 폭 380 + 여백 24 (.gridDetailSidePanel 참고) */
+/* 상세 패널이 열려 있으면 dock과 FAB을 패널 왼쪽으로 밀어낸다. */
 .gisShell.panelOpen .aiChatDock,
 .gisShell.panelOpen .aiChatFab {
-  right: 404px;
+  right: calc(var(--detail-panel-width) + var(--chat-edge-gap));
 }
 
 .aiChatDock,
@@ -3386,18 +3518,11 @@ td {
 /* FAB 안의 마스코트 얼굴. 초록 배경 위에 크림색 얼굴이 올라간다.
    전신 SVG는 56px에서 몸통·나무가 뭉개져 머리만 잘라낸 mascot-face.svg를 쓴다. */
 .aiChatFabMascot {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   display: block;
   user-select: none;
   -webkit-user-drag: none;
-}
-/* 좁은 화면 보정: 가이드(280) + 채팅(380) + 왼쪽 여백(12) = 672px 가 확보되지 않으면
-   dock을 그만큼 덜 밀어낸다. 안 그러면 가이드가 화면 왼쪽 밖으로 잘려나간다.
-   (1024px에서 실측 -40px 잘림 → 이 규칙으로 +12px 확보)
-   넓은 화면에서는 min()이 404px를 그대로 고른다. */
-.gisShell.panelOpen .aiChatDock {
-  right: min(404px, calc(100vw - 672px));
 }
 /* =========================================================
    지도 줌·축척 (#26)
@@ -3407,10 +3532,14 @@ td {
    ========================================================= */
 
 .leaflet-top.leaflet-right {
-  top: 148px;                    /* 18(툴바 top) + 120(툴바 높이) + 10(간격) */
-  right: 16px;                   /* 툴바와 오른쪽 끝을 맞춘다 */
-  width: 62px;                   /* .rightToolbar와 동일 */
-  padding: 6px;                  /* .rightToolbar와 동일 */
+  top: calc(
+    var(--panel-edge-gap) + var(--map-tool-card-padding) + var(--map-tool-button-height) +
+      var(--map-tool-inner-gap) + var(--map-tool-button-height) +
+      var(--map-tool-card-padding) + var(--map-tool-group-gap)
+  );
+  right: var(--panel-edge-gap);
+  width: var(--map-tool-width);
+  padding: var(--map-tool-card-padding);
   border-radius: 16px;           /* .rightToolbar와 동일 */
   background: #ffffff;
   box-shadow:
@@ -3420,14 +3549,18 @@ td {
 
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--map-tool-inner-gap);
 
   pointer-events: auto;          /* 카드 위에서 지도가 끌리지 않게 */
-  transition: right 0.3s ease;   /* 패널 접힘(0.3s)과 속도를 맞춘다 */
+  transition: right 0.3s ease;
 }
 
-.gisShell.panelOpen .leaflet-top.leaflet-right {
-  right: 396px;                  /* 패널 열림 시 .rightToolbar와 동일 */
+/* 데스크톱에서만 상세 패널 폭만큼 두 지도 컨트롤 그룹을 함께 이동한다. */
+@media (min-width: 821px) {
+  .gisShell.panelOpen .rightToolbar,
+  .gisShell.panelOpen .leaflet-top.leaflet-right {
+    right: var(--detail-panel-offset);
+  }
 }
 
 /* 카드 안의 컨트롤은 껍데기를 벗긴다 — 카드는 바깥 하나뿐이다 */
@@ -3447,14 +3580,16 @@ td {
 }
 
 .leaflet-top.leaflet-right .leaflet-control-zoom a {
-  width: 50px;              /* 카드 62 - padding 12 */
-  height: 44px;             /* 터치 타깃 최소 44px */
-  line-height: 44px;
+  width: calc(
+    var(--map-tool-width) - var(--map-tool-card-padding) - var(--map-tool-card-padding)
+  );
+  height: var(--map-tool-button-height);
+  line-height: var(--map-tool-button-height);
   border: 0;
   border-radius: 11px;      /* .rightToolbar button과 동일 */
   background: #f5f7f9;
   color: #4e5968;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -3492,7 +3627,7 @@ td {
   background: none;
   box-shadow: none;
   color: #4e5968;
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 700;
   line-height: 1.2;
   text-align: center;
@@ -3511,12 +3646,12 @@ td {
    ========================================================= */
 
 .mapLegend {
-  position: absolute;
-  left: 16px;
-  bottom: 16px;
-  z-index: 700;
+  position: relative;
+  z-index: 1;
+  flex: none;
+  margin-top: 0;
 
-  width: 320px;             /* 좌측 패널과 같은 폭 → 왼쪽 가장자리가 정렬된다 */
+  width: 100%;
   padding: 8px 12px 7px;
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.96);
@@ -3613,11 +3748,228 @@ td {
   right: 0;
 }
 
+/* ===================== 대시보드 반응형 레이아웃 ===================== */
+@media (max-width: 1180px) {
+  .aiChatDock .gdpChat,
+  .aiChatDock .gdpAiWorkspace:not(.guideCollapsed) .gdpChat {
+    border-radius: var(--gdp-r);
+  }
+}
+
 @media (max-width: 820px) {
+  .gisShell {
+    --panel-edge-gap: 12px;
+    --left-panel-width: calc(100vw - 24px);
+    --detail-panel-width: min(360px, calc(100vw - 24px));
+    --map-tool-width: 54px;
+    --map-tool-button-height: 44px;
+    --map-tool-card-padding: 5px;
+    --map-tool-inner-gap: 6px;
+    --chat-edge-gap: 12px;
+    --chat-bottom-gap: 84px;
+  }
+
+  .leftOverlayRail {
+    right: var(--panel-edge-gap);
+    width: auto;
+  }
+
+  .heatIslandPanel {
+    flex: 0 1 auto;
+    max-height: min(50dvh, 430px);
+  }
+
+  .gisLeftPanel {
+    border-radius: 16px;
+  }
+
+  .gisLeftPanel select,
+  .fixedGridSize,
+  .gcsRow input,
+  .gcsRow button,
+  .locationSearchResults button,
+  .indicatorList button {
+    min-height: 44px;
+  }
+
+  .heatControlBlock .locationSearch,
+  .heatControlBlock .gridCodeSearch {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .heatControlBlock .locationSearch > span,
+  .heatControlBlock .gridCodeSearch > span {
+    padding-top: 0;
+  }
+
+  .indicatorTip {
+    right: 12px;
+    left: 12px !important;
+    max-width: none;
+  }
+
+  .indicatorTip::before {
+    display: none;
+  }
+
   .mapLegend {
-    left: 12px;
+    padding: 7px 10px 6px;
+  }
+
+  .mapLegendHead {
+    margin-bottom: 4px;
+  }
+
+  .mapLegendRamp {
+    height: 8px;
+  }
+
+  .mapLegendTicks {
+    height: 13px;
+  }
+
+  .rightToolbar {
+    top: auto;
+    right: var(--panel-edge-gap);
+    bottom: 80px;
+  }
+
+  .rightToolbar button {
+    min-height: 44px;
+  }
+
+  .leaflet-top.leaflet-right {
+    top: auto;
+    right: var(--panel-edge-gap);
+    bottom: 198px;
+    width: var(--map-tool-width);
+    padding: 3px;
+  }
+
+  .leaflet-top.leaflet-right .leaflet-control-zoom a {
+    width: 48px;
+    height: 44px;
+    line-height: 44px;
+  }
+
+  .leaflet-top.leaflet-right .leaflet-control-scale {
+    padding-top: 4px;
+  }
+
+  .gisShell.panelOpen .leaflet-bottom.leaflet-right {
+    transform: none;
+  }
+
+  .gridDetailSidePanel {
+    top: 12px;
     right: 12px;
     bottom: 12px;
-    width: auto;
+    width: var(--detail-panel-width);
+    border-radius: 18px;
+  }
+
+  .gridDetailSidePanel .sidePanelBody {
+    overflow: hidden;
+    border-radius: 18px;
+  }
+
+  .gridDetailSidePanel .rightPanelDashboard {
+    padding: 64px 16px 16px;
+  }
+
+  .sidePanelToggle,
+  .gridDetailSidePanel:not(.collapsed) .sidePanelToggle {
+    top: 12px;
+    left: 12px;
+    width: 44px;
+    height: 44px;
+    transform: none;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(20,30,45,.14);
+  }
+
+  .gridDetailSidePanel.collapsed .sidePanelToggle {
+    left: -56px;
+  }
+
+  .gisShell.panelOpen .aiChatFab,
+  .aiChatFab {
+    right: 80px;
+    bottom: 88px;
+  }
+
+  .gisShell.panelOpen .aiChatDock,
+  .aiChatDock {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .aiChatDock .gdpChat,
+  .aiChatDock .gdpAiWorkspace:not(.guideCollapsed) .gdpChat {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpChatBack,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideToggle,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader button,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideExamples button,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpChatTextarea,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpChatSend {
+    min-height: 44px;
+  }
+
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpChatBack,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuideHeader button {
+    min-width: 44px;
+  }
+
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpAiGuide {
+    width: min(320px, calc(100vw - 32px));
+  }
+}
+
+@media (max-width: 430px) {
+  .heatPanelHeader h1 {
+    font-size: 15px;
+  }
+
+  .gridDetailSidePanel .card {
+    padding: 16px;
+  }
+
+  .gridDetailSidePanel .policyPresetGrid {
+    gap: 6px;
+  }
+
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpChatHeader {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideToggle,
+  :is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset {
+    padding-inline: 7px;
+    font-size: 10px;
+  }
+}
+
+@media (max-height: 800px) and (min-width: 821px) {
+  .heatPanelHeader {
+    padding-top: 11px;
+    padding-bottom: 9px;
+  }
+
+  .heatControlBlock {
+    gap: 6px;
+    padding-bottom: 10px;
+  }
+
+  .indicatorPanel {
+    margin-top: 8px;
+    margin-bottom: 10px;
   }
 }
