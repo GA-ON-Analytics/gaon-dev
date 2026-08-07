@@ -64,15 +64,23 @@ function pointInRing(lng: number, lat: number, ring: Ring) {
   return inside;
 }
 
+function polygonsContainPoint(polygons: PolygonRings[], lng: number, lat: number) {
+  return polygons.some((rings) => {
+    if (rings.length === 0 || !pointInRing(lng, lat, rings[0])) return false;
+    return !rings.slice(1).some((hole) => pointInRing(lng, lat, hole));
+  });
+}
+
+export function featureContainsPoint(feature: Feature<Geometry>, lng: number, lat: number) {
+  return polygonsContainPoint(geometryToPolygons(feature.geometry), lng, lat);
+}
+
 function containsPoint(indexed: IndexedFeature, lng: number, lat: number) {
   if (lng < indexed.west || lng > indexed.east || lat < indexed.south || lat > indexed.north) {
     return false;
   }
 
-  return indexed.polygons.some((rings) => {
-    if (rings.length === 0 || !pointInRing(lng, lat, rings[0])) return false;
-    return !rings.slice(1).some((hole) => pointInRing(lng, lat, hole));
-  });
+  return polygonsContainPoint(indexed.polygons, lng, lat);
 }
 
 class FeatureSpatialIndex {
