@@ -3653,6 +3653,17 @@ td {
    → 높이를 60px대로 유지할 것 (초과하면 패널을 파고든다)
    ========================================================= */
 
+/* 범례는 rail의 맨 아래로 민다. 전에는 검색 패널 바로 다음에 붙어서, 패널이
+   길수록 범례가 화면 중앙 쪽으로 올라갔다. rail이 뷰포트 하단까지 닿아 있으므로
+   margin-top:auto만으로 화면 좌하단에 붙는다.
+   width는 rail(--left-panel-width)이 좁은 폭에서 calc(100vw - 24px)까지 커지므로
+   따로 묶는다. 안 묶으면 범례가 화면을 가로질러 지도를 덮는다. */
+.leftOverlayRail .mapLegend {
+  margin-top: auto;
+  align-self: flex-start;
+  width: min(340px, calc(100vw - 24px));
+}
+
 .mapLegend {
   position: relative;
   z-index: 1;
@@ -3691,21 +3702,6 @@ td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.mapLegendEmpty {
-  margin-left: auto;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.mapLegendEmpty i {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  box-shadow: inset 0 0 0 1px rgba(20, 30, 45, 0.14);
 }
 
 /* 4구간 가로 램프. 각 칸이 같은 너비라 경계가 25% / 50% / 75%에 온다. */
@@ -3782,13 +3778,6 @@ td {
     width: auto;
   }
 
-  /* 이 폭에서 레일은 --left-panel-width가 calc(100vw - 24px)라 화면을 가로지른다.
-     범례는 .mapLegend{width:100%}라 레일을 그대로 따라가 지도를 덮었다.
-     범례만 폭을 묶어 좌하단에 남긴다. */
-  .leftOverlayRail .mapLegend {
-    width: min(320px, calc(100vw - 24px));
-    align-self: flex-start;
-  }
 
   .heatIslandPanel {
     flex: 0 1 auto;
