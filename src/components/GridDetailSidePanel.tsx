@@ -12,6 +12,7 @@ import {
   policySimulationRequest
 } from '../config/policyPresets';
 import type {
+  BatchSimulationResponse,
   FeatureRange,
   GridAnalysisProperties,
   GridResolution,
@@ -338,7 +339,13 @@ function GridDetailSidePanel({
         isOpen ? '' : 'collapsed'
       ].filter(Boolean).join(' ')}
     >
-      <button type="button" className="sidePanelToggle" onClick={onToggle}>
+      <button
+        type="button"
+        className="sidePanelToggle"
+        aria-label={isOpen ? '격자 상세 패널 닫기' : '격자 상세 패널 열기'}
+        aria-expanded={isOpen}
+        onClick={onToggle}
+      >
         {isOpen ? '›' : '‹'}
       </button>
 
@@ -930,15 +937,22 @@ function formatPolicyFeatureValue(feature: PolicyFeature, value: number): string
 
 function PolicyPresetSection({
   gridId,
+  targetIds,
+  selectedGridResolution,
   properties,
   featureRanges
 }: {
   gridId: string;
+  targetIds: string[];
+  selectedGridResolution: GridResolution;
   properties: GridAnalysisProperties;
   featureRanges: Record<string, FeatureRange> | null;
 }) {
+  const isBatchResolution =
+    selectedGridResolution === '250m' || selectedGridResolution === '500m';
   const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyPreset['id'] | null>(null);
   const [policyResult, setPolicyResult] = useState<SimulationResponse | null>(null);
+  const [policyBatchResult, setPolicyBatchResult] = useState<BatchSimulationResponse | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [policyWarnings, setPolicyWarnings] = useState<string[]>([]);
   const [policyLoading, setPolicyLoading] = useState(false);
@@ -949,21 +963,25 @@ function PolicyPresetSection({
     requestVersionRef.current += 1;
     setSelectedPolicyId(null);
     setPolicyResult(null);
+    setPolicyBatchResult(null);
     setPolicyError(null);
     setPolicyWarnings([]);
     setPolicyLoading(false);
-  }, [gridId]);
+  }, [gridId, properties.display_grid_id, selectedGridResolution]);
 
   const selectedPolicy: PolicyPreset | null =
     POLICY_PRESETS.find((preset) => preset.id === selectedPolicyId) ?? null;
   const selectedApplicability = selectedPolicy
-    ? policyApplicability(selectedPolicy, properties, featureRanges)
+    ? isBatchResolution
+      ? { applicable: true }
+      : policyApplicability(selectedPolicy, properties, featureRanges)
     : null;
 
   function selectPolicy(preset: PolicyPreset) {
     requestVersionRef.current += 1;
     setSelectedPolicyId(preset.id);
     setPolicyResult(null);
+    setPolicyBatchResult(null);
     setPolicyError(null);
     setPolicyWarnings([]);
     setPolicyLoading(false);
@@ -971,7 +989,9 @@ function PolicyPresetSection({
 
   async function runPolicy() {
     if (!selectedPolicy) return;
-    const applicability = policyApplicability(selectedPolicy, properties, featureRanges);
+    const applicability = isBatchResolution
+      ? { applicable: true }
+      : policyApplicability(selectedPolicy, properties, featureRanges);
     if (!applicability.applicable) {
       setPolicyError(applicability.reason ?? '현재 격자에는 이 정책을 적용할 수 없습니다.');
       return;
@@ -980,10 +1000,43 @@ function PolicyPresetSection({
     const requestVersion = ++requestVersionRef.current;
     setPolicyLoading(true);
     setPolicyResult(null);
+    setPolicyBatchResult(null);
     setPolicyError(null);
     setPolicyWarnings([]);
 
     try {
+      if (isBatchResolution) {
+        const request = policySimulationRequest(targetIds[0] ?? gridId, selectedPolicy);
+        const response = await simulateBatchGridPolicy(
+          targetIds,
+          request.changes ?? {},
+          request.couple_land_cover ?? false
+        );
+        if (requestVersionRef.current !== requestVersion) return;
+        if (response.mean_delta_c == null) {
+          setPolicyError('시뮬레이션할 수 있는 구성 격자가 없어요.');
+          return;
+        }
+
+        const clipped = response.clipped_count ?? 0;
+        if (clipped > 0) {
+          const total = response.valid_count ?? response.count;
+          const warnings = [
+            `${total.toLocaleString()}개 중 ${clipped.toLocaleString()}개는 요청량을 다 반영하지 못함`
+          ];
+          const unclipped = response.mean_delta_c_unclipped;
+          if (
+            typeof unclipped === 'number' &&
+            Math.abs(unclipped - response.mean_delta_c) >= TIE_BAND_C
+          ) {
+            warnings.push(`그 셀을 빼면 ${formatDelta(unclipped)}`);
+          }
+          setPolicyWarnings(warnings);
+        }
+        setPolicyBatchResult(response);
+        return;
+      }
+
       const response = await simulateGridPolicy(
         policySimulationRequest(gridId, selectedPolicy)
       );
@@ -1032,7 +1085,9 @@ function PolicyPresetSection({
 
       <div className="policyPresetGrid">
         {POLICY_PRESETS.map((preset) => {
-          const applicability = policyApplicability(preset, properties, featureRanges);
+          const applicability = isBatchResolution
+            ? { applicable: true }
+            : policyApplicability(preset, properties, featureRanges);
           const selected = preset.id === selectedPolicyId;
           return (
             <button
@@ -1136,6 +1191,25 @@ function PolicyPresetSection({
               <p>모델에 반영된 feature 변화가 없습니다.</p>
             )}
           </div>
+        </div>
+      )}
+
+      {policyBatchResult && policyBatchResult.mean_delta_c != null && (
+        <div className="policyResult" aria-live="polite">
+          <div className="policyResultTitle">정책 시뮬레이션 결과</div>
+          <dl className="policyAnomalyRows">
+            <div>
+              <dt>분석한 구성 100m 셀</dt>
+              <dd>{policyBatchResult.count.toLocaleString()}개</dd>
+            </div>
+            <div className="policyDeltaRow">
+              <dt>평균 예상 변화</dt>
+              <dd>{formatDelta(policyBatchResult.mean_delta_c)}</dd>
+            </div>
+          </dl>
+          <p className="policyAnomalyNote">
+            각 구성 100m 셀의 정책 적용 결과를 기존 batch 방식으로 평균한 값입니다.
+          </p>
         </div>
       )}
 
@@ -1266,17 +1340,15 @@ function SimulationCard({
 
   return (
     <div className="card gdpSim">
-      {selectedGridResolution === '100m' && (
-        <PolicyPresetSection
-          key={gridId}
-          gridId={gridId}
-          properties={properties}
-          featureRanges={featureRanges}
-        />
-      )}
-      <div
-        className={`sec-title${selectedGridResolution === '100m' ? ' manualSimulationTitle' : ''}`}
-      >
+      <PolicyPresetSection
+        key={`${selectedGridResolution}:${gridId || properties.display_grid_id || ''}`}
+        gridId={gridId}
+        targetIds={targetIds}
+        selectedGridResolution={selectedGridResolution}
+        properties={properties}
+        featureRanges={featureRanges}
+      />
+      <div className="sec-title manualSimulationTitle">
         직접 시뮬레이션
         <InfoTip
           align="left"
