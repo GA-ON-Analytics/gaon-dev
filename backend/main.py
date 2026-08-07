@@ -361,6 +361,9 @@ def features() -> Any:
                 ),
                 "unit": spec["unit"],
                 "category": spec["category"],
+                # 출처는 spec을 통째로 펼치지 않고 명시적으로 골라 담는다.
+                # 여기 안 넣으면 tools.py에 출처를 채워도 API로는 안 나간다.
+                "source": spec["source"],
             }
         )
     return {
