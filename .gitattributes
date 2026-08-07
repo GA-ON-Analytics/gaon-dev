@@ -1,0 +1,8 @@
+# 서버로 보내는 셸 스크립트는 항상 LF 로 체크아웃한다.
+#
+# Windows 의 core.autocrlf 가 켜져 있으면 체크아웃할 때 CRLF 가 붙는데,
+# 그 파일을 그대로 서버에 scp 하면 bash 가 첫 줄부터
+#   $'\r': command not found
+# 로 죽는다. 같은 계열의 사고를 대시보드 geojson 에서 한 번 겪었다
+# (2026-08-01_배포_CICD_정리_ko.md 7장 — "배포된 것 ≠ 커밋된 것").
+*.sh text eol=lf
