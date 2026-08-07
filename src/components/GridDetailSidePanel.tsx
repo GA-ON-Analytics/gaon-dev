@@ -338,7 +338,13 @@ function GridDetailSidePanel({
         isOpen ? '' : 'collapsed'
       ].filter(Boolean).join(' ')}
     >
-      <button type="button" className="sidePanelToggle" onClick={onToggle}>
+      <button
+        type="button"
+        className="sidePanelToggle"
+        aria-label={isOpen ? '격자 상세 패널 닫기' : '격자 상세 패널 열기'}
+        aria-expanded={isOpen}
+        onClick={onToggle}
+      >
         {isOpen ? '›' : '‹'}
       </button>
 
