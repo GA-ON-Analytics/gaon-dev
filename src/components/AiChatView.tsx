@@ -946,7 +946,12 @@ export default function AiChatView({
       />
 
       <section className="gdpChat">
-      <header className="gdpChatHeader">
+      {/* 이 헤더가 창을 옮기는 손잡이다. 실제 드래그는 AiChatLauncher 가 붙인다
+          (창 위치는 창을 소유한 쪽이 관리해야 해서). */}
+      <header
+        className="gdpChatHeader"
+        title="끌어서 옮기기 · 두 번 누르면 원래 자리로"
+      >
         <button
           className="gdpChatBack"
           type="button"
