@@ -2570,6 +2570,19 @@ td {
   gap:10px;
   box-sizing:border-box;
 }
+
+/* 챗봇 창의 헤더는 창을 옮기는 손잡이다(상세 패널 쪽 헤더는 아니다).
+   touch-action:none 이 없으면 터치로 끌 때 브라우저가 스크롤로 가로챈다. */
+.aiChatDock .gdpChatHeader{
+  cursor:grab;
+  touch-action:none;
+}
+.aiChatDock .gdpChatHeader button{ cursor:pointer; }
+
+/* 끌던 중에 글자가 선택되면 파랗게 반전돼 지저분해진다. */
+body.isDraggingChatDock{ user-select:none; }
+body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
+
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatBack,
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset{
   flex:none;
