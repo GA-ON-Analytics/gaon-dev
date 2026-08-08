@@ -29,6 +29,19 @@ jobs:
       - name: 프론트 빌드
         run: npm run build
 
+      # nginx 는 gzip_static on 이라 같은 이름의 .gz 가 있으면 그걸 그대로 보낸다.
+      # 미리 만들어 두면 요청마다 서버가 40MB 를 다시 압축하지 않는다.
+      # A1 은 2 OCPU 뿐이라, 동시 접속이 몰리는 심사 시연에서 이 차이가 크다.
+      #
+      # 원본도 함께 남긴다. .gz 만 두면 gzip 을 못 받는 클라이언트가 404 를 본다.
+      - name: dashboard geojson 사전 압축
+        run: |
+          before=$(du -sm dist/dashboard | cut -f1)
+          find dist/dashboard -name '*.geojson' -print0 | xargs -0 -P 4 -n 8 gzip -6 -k -f
+          after=$(du -sm dist/dashboard | cut -f1)
+          echo "dashboard ${before}MB → ${after}MB (원본 + .gz)"
+          ls -lh dist/dashboard/seoul_grid_100m_map.geojson*
+
       - name: 빌드 결과 확인
         run: |
           ls -lh dist
