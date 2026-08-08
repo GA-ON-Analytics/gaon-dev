@@ -13,7 +13,6 @@ export interface MapLegendProps {
   layerLabel: string;
   /** MapDashboard의 colorByLayerValue를 그대로 주입받는다 */
   colorOf: (properties: GridAnalysisProperties, layer: LayerKey) => string;
-  neutralColor: string;
   /**
    * 구 단위 화면이면 사분위 경계를 받는다.
    * 이때는 고정 임계값 대신 '지금 화면의 구들' 안에서의 상대 위치를 보여준다.
@@ -123,7 +122,6 @@ export default function MapLegend({
   layer,
   layerLabel,
   colorOf,
-  neutralColor,
   quantile
 }: MapLegendProps) {
   const spec = SPECS[layer];
@@ -147,12 +145,11 @@ export default function MapLegend({
       <header className="mapLegendHead">
         <strong>{layerLabel}</strong>
         <span>{hint}</span>
-        {!isQuantile && (
-          <span className="mapLegendEmpty">
-            <i style={{ background: neutralColor }} aria-hidden="true" />
-            없음
-          </span>
-        )}
+        {/* '없음' 항목은 뺐다. 화면에 보이는 격자 중 값이 없는 것은 사실상 없다
+            — 100m는 64,574개 중 30개(0.05%)뿐이고 그마저 1~102㎡ 조각이라 눈에
+            안 띄며, 250m·500m는 0개다. 지도에서 실제로 회색 사각형으로 보이는
+            자리는 값이 null인 격자가 아니라 격자 자체가 없어 배경이 비치는
+            자리라서 이 색과 무관하다. 설명이 안 되는 항목이라 두지 않는다. */}
       </header>
 
       <div className="mapLegendRamp" role="img" aria-label={ticks.join(', ')}>
