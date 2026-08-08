@@ -2153,7 +2153,15 @@ td {
 /* --- 핵심 타일 2개 --- */
 .gridDetailSidePanel .tiles{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .gridDetailSidePanel .tile{ background:var(--gdp-sub); border-radius:13px; padding:13px 14px; }
-.gridDetailSidePanel .tile .t-lab{ font-size:12px; color:var(--gdp-ink3); margin-bottom:7px; }
+/* ⓘ는 inline-flex라 줄 끝 여유가 18px 미만이면 통째로 다음 줄로 내려간다.
+   타일 라벨 칸은 110px인데 '녹지화 시 저감 가능'만 123px이라 텍스트부터 두 줄이 되고,
+   ⓘ가 둘째 줄에 혼자 남았다. nowrap은 넘쳐서 못 쓰므로(123 > 110) 플렉스로
+   ⓘ를 텍스트 블록 오른쪽에 붙인다. 라벨이 몇 줄이 되든 ⓘ는 같은 블록에 남는다. */
+.gridDetailSidePanel .tile .t-lab{
+  font-size:12px; color:var(--gdp-ink3); margin-bottom:7px;
+  display:flex; align-items:center; gap:4px;
+}
+.gridDetailSidePanel .tile .t-lab .infotip{ flex:none; margin-left:0; }
 .gridDetailSidePanel .tile .t-num{ font-size:20px; font-weight:800; letter-spacing:-.02em; }
 .gridDetailSidePanel .t-num.hot{ color:var(--gdp-hot); }
 .gridDetailSidePanel .t-num.cool{ color:var(--gdp-cool); }
@@ -3645,6 +3653,15 @@ td {
    → 높이를 60px대로 유지할 것 (초과하면 패널을 파고든다)
    ========================================================= */
 
+/* 범례는 rail의 맨 아래로 민다. 전에는 검색 패널 바로 다음에 붙어서, 패널이
+   길수록 범례가 화면 중앙 쪽으로 올라갔다. rail이 뷰포트 하단까지 닿아 있으므로
+   margin-top:auto만으로 화면 좌하단에 붙는다.
+   폭은 따로 묶지 않는다. .mapLegend{width:100%}가 rail(--left-panel-width)을
+   그대로 채워 대시보드 패널과 가로 길이가 같아진다. */
+.leftOverlayRail .mapLegend {
+  margin-top: auto;
+}
+
 .mapLegend {
   position: relative;
   z-index: 1;
@@ -3683,21 +3700,6 @@ td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.mapLegendEmpty {
-  margin-left: auto;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.mapLegendEmpty i {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  box-shadow: inset 0 0 0 1px rgba(20, 30, 45, 0.14);
 }
 
 /* 4구간 가로 램프. 각 칸이 같은 너비라 경계가 25% / 50% / 75%에 온다. */
@@ -3773,6 +3775,7 @@ td {
     right: var(--panel-edge-gap);
     width: auto;
   }
+
 
   .heatIslandPanel {
     flex: 0 1 auto;

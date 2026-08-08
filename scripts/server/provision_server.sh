@@ -135,6 +135,23 @@ echo "유닛 배치 완료 (기동은 CD 가 한다 — 아직 코드가 없다)
 # ---------------------------------------------------------------------------
 say "6. nginx (HTTP)"
 
+# .geojson MIME 매핑.
+#
+# nginx 기본 mime.types 에는 .geojson 이 없다. 그래서 지도 데이터가
+# application/octet-stream 으로 나가고, 아래 gzip_types 에 그 타입이 없으니
+# 압축을 통째로 건너뛴다. 실측: 같은 서버에서 .json 은 gzip 이 걸리는데
+# .geojson 만 안 걸려 42MB 가 그대로 나갔다(2.3초). 압축하면 7.0MB 다.
+#
+# ★ 이 블록을 아래 snippet(=server 컨텍스트)에 넣으면 안 된다. nginx 는 하위
+#   컨텍스트에 types 가 있으면 상위에서 상속한 표를 통째로 버린다. 그러면
+#   .js·.css·.json 매핑까지 같이 날아가 오히려 더 크게 망가진다.
+#   conf.d 는 http 컨텍스트라 기존 표에 더해진다.
+sudo tee /etc/nginx/conf.d/gaon-mime.conf >/dev/null <<'MIME'
+types {
+    application/geo+json  geojson;
+}
+MIME
+
 # 공통 서빙 설정을 snippet 으로 둔다. HTTPS 를 붙이면 80·443 두 블록이
 # 이 파일을 함께 include 하므로, 한쪽만 고쳐 어긋나는 사고가 없다.
 sudo mkdir -p /etc/nginx/snippets

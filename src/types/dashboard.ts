@@ -2,7 +2,11 @@ export type LayerKey =
   | 'priority_score'
   | 'mean_actual_anomaly'
   | 'mean_actual_lst'
-  | 'green_delta_c'
+  // green_delta_c는 지도 레이어가 아니다. 단일 고정 시나리오라 선택 목록에서
+  // 뺐는데(MapDashboard.tsx) 타입에는 남아 있었다. colorByLayerValue에 분기가
+  // 없어서, 다시 선택 가능해지는 순간 전 격자가 NEUTRAL_COLOR로 칠해진다.
+  // 데이터 필드(GridAnalysisProperties.green_delta_c)는 상세 패널과
+  // priority_score 계산에서 계속 쓰이므로 그대로 둔다.
   | 'green_ratio'
   | 'ndvi'
   | 'building_ratio'
