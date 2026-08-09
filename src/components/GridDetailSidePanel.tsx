@@ -94,11 +94,23 @@ const CORE_MODEL_FEATURES: (keyof GridAnalysisProperties)[] = [
   'elevation_m',
   'building_ratio'
 ];
+// ★ null 과 undefined 를 구분한다. 느슨한 v == null 로 두면 둘 다 걸린다.
+//
+// 격자를 클릭하면 먼저 지도용 geojson 의 속성이 패널에 들어간다. 이건 속성이
+// 13개뿐이라 albedo·elevation_m 이 아예 없다(상세 geojson 은 53개). 구별 상세
+// 데이터(1MB·약 0.35초)가 도착하면 교체되는데, 그 사이에 두 필드가 undefined 라
+// "데이터 불완전 격자" 경고가 떴다가 사라졌다. 로컬은 이 구간이 순식간이라
+// 안 보이고 배포 환경에서만 보였다.
+//
+// 두 상태는 구분할 수 있다. 진짜 결측 격자는 키가 있고 값이 null 이며(확인:
+// 11680_02607 의 albedo·elevation_m 이 키 있음 + null), 아직 안 온 필드는 키
+// 자체가 없어 undefined 다. 그래서 null 만 결측으로 센다.
 function isIncompleteGrid(properties: GridAnalysisProperties | null): boolean {
   if (!properties) return false;
   return CORE_MODEL_FEATURES.some((key) => {
     const v = properties[key];
-    return v == null || (typeof v === 'number' && !Number.isFinite(v));
+    if (v === undefined) return false;
+    return v === null || (typeof v === 'number' && !Number.isFinite(v));
   });
 }
 
