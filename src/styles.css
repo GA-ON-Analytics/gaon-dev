@@ -1,8 +1,34 @@
+/* 웹폰트를 직접 싣는다. @import 는 다른 규칙보다 먼저 와야 한다.
+ *
+ * 전에는 font-family 에 Inter·Pretendard 를 적어두고 정작 아무것도 싣지 않아,
+ * 맥은 -apple-system(SF Pro), 윈도우는 Segoe UI 로 떨어졌다. 글자 모양과 자간이
+ * 달라 두 환경의 화면이 다르게 보이던 원인이다.
+ *
+ * 동적 서브셋 버전을 쓴다. 단일 파일은 2.0MB 라 한 번에 다 받지만, 서브셋은
+ * unicode-range 로 나뉘어 있어 화면에 실제로 쓰는 글자가 든 조각만 받는다. */
+@import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
+
 :root {
   color: #172033;
   background: #eef2f3;
+
+  /* 화면 비율. 기능·배치·생김새는 그대로 두고 크기만 줄인다.
+   *
+   * CSS 에 px 값이 1,139개이고 rem 은 0개라 html{font-size} 로는 아무 효과가
+   * 없다. 값을 하나씩 고치면 "생김새 유지"가 깨진다. zoom 은 레이아웃을 다시
+   * 계산하므로 절대 위치·하단 고정·플렉스가 전부 그대로 유지된다.
+   *
+   * ★ 지도(.gisMap)에는 걸지 않는다. 지도까지 줄이면 타일과 글자가 같이 작아져
+   *   그냥 축소한 그림이 된다. UI 만 줄여야 지도가 더 넓게 보인다.
+   *
+   * 이 값은 src/uiScale.ts 가 화면 폭에 맞춰 계속 덮어쓴다. 여기 적은 0.8 은
+   * 기준 폭(1440px)의 값이자, 스크립트가 아직 안 돈 순간의 초기값이다.
+   * 배율 규칙을 바꾸려면 styles.css 가 아니라 uiScale.ts 를 고쳐야 한다. */
+  --ui-scale: 0.8;
+
   font-family:
-    Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    "Pretendard Variable", Pretendard, Inter, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -17,6 +43,18 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* 지도 위에 얹히는 UI 만 --ui-scale 로 줄인다. 목록에서 빠진 것은 .gisMap
+   하나뿐이고, 지도는 원래 해상도를 유지한다.
+   .leaflet-control-container 는 지도 안에 있지만 줌 버튼·축척 막대라 UI 쪽이다. */
+.leftOverlayRail,
+.rightToolbar,
+.gridDetailSidePanel,
+.aiChatDock,
+.aiChatFab,
+.leaflet-control-container {
+  zoom: var(--ui-scale);
 }
 
 body {
@@ -540,7 +578,8 @@ td {
   width: 100vw;
   height: 100vh;
   font-family:
-    Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
 }
 
 /* 마우스로 격자를 클릭할 때 브라우저가 SVG 경계 상자에 그리는 포커스 링을 숨긴다. */
@@ -819,7 +858,8 @@ td {
   background: var(--gdp-card);
   box-shadow: 0 8px 20px rgba(20, 30, 45, 0.1);
   color: var(--gdp-ink);
-  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
   font-size: 12px;
 }
 
@@ -1779,7 +1819,8 @@ td {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
   color: #202733;
   font-family:
-    Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
 }
 
 .gridTempTooltip::before,
@@ -2529,6 +2570,19 @@ td {
   gap:10px;
   box-sizing:border-box;
 }
+
+/* 챗봇 창의 헤더는 창을 옮기는 손잡이다(상세 패널 쪽 헤더는 아니다).
+   touch-action:none 이 없으면 터치로 끌 때 브라우저가 스크롤로 가로챈다. */
+.aiChatDock .gdpChatHeader{
+  cursor:grab;
+  touch-action:none;
+}
+.aiChatDock .gdpChatHeader button{ cursor:pointer; }
+
+/* 끌던 중에 글자가 선택되면 파랗게 반전돼 지저분해진다. */
+body.isDraggingChatDock{ user-select:none; }
+body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
+
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatBack,
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatReset{
   flex:none;
@@ -2879,6 +2933,18 @@ td {
   border-radius:14px;
   background:var(--gdp-card);
   box-shadow:0 4px 14px rgba(24,49,40,.05);
+}
+
+/* 창 옮기기 안내. 기능 카드가 아니라 곁들이는 팁이라 테두리 없이 옅게 둔다.
+   가운데 정렬 + 두 줄. 문구를 늘리면 줄이 늘어져 지저분해진다(칸 너비 180px). */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpGuideTip{
+  margin:0;
+  padding:2px 4px;
+  font-size:11.5px;
+  line-height:1.6;
+  text-align:center;
+  text-wrap:balance;
+  color:var(--gdp-ink3);
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpGuideContext{
   padding:12px;

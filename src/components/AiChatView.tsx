@@ -667,6 +667,16 @@ function AiUsageGuide({
           </div>
         </section>
 
+        {/* 창을 옮길 수 있다는 걸 알려주는 곳이 헤더 title 뿐이라, 마우스를
+            올려보지 않으면 모른다. 기능 설명 뒤에 짧게 덧붙인다.
+            칸 너비가 180px 이라 문구를 길게 쓰면 네 줄로 늘어진다. 두 줄에
+            맞춘 길이다(재보면 각각 154px·111px). 문구를 고칠 때 주의. */}
+        <p className="gdpGuideTip">
+          제목줄을 끌면 창을 옮길 수 있어요
+          <br />
+          두 번 누르면 원래 자리로
+        </p>
+
         <details className="gdpGuideCatalog">
           <summary>
             조회 가능한 데이터 {features.length || 18}개
@@ -946,7 +956,12 @@ export default function AiChatView({
       />
 
       <section className="gdpChat">
-      <header className="gdpChatHeader">
+      {/* 이 헤더가 창을 옮기는 손잡이다. 실제 드래그는 AiChatLauncher 가 붙인다
+          (창 위치는 창을 소유한 쪽이 관리해야 해서). */}
+      <header
+        className="gdpChatHeader"
+        title="끌어서 옮기기 · 두 번 누르면 원래 자리로"
+      >
         <button
           className="gdpChatBack"
           type="button"
