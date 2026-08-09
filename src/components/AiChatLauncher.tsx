@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import AiChatView from './AiChatView';
+import { applyDockPosition, createDockDrag, loadDockPosition } from '../chatDockDrag';
 
 // GA:ON AI 채팅 진입점.
 //
@@ -81,6 +82,41 @@ export default function AiChatLauncher({
 
   useEffect(() => {
     if (isOpen) dockRef.current?.focus();
+  }, [isOpen]);
+
+  // 창을 헤더로 끌어 옮긴다.
+  //
+  // dock 은 항상 마운트돼 있지만 닫혀 있을 때는 hidden 이라 크기가 0이다.
+  // 그 상태에서 위치를 계산하면 화면 밖으로 가둬버리므로, 열렸을 때만 붙인다.
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (!dock || !isOpen) return;
+
+    // 저장해 둔 위치를 먼저 반영한다. 없으면 CSS 의 우하단 기본값을 쓴다.
+    applyDockPosition(dock, loadDockPosition());
+
+    const drag = createDockDrag(dock, () => {});
+    const onPointerDown = (event: PointerEvent) => {
+      drag.onPointerDown(event);
+    };
+    // 헤더를 두 번 누르면 원래 자리로. 옮겨 놓고 못 찾는 상황을 막는 탈출구다.
+    const onDoubleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('.gdpChatHeader')) return;
+      if (target.closest('button, input, textarea, a')) return;
+      drag.reset();
+    };
+
+    dock.addEventListener('pointerdown', onPointerDown);
+    dock.addEventListener('dblclick', onDoubleClick);
+    // 창 크기가 바뀌어 위치가 화면 밖이 되면 다시 안으로 넣는다.
+    window.addEventListener('resize', drag.reclamp);
+
+    return () => {
+      dock.removeEventListener('pointerdown', onPointerDown);
+      dock.removeEventListener('dblclick', onDoubleClick);
+      window.removeEventListener('resize', drag.reclamp);
+    };
   }, [isOpen]);
 
   const close = () => {
