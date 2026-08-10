@@ -51,8 +51,8 @@ const LOOKUP_EXAMPLES = [
 ] as const;
 const SIMULATION_EXAMPLES = [
   '녹지율을 5%p 높여줘',
-  'NDVI를 0.05 높이면 어떻게 돼?',
-  '불투수율을 3%p 낮추고 알베도를 0.02 높여줘'
+  '식생지수를 0.05 높이면 어떻게 돼?',
+  '불투수율을 3%p 낮추고 표면 반사율을 0.02 높여줘'
 ] as const;
 const POLICY_RANKING_EXAMPLES = [
   '어떤 정책이 가장 효과적이야?',
@@ -60,7 +60,7 @@ const POLICY_RANKING_EXAMPLES = [
   '정책 우선순위 알려줘'
 ] as const;
 const DOC_SEARCH_EXAMPLES = [
-  'NDVI가 무슨 뜻이야?',
+  '식생지수가 무슨 뜻이야?',
   '녹지율 데이터 출처가 어디야?',
   '왜 딥러닝을 안 쓰고 다른 방법을 골랐어?'
 ] as const;
@@ -624,7 +624,7 @@ function AiUsageGuide({
           </div>
           <p>변경할 지표, 증가·감소 방향, 수치를 함께 입력해 주세요.</p>
           <div className="gdpGuideLeverList" aria-label="지원 정책 레버">
-            {['녹지율', '불투수율', 'NDVI', '알베도'].map((lever) => (
+            {['녹지율', '불투수율', '식생지수', '표면 반사율'].map((lever) => (
               <span key={lever}>{lever}</span>
             ))}
           </div>

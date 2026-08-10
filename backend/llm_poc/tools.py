@@ -11,13 +11,6 @@ from typing import Any
 from backend.ml import predict_core
 
 
-# 문서 검색은 "지금 사실"을 답하지 않는다. 문서 수치는 작성 시점 값이라
-# 지금 모델과 다르다(07.11 문서의 R² 0.832가 지금 0.7861인 것이 그 예다).
-DOC_SEARCH_LIMITATIONS = [
-    "문서에 적힌 수치는 작성 시점 값이라 현재 모델·데이터와 다를 수 있습니다.",
-    "현재값이 필요하면 격자 데이터 조회나 시뮬레이션을 사용해 주세요.",
-]
-
 INTERPRETATION_BASIS = (
     "before_anomaly와 after_anomaly는 절대온도가 아니라 "
     "머신러닝 모델이 반환한 예측 anomaly이며, "
@@ -1031,7 +1024,13 @@ def search_docs(question: str) -> dict[str, Any]:
         "question": question if isinstance(question, str) else None,
         "hits": [],
         "retrieval": "hybrid(bm25+bge-m3, RRF)",
-        "limitations": list(DOC_SEARCH_LIMITATIONS),
+        # 비워 둔다. 예전에는 "문서 수치는 작성 시점 값" 면책을 항상 붙였는데,
+        # "NDVI가 무슨 뜻이야?" 같은 정의 질문처럼 답에 수치가 하나도 없는
+        # 경우에도 붙어서 본문보다 면책이 긴 답이 나왔다.
+        # 문서 수치가 낡는다는 사실 자체는 그대로다(07.11 문서의 R² 0.832가
+        # 지금 0.7861). 그건 "숫자는 RAG로 답하지 않는다"는 설계로 막고 있지,
+        # 모든 답변에 붙이는 꼬리말로 막을 일이 아니다.
+        "limitations": [],
         "error": None,
     }
     if not isinstance(question, str) or not question.strip():
