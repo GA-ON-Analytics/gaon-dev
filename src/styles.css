@@ -2692,6 +2692,11 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   flex-direction:column;
   gap:10px;
 }
+/* 질문 하나와 그 답변을 한 덩어리로 읽히게 한다. 답변 다음에 오는 질문
+   앞에만 간격을 더 준다. 전부 같은 간격이면 어디까지가 한 대화인지 모른다. */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessage.assistant + .gdpChatMessage.user{
+  margin-top:12px;
+}
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessage{
   min-width:0;
   display:flex;
@@ -2723,9 +2728,10 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessage.assistant .gdpChatBubble{
   width:100%;
   max-width:100%;
-  padding:14px;
+  padding:13px 14px 13px 15px;
   border:1px solid rgba(31, 81, 33,.12);
-  border-radius:14px;
+  border-left:3px solid var(--gdp-green);
+  border-radius:4px 14px 14px 4px;
   box-sizing:border-box;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationResult{
@@ -2740,7 +2746,9 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   overflow-wrap:anywhere;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationDelta{
-  margin-bottom:10px;
+  margin-bottom:12px;
+  padding-bottom:10px;
+  border-bottom:1px solid rgba(31, 81, 33,.1);
   color:var(--gdp-green);
   display:flex;
   flex-direction:column;
@@ -2790,6 +2798,14 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows dd{
   min-width:0;
   margin:0;
+  padding-bottom:6px;
+  /* 항목이 여러 개면 어디서 끊기는지 안 보인다. 옅은 선으로 줄을 가른다. */
+  border-bottom:1px solid rgba(31, 81, 33,.07);
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows dt:last-of-type,
+:is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows dd:last-of-type{
+  padding-bottom:0;
+  border-bottom:0;
 }
 :is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows dt{
   overflow-wrap:anywhere;
