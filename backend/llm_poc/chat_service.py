@@ -3119,6 +3119,7 @@ DOC_ANSWER_SYSTEM = (
 - 발췌로 답할 수 없으면 answer에 "제공된 문서에서 관련 내용을 찾지 못했습니다."라고 쓴다.
 - 수치를 인용하면 "문서 기준"임을 함께 밝힌다. 문서 수치는 작성 시점 값이라 현재와 다를 수 있다.
 - 사고 과정과 영어 문장을 쓰지 않는다.
+- 답변은 존댓말로 쓴다. 발췌의 어투를 따라 쓰지 않는다.
 
 ★ answer에는 위 발췌 본문에서 읽은 내용만 넣는다. 이 지시문의 문장을 복사하지 않는다."""
 )
@@ -3203,6 +3204,28 @@ def _doc_answer_prompt(tool_result: Mapping[str, Any]) -> str:
     return "\n\n".join(parts) + f"\n\n질문: {question}"
 
 
+# 반말 종결. "~다."로 끝나되 "~니다."가 아닌 것을 본다.
+# "입니다."도 "다."로 끝나므로 "다."만 세면 존댓말까지 잡힌다.
+#
+# 전각 마침표(。)를 넣어 둔 이유가 있다. 말투를 고치라고 되먹였더니 모델이
+# 문장은 그대로 두고 마침표만 "。"로 바꿔 검사를 빠져나갔다(실측:
+# "학습했다。"). 반각만 보면 통과한다.
+_CASUAL_ENDING_PATTERN = re.compile(r"(?<!니)다[.!?。]")
+# 전각 문장부호는 한국어 본문에서 쓰지 않는다. 발췌에 섞여 있어도 걷어낸다.
+_FULLWIDTH_PUNCTUATION = str.maketrans({"。": ".", "，": ",", "！": "!", "？": "?"})
+
+
+def _casual_sentence_endings(text: str) -> list[str]:
+    """문서 답변에 남은 반말 종결을 찾는다.
+
+    문서 답변만 LLM이 직접 문장을 쓴다. 코퍼스가 기술문서 어투(반말)라
+    발췌를 그대로 따라가면 같은 챗봇 안에서 말투가 갈린다. 조회·시뮬레이션
+    답변은 파이썬이 만들어 전부 존댓말이다.
+    """
+
+    return _CASUAL_ENDING_PATTERN.findall(text)
+
+
 def generate_doc_answer(
     client: Any,
     tool_result: Mapping[str, Any],
@@ -3245,7 +3268,11 @@ def generate_doc_answer(
             if not isinstance(payload, Mapping):
                 last_error = "문서 답변이 객체가 아닙니다."
                 continue
-            candidate = str(payload.get("answer") or "").strip()
+            candidate = (
+                str(payload.get("answer") or "")
+                .translate(_FULLWIDTH_PUNCTUATION)
+                .strip()
+            )
             if _doc_answer_is_degenerate(candidate, question):
                 # 생성이 확률적이라 같은 입력으로 다시 뽑으면 대개 정상이 나온다.
                 # 실패한 답을 메시지에 남긴다. 남기지 않으면 E2E에서만 재현되는
@@ -3264,6 +3291,25 @@ def generate_doc_answer(
                         "content": (
                             "answer에 질문 문장을 그대로 옮겼다. 질문을 반복하지 말고 "
                             "위 발췌 본문에서 읽은 사실만으로 다시 작성하라."
+                        ),
+                    },
+                ]
+                continue
+            if (
+                _casual_sentence_endings(candidate)
+                and attempt < DOC_ANSWER_MAX_ATTEMPTS
+            ):
+                # 말투만 틀린 것이라 내용은 쓸 만하다. 남은 시도가 있을 때만
+                # 다시 부르고, 마지막 시도에서도 반말이면 그대로 내보낸다.
+                # 말투 하나 때문에 오류 화면을 띄울 일은 아니다.
+                last_error = f"문서 답변이 반말로 작성되었습니다: {candidate[:120]!r}"
+                messages = base_messages + [
+                    {"role": "assistant", "content": raw},
+                    {
+                        "role": "user",
+                        "content": (
+                            "answer를 반말로 썼다. 내용은 그대로 두고 문장 끝만 "
+                            "존댓말로 바꿔 다시 작성하라."
                         ),
                     },
                 ]
