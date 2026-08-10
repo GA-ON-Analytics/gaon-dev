@@ -2717,6 +2717,17 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   background:var(--gdp-green);
   color:#fff;
 }
+/* AI 답변은 카드로 보인다. 결과 카드(.gdpSimulationResult)와 같은 틀을 써서
+   표가 있는 답변과 문장만 있는 답변이 한 화면에서 다르게 보이지 않게 한다.
+   사용자 말풍선만 말풍선 모양으로 남는다. */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatMessage.assistant .gdpChatBubble{
+  width:100%;
+  max-width:100%;
+  padding:14px;
+  border:1px solid rgba(31, 81, 33,.12);
+  border-radius:14px;
+  box-sizing:border-box;
+}
 :is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationResult{
   width:100%;
   margin-top:8px;
