@@ -2744,6 +2744,28 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   font-size:20px;
   font-weight:800;
 }
+/* 카드 안에서 무엇에 대한 결과인지 밝히는 줄(격자 ID·지표 이름). */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatCardSubject{
+  font-size:12px;
+  font-weight:700;
+  font-style:normal;
+  color:var(--gdp-ink2);
+}
+/* 표가 둘 이상일 때 무엇의 표인지 가르는 소제목. */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatCardHeading{
+  margin:12px 0 6px;
+  font-size:11px;
+  font-weight:700;
+  color:var(--gdp-ink2);
+}
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatCardHeading:first-of-type{
+  margin-top:0;
+}
+/* 출처는 데이터셋 이름이라 길다. 숫자처럼 오른쪽 정렬하면 읽기 어렵다. */
+:is(.gridDetailSidePanel,.aiChatDock) .gdpChatSourceValue{
+  text-align:left;
+  font-weight:600;
+}
 :is(.gridDetailSidePanel,.aiChatDock) .gdpSimulationRows{
   margin:0;
   display:grid;
