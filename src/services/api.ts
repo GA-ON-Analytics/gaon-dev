@@ -3,6 +3,7 @@ import type {
   BatchSimulationResponse,
   DongSearchIndex,
   GridResolution,
+  PolicyPresetsResponse,
   SimulationRequest,
   SimulationResponse
 } from '../types/dashboard';
@@ -156,6 +157,12 @@ export function sendChatMessage(
 
 export function getAiFeatureCatalog(): Promise<AiFeatureCatalogResponse> {
   return fetchJson<AiFeatureCatalogResponse>('/api/features');
+}
+
+// 정책 정의는 백엔드가 원본이다. 챗봇도 같은 정의를 읽으므로 화면과 챗봇이
+// 서로 다른 변화량을 말할 수 없다.
+export function getPolicyPresets(): Promise<PolicyPresetsResponse> {
+  return fetchJson<PolicyPresetsResponse>('/api/policies');
 }
 
 // 여러 100m 격자에 같은 정책을 적용해 평균 저감을 구한다 (250/500m 집계 격자 시뮬레이션용).

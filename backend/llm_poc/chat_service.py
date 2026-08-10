@@ -75,6 +75,13 @@ _SIMULATION_FIELDS = (
     "ndvi",
     "albedo",
 )
+# 답변에 적을 수 있는 변경 필드. _SIMULATION_FIELDS와 뜻이 다르다.
+#   _SIMULATION_FIELDS        라우터가 사용자에게 제안할 수 있는 레버
+#   _RENDERABLE_CHANGE_FIELDS 결과에 나올 수 있는 필드
+# 정책 프리셋(도로 가로녹지화)이 road_ratio를 바꾸는데, 그건 사용자가 직접
+# 지정하는 레버가 아니라 정책 정의에 들어 있는 값이다. 두 뜻을 한 상수로
+# 묶어 두면 정책 결과를 문장으로 못 만든다.
+_RENDERABLE_CHANGE_FIELDS = (*_SIMULATION_FIELDS, "road_ratio")
 _SIMULATION_ARGUMENT_BY_FIELD = {
     "green_ratio": "green_ratio_delta",
     "impervious_ratio": "impervious_ratio_delta",
@@ -93,6 +100,7 @@ _SUPPORTED_INTENTS = {
     "field_source",
     "lookup",
     "policy_ranking",
+    "policy_simulation",
     "service_info",
     "simulation",
     "unsupported",
@@ -107,6 +115,16 @@ _INTENT_TOOL = {
     "field_source": "get_field_source",
     "lookup": "get_grid_data",
     "policy_ranking": "rank_policies",
+    # ★ 라우터는 policy_simulation을 낼 수 없다. ROUTER_OUTPUT_SCHEMA의 enum에
+    # 없고 SYSTEM_PROMPT에도 없다. 정책 이름 판별은 정의 표를 직접 보는
+    # 파이썬이 하고, 라우터가 simulation이라고 한 요청을 넘겨받아 바꾼다.
+    #
+    # 처음에는 라우터에게 이 intent를 가르쳤다가 되돌렸다. 프롬프트에 정책
+    # 이름 6개를 나열했더니 "녹지율을 5%p 높이면"이 unsupported로,
+    # "공원 500제곱 추가"가 lookup으로 새는 회귀가 두 번 연속 재현됐다.
+    # 프롬프트에 넣은 낱말이 무관한 질문을 끌어간다. 결정론적으로 판별할 수
+    # 있는 것을 라우터에게 맡길 이유가 없다.
+    "policy_simulation": "simulate_policy",
     "simulation": "run_simulation",
 }
 # 표가 어긋나는 두 방향을 모두 import 시점에 잡는다.
@@ -126,7 +144,12 @@ if not set(_INTENT_TOOL.values()) <= TOOL_FUNCTIONS.keys():
 # 격자를 선택해야만 답할 수 있는 intent. 나머지는 격자와 무관하다.
 # 예전에는 라우터를 부르기도 전에 격자를 요구해서 "NDVI가 무슨 뜻이야?" 같은
 # 문서 질문까지 전부 거절됐다. 무엇을 묻는지 알아야 격자가 필요한지 알 수 있다.
-_GRID_REQUIRED_INTENTS = {"lookup", "simulation", "policy_ranking"}
+_GRID_REQUIRED_INTENTS = {
+    "lookup",
+    "simulation",
+    "policy_ranking",
+    "policy_simulation",
+}
 _GRID_FREE_INTENTS = {
     "doc_search",
     "field_list",
@@ -778,6 +801,36 @@ def _is_meta_request(message: str) -> bool:
     return any(term in compact_message for term in _META_REQUEST_TERMS)
 
 
+def _is_policy_application_request(message: str) -> bool:
+    """정책 이름 + "적용/설치/조성/하면" 같은 실행 표현이 함께 있는지 본다.
+
+    이름만으로 판정하지 않는다. "쿨루프가 뭐야?"는 정책 설명 질문이고
+    "쿨루프 적용하면?"이라야 시뮬레이션이다.
+    """
+
+    if _matched_policy_id(message) is None:
+        return False
+    compact_message = _compact_routing_text(message)
+    return any(
+        cue in compact_message
+        for cue in ("적용", "설치", "조성", "하면", "한다면", "도입", "시행", "바꾸면", "만들면")
+    )
+
+
+def _matched_policy_id(message: str) -> str | None:
+    """문장에 정책 이름이 있으면 그 정책 id를 돌려준다.
+
+    라우터에게 policy_id를 만들게 하지 않는다. 없는 정책 이름을 지어내면
+    그대로 Tool로 흘러가기 때문에, 정책 판별은 정의 표를 직접 보는 파이썬
+    쪽에서 한다. 라우터는 "이름 붙은 정책 질문이다"까지만 판정한다.
+    """
+
+    from backend.policy_presets import find_policy_by_text
+
+    preset = find_policy_by_text(message)
+    return None if preset is None else str(preset["id"])
+
+
 def _is_source_request(message: str) -> bool:
     """출처를 묻는 질문인지 본다.
 
@@ -1308,6 +1361,8 @@ def _parse_normalized_request(
     has_full_scope, has_excluded_scope = _scope_signals(original_message)
     has_meta_request = _is_meta_request(original_message)
     has_source_request = _is_source_request(original_message)
+    matched_policy_id = _matched_policy_id(original_message)
+    has_policy_application = _is_policy_application_request(original_message)
     has_service_info_request = _is_service_info_request(original_message)
     has_field_list_request = _is_field_list_request(original_message)
     has_simulation_intent = _has_simulation_intent(original_message)
@@ -1394,7 +1449,25 @@ def _parse_normalized_request(
             unresolved = []
         excluded_scope = False
 
-    if intent == "field_list":
+    if has_policy_application and not changes:
+        # "쿨루프 적용하면?"처럼 정책 이름과 실행 표현이 함께 있고 수치는 없다.
+        # 라우터 판정보다 앞에서 잡는다. 실측에서 같은 뜻의 질문이 simulation·
+        # lookup으로 갈렸는데, 정책 이름은 정의 표로 확실히 판별되므로 라우터
+        # 판정을 기다릴 이유가 없다.
+        #
+        # 수치를 직접 준 요청(changes가 찬 경우)은 여기 오지 않는다. 사용자가
+        # 말한 값이 정책 표준값보다 우선한다.
+        intent = "policy_simulation"
+        resolution = "resolved"
+        requested_fields = []
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
+    elif intent == "field_list":
         if not has_field_list_request:
             intent = "unsupported"
             resolution = "unsupported"
@@ -1434,6 +1507,23 @@ def _parse_normalized_request(
     elif intent == "service_info":
         # 서비스 소개는 Tool도 격자도 필요 없다.
         resolution = "resolved"
+        requested_fields = []
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
+    elif intent == "policy_simulation":
+        # 변화량은 정책 정의에 있다. 라우터가 changes를 실어 보냈어도 쓰지 않는다.
+        # 정책 이름을 못 찾으면 실행할 정책이 없다는 뜻이라 unsupported로 둔다.
+        # 여기서 비우지 않으면 아래 시뮬레이션 검증이 changes를 보고 되묻는다.
+        if matched_policy_id is None:
+            intent = "unsupported"
+            resolution = "unsupported"
+        else:
+            resolution = "resolved"
         requested_fields = []
         candidate_fields = []
         changes = []
@@ -2549,6 +2639,18 @@ def _validate_doc_search_answer(
     # generate_doc_answer의 source 검사가 이미 보장한다.
 
 
+def _validate_policy_simulation_answer(
+    answer: str,
+    tool_result: Mapping[str, Any],
+) -> None:
+    """정책 이름이 실렸는지 보고, 숫자 검증은 시뮬레이션 검증기에 맡긴다."""
+
+    policy_name = tool_result.get("policy_name")
+    if not isinstance(policy_name, str) or policy_name not in answer:
+        raise ChatProtocolError("정책 시뮬레이션 답변에 정책 이름이 없습니다.")
+    _validate_simulation_answer(answer, tool_result)
+
+
 def _validate_field_source_answer(
     answer: str,
     tool_result: Mapping[str, Any],
@@ -2662,7 +2764,7 @@ def _simulation_change_line(
     *,
     automatic: bool,
 ) -> str:
-    if field not in _SIMULATION_FIELDS:
+    if field not in _RENDERABLE_CHANGE_FIELDS:
         raise ChatProtocolError(
             "시뮬레이션 Tool 결과에 지원하지 않는 변경 필드가 있습니다."
         )
@@ -3187,6 +3289,28 @@ def generate_doc_answer(
     return answer
 
 
+def format_policy_simulation_answer(tool_result: Mapping[str, Any]) -> str:
+    """정책 시뮬레이션 답변. 시뮬레이션 문장 앞에 어떤 정책인지 붙인다.
+
+    숫자 부분은 format_simulation_answer를 그대로 쓴다. 같은 예측을 두 가지
+    문장으로 설명하면 화면과 챗봇이 다른 말을 하게 된다.
+    """
+
+    error_answer = _tool_error_answer(tool_result)
+    if error_answer is not None:
+        return error_answer
+
+    policy_name = tool_result.get("policy_name")
+    scenario_label = tool_result.get("policy_scenario_label")
+    if not isinstance(policy_name, str) or not policy_name:
+        raise ChatProtocolError("정책 시뮬레이션 결과에 정책 이름이 없습니다.")
+
+    header = f"{policy_name} 정책을 적용한 결과입니다."
+    if isinstance(scenario_label, str) and scenario_label:
+        header = f"{header} ({scenario_label})"
+    return "\n".join([header, format_simulation_answer(tool_result)])
+
+
 def format_field_source_answer(tool_result: Mapping[str, Any]) -> str:
     """출처 답변을 Tool 반환값만으로 만든다. LLM을 부르지 않는다.
 
@@ -3223,6 +3347,8 @@ def _format_tool_answer(
         return format_grid_data_answer(tool_result)
     if tool_name == "get_field_source":
         return format_field_source_answer(tool_result)
+    if tool_name == "simulate_policy":
+        return format_policy_simulation_answer(tool_result)
     if tool_name == "run_simulation":
         return format_simulation_answer(tool_result)
     if tool_name == "rank_policies":
@@ -3258,6 +3384,8 @@ def _validate_final_answer(
         _validate_grid_answer(answer, tool_result)
     elif tool_name == "get_field_source":
         _validate_field_source_answer(answer, tool_result)
+    elif tool_name == "simulate_policy":
+        _validate_policy_simulation_answer(answer, tool_result)
     elif tool_name == "run_simulation":
         _validate_simulation_answer(answer, tool_result)
     elif tool_name == "rank_policies":
@@ -3662,6 +3790,16 @@ def _run_chat_with_client(
         elif normalized_request.intent == "doc_search":
             # 문서 검색은 격자와 무관하다. grid_id를 넘기지 말고 질문을 넘긴다.
             tool_arguments = {"question": router_message}
+            assumptions = []
+            preparation_error = None
+        elif normalized_request.intent == "policy_simulation":
+            # 정책 id는 라우터가 아니라 정의 표에서 찾는다. 위 파서가 이미
+            # 찾았기에 여기서 None이 나올 수 없지만, 표가 바뀌었을 때 조용히
+            # None을 넘기지 않도록 확인한다.
+            policy_id = _matched_policy_id(router_message)
+            if policy_id is None:
+                raise ChatProtocolError("정책 이름을 확정하지 못했습니다.")
+            tool_arguments = {"grid_id": resolved_grid_id, "policy_id": policy_id}
             assumptions = []
             preparation_error = None
         elif normalized_request.intent == "field_source":
