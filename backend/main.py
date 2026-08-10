@@ -368,6 +368,12 @@ def features() -> Any:
                 # 출처는 spec을 통째로 펼치지 않고 명시적으로 골라 담는다.
                 # 여기 안 넣으면 tools.py에 출처를 채워도 API로는 안 나간다.
                 "source": spec["source"],
+                # 표시 규칙. 챗봇 답변 카드가 Tool 반환값(원본 0~1 비율)을
+                # 화면용 문자열로 바꿀 때 쓴다. 이걸 안 내보내면 프론트가
+                # 자기 나름의 규칙을 만들고, 같은 값이 말풍선과 카드에서
+                # 다르게 보인다(실측: 카드 0.1645 vs 말풍선 16.45%).
+                "is_ratio": spec["is_ratio"],
+                "display_decimals": spec["display_decimals"],
             }
         )
     return {
