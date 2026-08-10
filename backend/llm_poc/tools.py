@@ -1077,8 +1077,58 @@ def search_docs(question: str) -> dict[str, Any]:
     return result
 
 
+def get_field_source(fields: list[str] | None = None) -> dict[str, Any]:
+    """지표의 데이터 출처를 GRID_FIELD_SPECS에서 그대로 읽어 온다.
+
+    출처는 격자와 무관하다. 같은 지표면 어느 격자든 출처가 같으므로
+    grid_id를 받지 않는다.
+
+    예전에는 출처 질문이 문서 검색으로 흘렀다. 문서에는 학습 대상 변수의
+    출처까지 섞여 있어서 "녹지율 출처"를 물으면 무더위쉼터·인구통계가
+    함께 나왔다. 여기 있는 값이 그 지표의 실제 출처다.
+
+    Args:
+        fields: 출처를 알려줄 필드 목록. 생략하면 18개 전부.
+
+    Returns:
+        성공 여부와 필드별 라벨·출처 매핑. 실패 시에도 ``error``를 채운다.
+    """
+
+    result: dict[str, Any] = {
+        "success": False,
+        "requested_fields": [],
+        "sources": {},
+        "error": None,
+    }
+    if fields is None:
+        requested_fields = list(ALLOWED_GRID_FIELDS)
+    else:
+        requested_fields, unsupported_fields, fields_error = (
+            _normalize_grid_fields(fields)
+        )
+        if fields_error is not None:
+            result["requested_fields"] = requested_fields
+            result["error"] = fields_error
+            result["available_fields"] = list(ALLOWED_GRID_FIELDS)
+            if unsupported_fields:
+                result["unsupported_fields"] = unsupported_fields
+            return result
+
+    result["requested_fields"] = requested_fields
+    result["sources"] = {
+        field: {
+            "label": GRID_FIELD_SPECS[field]["label"],
+            "source": GRID_FIELD_SPECS[field]["source"],
+        }
+        for field in requested_fields
+    }
+    result["success"] = True
+    return result
+
+
 TOOL_FUNCTIONS = {
     "get_grid_data": get_grid_data,
+    "get_field_source": get_field_source,
     "run_simulation": run_simulation,
     "rank_policies": rank_policies,
     "search_docs": search_docs,
