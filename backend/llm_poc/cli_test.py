@@ -452,19 +452,22 @@ GENERAL_LOOKUP_ROUTING_CASES = (
         False,
     ),
     (
+        # 예전에는 unsupported로 빠져서 "현재 요청은 아직 지원하지 않습니다"로
+        # 답이 시작했다(#74). 무엇을 할 수 있냐고 물은 사람에게 첫 문장이
+        # 거절이었다. 지금은 service_info다. Tool은 여전히 부르지 않는다.
         CAPABILITY_QUESTION,
         NO_TOOL_EXPECTED,
         None,
-        None,
+        "GA:ON은",
         False,
         False,
     ),
     (
-        # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
-        # 기대 문구 None인 이유는 MODEL_EXPLANATION_QUESTION 쪽 주석 참고.
+        # 출처는 문서 검색이 아니라 GRID_FIELD_SPECS의 source에서 직접 읽는다(#74).
+        # 지표를 지목하지 않았으므로 fields=None으로 18개 전부를 돌려준다.
         DATA_SOURCE_QUESTION,
-        "search_docs",
-        None,
+        "get_field_source",
+        {"fields": None},
         None,
         False,
         False,
@@ -619,12 +622,12 @@ SEMANTIC_ROUTING_CASES = (
         (),
     ),
     (
-        # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
-        # 기대 문구 None인 이유는 MODEL_EXPLANATION_QUESTION 쪽 주석 참고.
+        # 출처는 문서 검색이 아니라 구조화된 source에서 읽는다(#74).
+        # 지표를 지목했으므로 그 필드만 넘어간다.
         "녹지율 데이터 출처가 어디야?",
-        "search_docs",
-        None,
-        None,
+        "get_field_source",
+        {"fields": ["green_ratio"]},
+        "Google Earth Engine · Dynamic World",
         "resolved",
         (),
     ),
@@ -668,6 +671,18 @@ def _validate_expected_arguments(
                 raise RuntimeError(
                     "구조화 조회 결과가 fields를 요청 순서대로 확정하지 않았습니다."
                 )
+        return
+
+    if tool_name == "get_field_source":
+        # 출처는 격자와 무관해서 grid_id를 넘기지 않는다. fields만 본다.
+        # None이면 18개 전부를 뜻한다.
+        if not set(tool_arguments).issubset({"fields"}):
+            raise RuntimeError("get_field_source에 예상하지 않은 인자가 전달되었습니다.")
+        if tool_arguments.get("fields") != expected_arguments.get("fields"):
+            raise RuntimeError(
+                "출처 조회가 기대한 fields를 확정하지 않았습니다. "
+                f"실제={tool_arguments.get('fields')!r}"
+            )
         return
 
     if tool_name != "run_simulation":
