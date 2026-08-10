@@ -11,7 +11,6 @@ from typing import Any
 
 from backend.llm_poc.chat_service import (
     DOC_ANSWER_MAX_ATTEMPTS,
-    ChatInputError,
     ChatProtocolError,
     ChatResult,
     run_chat,
@@ -431,10 +430,16 @@ GENERAL_LOOKUP_ROUTING_CASES = (
     ),
     (
         # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 기대 문구가 None인 이유: 예전에는 항상 붙던 "작성 시점 값" 면책을
+        # 여기서 검사했는데 그 면책을 없앴다(#70). 문서 답변은 출처를 본문에
+        # 넣지 않으므로 남는 고정 문자열이 없다. 내용 검증은 search_docs로
+        # 라우팅됐는지와 _validate_doc_search_answer(발췌 존재·최소 길이)가
+        # 맡는다. 답변 문장에서 낱말을 골라 검사하면 실행마다 표현이 달라져
+        # 노이즈만 늘어난다.
         MODEL_EXPLANATION_QUESTION,
         "search_docs",
         None,
-        "작성 시점 값",
+        None,
         False,
         False,
     ),
@@ -447,28 +452,33 @@ GENERAL_LOOKUP_ROUTING_CASES = (
         False,
     ),
     (
+        # 예전에는 unsupported로 빠져서 "현재 요청은 아직 지원하지 않습니다"로
+        # 답이 시작했다(#74). 무엇을 할 수 있냐고 물은 사람에게 첫 문장이
+        # 거절이었다. 지금은 service_info다. Tool은 여전히 부르지 않는다.
         CAPABILITY_QUESTION,
         NO_TOOL_EXPECTED,
         None,
-        None,
+        "GA:ON은",
         False,
         False,
     ),
     (
-        # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 출처는 문서 검색이 아니라 GRID_FIELD_SPECS의 source에서 직접 읽는다(#74).
+        # 지표를 지목하지 않았으므로 fields=None으로 18개 전부를 돌려준다.
         DATA_SOURCE_QUESTION,
-        "search_docs",
+        "get_field_source",
+        {"fields": None},
         None,
-        "작성 시점 값",
         False,
         False,
     ),
     (
         # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 기대 문구 None인 이유는 MODEL_EXPLANATION_QUESTION 쪽 주석 참고.
         MODEL_DATA_EXPLANATION_QUESTION,
         "search_docs",
         None,
-        "작성 시점 값",
+        None,
         False,
         False,
     ),
@@ -600,19 +610,43 @@ SEMANTIC_ROUTING_CASES = (
     ),
     (
         # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 화면 예시 질문은 "식생지수"로 순화했지만(#70) 여기서는 일부러
+        # 옛 용어 "NDVI"를 그대로 둔다. 사용자가 원래 용어로 물어도 알아듣는지
+        # 확인하는 시나리오다. aliases에서 NDVI를 빼면 여기서 걸린다.
+        # 기대 문구 None인 이유는 MODEL_EXPLANATION_QUESTION 쪽 주석 참고.
         "NDVI가 무슨 뜻이야?",
         "search_docs",
         None,
-        "작성 시점 값",
+        None,
         "resolved",
         (),
     ),
     (
-        # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 출처는 문서 검색이 아니라 구조화된 source에서 읽는다(#74).
+        # 지표를 지목했으므로 그 필드만 넘어간다.
         "녹지율 데이터 출처가 어디야?",
-        "search_docs",
-        None,
-        "작성 시점 값",
+        "get_field_source",
+        {"fields": ["green_ratio"]},
+        "Google Earth Engine · Dynamic World",
+        "resolved",
+        (),
+    ),
+    (
+        # 정책 이름만 있고 수치가 없다. 변화량은 정책 정의에 있으므로 되묻지
+        # 않는다(#76). 예전에는 "증가 또는 감소 방향을 알려주세요"로 답했다.
+        "쿨루프 적용하면 어떻게 돼?",
+        "simulate_policy",
+        {"grid_id": ROUTING_GRID_ID, "policy_id": "cool_roof"},
+        "쿨루프",
+        "resolved",
+        (),
+    ),
+    (
+        # 별칭으로도 찾는다. 정의상의 이름은 "옥상녹화"다.
+        "옥상정원 설치하면?",
+        "simulate_policy",
+        {"grid_id": ROUTING_GRID_ID, "policy_id": "green_roof"},
+        "옥상녹화",
         "resolved",
         (),
     ),
@@ -656,6 +690,29 @@ def _validate_expected_arguments(
                 raise RuntimeError(
                     "구조화 조회 결과가 fields를 요청 순서대로 확정하지 않았습니다."
                 )
+        return
+
+    if tool_name == "get_field_source":
+        # 출처는 격자와 무관해서 grid_id를 넘기지 않는다. fields만 본다.
+        # None이면 18개 전부를 뜻한다.
+        if not set(tool_arguments).issubset({"fields"}):
+            raise RuntimeError("get_field_source에 예상하지 않은 인자가 전달되었습니다.")
+        if tool_arguments.get("fields") != expected_arguments.get("fields"):
+            raise RuntimeError(
+                "출처 조회가 기대한 fields를 확정하지 않았습니다. "
+                f"실제={tool_arguments.get('fields')!r}"
+            )
+        return
+
+    if tool_name == "simulate_policy":
+        # 변화량은 정책 정의에 있으므로 인자는 격자와 정책 id뿐이다.
+        if not set(tool_arguments).issubset({"grid_id", "policy_id"}):
+            raise RuntimeError("simulate_policy에 예상하지 않은 인자가 전달되었습니다.")
+        if tool_arguments.get("policy_id") != expected_arguments.get("policy_id"):
+            raise RuntimeError(
+                "정책 시뮬레이션이 기대한 policy_id를 확정하지 않았습니다. "
+                f"실제={tool_arguments.get('policy_id')!r}"
+            )
         return
 
     if tool_name != "run_simulation":
@@ -1118,25 +1175,83 @@ def run_tool_calling(
 
 
 def _validate_missing_grid_context() -> None:
-    class _NoCallClient:
-        call_count = 0
+    """격자 없이 격자 데이터를 지어내지 않는지 본다.
 
-        def chat(self, **_: Any) -> None:
-            self.call_count += 1
-            raise AssertionError("격자 문맥 없이 Ollama를 호출했습니다.")
+    예전에는 "Ollama 0회"를 조건으로 걸었다. 격자 검사가 라우터보다 앞에
+    있어서 아무 질문도 해석되기 전에 거절됐기 때문이다. 그 탓에 격자와
+    무관한 문서 질문까지 전부 막혔다(#72).
 
-    client = _NoCallClient()
-    try:
-        run_chat(GENERIC_DATA_TELL_QUESTION, client=client)
-    except ChatInputError as exc:
-        if "격자" not in str(exc):
-            raise RuntimeError("격자 선택 안내가 명확하지 않습니다.") from exc
-    else:
-        raise RuntimeError("선택된 grid_id가 없는데 요청이 실행되었습니다.")
+    지금은 라우터를 먼저 부른다. 그래서 Ollama 호출은 해석 1회가 정상이다.
+    지켜야 할 본질은 호출 횟수가 아니라 **격자 없이 Tool이 실행되지 않는
+    것**이므로 그쪽을 본다. 답변 생성까지 가지 않는 것도 함께 본다 —
+    안내 문장은 Tool 없이 만들어지므로 2회차 호출이 있으면 경로가 샌 것이다.
+    """
 
-    if client.call_count != 0:
-        raise RuntimeError("선택된 grid_id 없이 Ollama가 호출되었습니다.")
-    print("선택 격자 없음 검증: Tool 실행 0회, used_tools=[], Ollama 0회")
+    result = run_chat(GENERIC_DATA_TELL_QUESTION)
+    if result.used_tools:
+        raise RuntimeError(
+            f"격자 없이 Tool이 실행되었습니다: {result.used_tools}"
+        )
+    if result.tool_data:
+        raise RuntimeError("격자 없이 Tool 반환값이 답변에 실렸습니다.")
+    if "격자" not in result.answer:
+        raise RuntimeError("격자 선택 안내가 명확하지 않습니다.")
+
+    call_count = result.metrics.get("ollama_call_count")
+    if call_count != 1:
+        raise RuntimeError(
+            "격자 없는 조회 질문은 해석 1회로 끝나야 합니다. "
+            f"실제={call_count!r}"
+        )
+    if result.metrics.get("final_branch") != "grid_required":
+        raise RuntimeError(
+            "격자 없는 조회 질문이 grid_required 분기로 가지 않았습니다. "
+            f"실제={result.metrics.get('final_branch')!r}"
+        )
+    print("선택 격자 없음 검증: Tool 실행 0회, used_tools=[], 해석 1회로 종료")
+
+
+def _validate_grid_free_questions_without_grid() -> None:
+    """격자와 무관한 질문은 격자를 안 골라도 답해야 한다.
+
+    #72의 본체다. 화면 예시 질문으로 넣어 둔 문서 질문이 격자를 고르기
+    전에는 답을 못 하던 것이 문제였다. 처음 들어온 사람이 제일 먼저 누를
+    버튼이라 여기서 막히면 서비스가 아무것도 못 하는 것처럼 보인다.
+    """
+
+    for question in ("NDVI가 무슨 뜻이야?", CAPABILITY_QUESTION):
+        result = run_chat(question)
+        if not result.answer.strip():
+            raise RuntimeError(f"격자 없이 답하지 못했습니다: {question}")
+        if result.metrics.get("final_branch") == "grid_required":
+            raise RuntimeError(
+                f"격자와 무관한 질문인데 격자를 요구했습니다: {question}"
+            )
+    print("격자 무관 질문 검증: 격자 없이도 답변 생성됨")
+
+
+def _validate_doc_search_has_no_disclaimer() -> None:
+    """문서 검색이 꼬리말 면책을 다시 달지 않았는지 본다.
+
+    예전에는 문서 답변마다 "문서 수치는 작성 시점 값" 두 줄이 붙었고,
+    "NDVI가 무슨 뜻이야?"처럼 답에 수치가 없는 질문에도 붙었다(#70).
+    E2E 시나리오 쪽은 그 문구를 기대값에서 뺐을 뿐이라 누가 되살려도
+    잡히지 않는다. 그래서 여기서 명시적으로 없음을 확인한다.
+
+    빈 질문은 색인을 만들기 전에 곧바로 반환하므로 LLM도 임베딩도 타지
+    않는다. 검사 비용이 0이고 실행마다 결과가 흔들리지 않는다.
+    """
+
+    from backend.llm_poc import tools
+
+    result = tools.search_docs("")
+    limitations = result.get("limitations")
+    if limitations != []:
+        raise RuntimeError(
+            "search_docs가 limitations를 비워 두지 않았습니다. "
+            f"실제={limitations!r}"
+        )
+    print("문서 검색 면책 문구 검증: limitations 비어 있음")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -1264,8 +1379,11 @@ def main() -> int:
             raise RuntimeError(
                 "기존 qwen3:4b E2E 49개 시나리오 수가 변경되었습니다."
             )
-        if len(SEMANTIC_ROUTING_CASES) != 18:
-            raise RuntimeError("신규 의미 기반 E2E 18개 시나리오 수가 변경되었습니다.")
+        # 18 → 20. 정책 이름 시뮬레이션 2개를 추가했다(#76).
+        # 이 숫자는 "시나리오를 실수로 빠뜨렸는지"를 보는 가드다. 의도적으로
+        # 늘렸으면 여기도 같이 올린다.
+        if len(SEMANTIC_ROUTING_CASES) != 20:
+            raise RuntimeError("신규 의미 기반 E2E 20개 시나리오 수가 변경되었습니다.")
 
     failed_cases: list[tuple[int, str]] = []
     for index, (
@@ -1315,6 +1433,18 @@ def main() -> int:
         except RuntimeError as exc:
             failed_cases.append((len(cases) + 1, str(exc)))
             print(f"선택 격자 없음 검증 오류: {exc}", file=sys.stderr)
+
+        try:
+            _validate_doc_search_has_no_disclaimer()
+        except RuntimeError as exc:
+            failed_cases.append((len(cases) + 2, str(exc)))
+            print(f"문서 검색 면책 문구 검증 오류: {exc}", file=sys.stderr)
+
+        try:
+            _validate_grid_free_questions_without_grid()
+        except RuntimeError as exc:
+            failed_cases.append((len(cases) + 3, str(exc)))
+            print(f"격자 무관 질문 검증 오류: {exc}", file=sys.stderr)
 
     exit_code = 1 if failed_cases else 0
     print(f"전체 종료 코드: {exit_code}")

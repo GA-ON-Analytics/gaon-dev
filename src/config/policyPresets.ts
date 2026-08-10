@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { getPolicyPresets } from '../services/api';
 import type {
   FeatureRange,
   GridAnalysisProperties,
@@ -18,156 +20,43 @@ export const POLICY_FEATURE_LABELS: Record<PolicyFeature, string> = {
 
 const STANDARD_SCENARIO = '100m 격자 기준 표준 시나리오 · 격자 내 10% 수준 개입';
 
-export const POLICY_PRESETS = [
-  {
-    id: 'paved_to_green',
-    name: '포장공간 녹지화',
-    description: '100m 격자 내 포장공간 10%p를 녹지로 전환',
-    changes: {
-      green_ratio: 0.1,
-      impervious_ratio: -0.1,
-      ndvi: 0.05
-    },
-    affectedFeatures: ['green_ratio', 'impervious_ratio', 'ndvi'],
-    assumptions: [
-      '영향 비율 0.10',
-      '기존 포장면 NDVI 0.00, 전환 후 녹지 NDVI 0.50으로 가정'
-    ],
-    sourceUrl: 'https://news.seoul.go.kr/env/archives/561644',
-    scenarioLabel: STANDARD_SCENARIO,
-    minimumRequirements: [
-      {
-        feature: 'impervious_ratio',
-        minimum: 0.1,
-        unavailableMessage: '현재 격자에는 표준 정책 시나리오를 적용할 충분한 포장공간이 없습니다.'
-      }
-    ]
-  },
-  {
-    id: 'road_to_green',
-    name: '도로 가로녹지화',
-    description: '100m 격자 내 도로공간 10%p를 녹지로 전환',
-    changes: {
-      road_ratio: -0.1,
-      green_ratio: 0.1,
-      impervious_ratio: -0.1,
-      ndvi: 0.05
-    },
-    affectedFeatures: ['road_ratio', 'green_ratio', 'impervious_ratio', 'ndvi'],
-    assumptions: [
-      '영향 비율 0.10',
-      '기존 도로 NDVI 0.00, 전환 후 가로녹지 NDVI 0.50으로 가정'
-    ],
-    sourceUrl: 'https://news.seoul.go.kr/traffic/?p=505617',
-    scenarioLabel: STANDARD_SCENARIO,
-    minimumRequirements: [
-      {
-        feature: 'road_ratio',
-        minimum: 0.1,
-        unavailableMessage: '현재 격자에는 표준 정책 시나리오를 적용할 충분한 도로공간이 없습니다.'
-      },
-      {
-        feature: 'impervious_ratio',
-        minimum: 0.1,
-        unavailableMessage: '현재 격자에는 표준 정책 시나리오를 적용할 충분한 인공표면이 없습니다.'
-      }
-    ]
-  },
-  {
-    id: 'vegetation_improvement',
-    name: '기존 녹지 개선',
-    description: '100m 격자 내 기존 녹지 일부의 식생 활력 및 수관 개선',
-    changes: {
-      ndvi: 0.02
-    },
-    affectedFeatures: ['ndvi'],
-    assumptions: [
-      '영향 비율 0.10',
-      '기존 식생 NDVI 0.35, 개선 후 NDVI 0.55로 가정',
-      '녹지 면적 자체는 늘어나지 않는 시나리오'
-    ],
-    sourceUrl: 'https://news.seoul.go.kr/env/archives/567149',
-    scenarioLabel: STANDARD_SCENARIO,
-    minimumRequirements: [
-      {
-        feature: 'green_ratio',
-        minimum: 0.1,
-        unavailableMessage: '현재 격자에는 표준 식생 개선 시나리오를 적용할 충분한 기존 녹지가 없습니다.'
-      }
-    ]
-  },
-  {
-    id: 'small_park',
-    name: '소규모 공원·정원 조성',
-    description: '100m 격자 내 포장·유휴공간 10%p를 공원 또는 정원으로 전환',
-    changes: {
-      green_ratio: 0.1,
-      impervious_ratio: -0.1,
-      ndvi: 0.05
-    },
-    affectedFeatures: ['green_ratio', 'impervious_ratio', 'ndvi'],
-    assumptions: [
-      '영향 비율 0.10',
-      '기존 포장면 NDVI 0.00, 전환 후 녹지 NDVI 0.50으로 가정',
-      'v1에서는 공원 거리와 반경 500m 공원면적을 재계산하지 않음'
-    ],
-    sourceUrl: 'https://news.seoul.go.kr/env/archives/511578',
-    scenarioLabel: STANDARD_SCENARIO,
-    minimumRequirements: [
-      {
-        feature: 'impervious_ratio',
-        minimum: 0.1,
-        unavailableMessage: '현재 격자에는 표준 공원·정원 시나리오를 적용할 충분한 포장·유휴공간이 없습니다.'
-      }
-    ]
-  },
-  {
-    id: 'green_roof',
-    name: '옥상녹화',
-    description: '100m 격자 내부 건물 옥상에 표준 수준의 녹화 적용',
-    changes: {
-      ndvi: 0.03
-    },
-    affectedFeatures: ['ndvi'],
-    assumptions: [
-      '영향 비율 0.10',
-      '기존 비식생 옥상 NDVI 0.00, 녹화 후 NDVI 0.30으로 가정',
-      '건물면적 비율은 실제 사용 가능한 옥상면적과 같지 않음'
-    ],
-    sourceUrl: 'https://news.seoul.go.kr/env/archives/564339',
-    scenarioLabel: STANDARD_SCENARIO,
-    minimumRequirements: [
-      {
-        feature: 'building_ratio',
-        minimum: 0.1,
-        unavailableMessage: '현재 격자의 건물면적 비율이 표준 옥상녹화 시나리오 기준보다 작습니다.'
-      }
-    ]
-  },
-  {
-    id: 'cool_roof',
-    name: '쿨루프',
-    description: '100m 격자 내 지붕 10% 수준에 고반사 소재 적용',
-    changes: {
-      albedo: 0.04
-    },
-    affectedFeatures: ['albedo'],
-    assumptions: [
-      '영향 비율 0.10',
-      '기존 지붕 albedo 0.20, 쿨루프 albedo 0.60으로 가정',
-      '건물면적 비율은 실제 시공 가능한 지붕면적과 같지 않음'
-    ],
-    sourceUrl: 'https://news.seoul.go.kr/env/archives/43080',
-    scenarioLabel: STANDARD_SCENARIO,
-    minimumRequirements: [
-      {
-        feature: 'building_ratio',
-        minimum: 0.1,
-        unavailableMessage: '현재 격자의 건물면적 비율이 표준 쿨루프 시나리오 기준보다 작습니다.'
-      }
-    ]
+// 정책 정의는 백엔드가 원본이다(`backend/policy_presets.py`).
+// 챗봇이 백엔드에서 돌기 때문에, 정의가 여기 있으면 챗봇이 정책 이름을 읽지
+// 못한다. 복제하면 두 벌이 갈라지는 게 시간문제라(predict_core.py가 그랬다)
+// 정의는 한 곳에 두고 화면은 `/api/policies`로 받아 쓴다.
+let policyPresetsCache: readonly PolicyPreset[] | null = null;
+let policyPresetsPromise: Promise<readonly PolicyPreset[]> | null = null;
+
+export function loadPolicyPresets(): Promise<readonly PolicyPreset[]> {
+  if (policyPresetsCache) return Promise.resolve(policyPresetsCache);
+  if (!policyPresetsPromise) {
+    policyPresetsPromise = getPolicyPresets()
+      .then((res) => {
+        policyPresetsCache = res.policies;
+        return policyPresetsCache;
+      })
+      .catch(() => {
+        policyPresetsPromise = null;   // 다음 격자 선택 때 다시 시도한다
+        return [];
+      });
   }
-] as const satisfies readonly PolicyPreset[];
+  return policyPresetsPromise;
+}
+
+export function usePolicyPresets(): readonly PolicyPreset[] | null {
+  const [presets, setPresets] = useState<readonly PolicyPreset[] | null>(policyPresetsCache);
+  useEffect(() => {
+    if (policyPresetsCache) return;
+    let alive = true;
+    void loadPolicyPresets().then((loaded) => {
+      if (alive) setPresets(loaded);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return presets;
+}
 
 /** 프리셋 요청은 별도 옵션 필드나 자동 토지피복 연동에 의존하지 않는다. */
 export function policySimulationRequest(

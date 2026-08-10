@@ -7,9 +7,9 @@ import {
 } from '../services/api';
 import {
   POLICY_FEATURE_LABELS,
-  POLICY_PRESETS,
   policyApplicability,
-  policySimulationRequest
+  policySimulationRequest,
+  usePolicyPresets
 } from '../config/policyPresets';
 import type {
   BatchSimulationResponse,
@@ -993,8 +993,11 @@ function PolicyPresetSection({
     setPolicyLoading(false);
   }, [gridId, properties.display_grid_id, selectedGridResolution]);
 
+  // 정책 정의는 `/api/policies`에서 온다. 도착 전에는 빈 목록이라
+  // 아래 지도가 먼저 그려지고 정책 카드만 나중에 채워진다.
+  const policyPresets = usePolicyPresets() ?? [];
   const selectedPolicy: PolicyPreset | null =
-    POLICY_PRESETS.find((preset) => preset.id === selectedPolicyId) ?? null;
+    policyPresets.find((preset) => preset.id === selectedPolicyId) ?? null;
   const selectedApplicability = selectedPolicy
     ? isBatchResolution
       ? { applicable: true }
@@ -1108,7 +1111,7 @@ function PolicyPresetSection({
       </p>
 
       <div className="policyPresetGrid">
-        {POLICY_PRESETS.map((preset) => {
+        {policyPresets.map((preset) => {
           const applicability = isBatchResolution
             ? { applicable: true }
             : policyApplicability(preset, properties, featureRanges);
