@@ -16,6 +16,10 @@ from backend.llm_poc.chat_service import (
     run_chat,
 )
 from backend.llm_poc.tools import ALLOWED_GRID_FIELDS, GRID_FIELD_SPECS
+from backend.policy_presets import (
+    POLICY_FEATURE_LABELS,
+    policy_presets_payload,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -364,11 +368,33 @@ def features() -> Any:
                 # 출처는 spec을 통째로 펼치지 않고 명시적으로 골라 담는다.
                 # 여기 안 넣으면 tools.py에 출처를 채워도 API로는 안 나간다.
                 "source": spec["source"],
+                # 표시 규칙. 챗봇 답변 카드가 Tool 반환값(원본 0~1 비율)을
+                # 화면용 문자열로 바꿀 때 쓴다. 이걸 안 내보내면 프론트가
+                # 자기 나름의 규칙을 만들고, 같은 값이 말풍선과 카드에서
+                # 다르게 보인다(실측: 카드 0.1645 vs 말풍선 16.45%).
+                "is_ratio": spec["is_ratio"],
+                "display_decimals": spec["display_decimals"],
             }
         )
     return {
         "count": len(feature_meta),
         "features": feature_meta,
+    }
+
+
+@app.get("/api/policies")
+def policies() -> Any:
+    """정책 프리셋 정의. 화면과 챗봇이 같은 정의를 보게 하는 통로다.
+
+    모델 준비 여부를 보지 않는다. 정책 정의는 예측 결과가 아니라 상수라서
+    모델이 없어도 답할 수 있어야 한다.
+    """
+
+    presets = policy_presets_payload()
+    return {
+        "count": len(presets),
+        "policies": presets,
+        "featureLabels": dict(POLICY_FEATURE_LABELS),
     }
 
 

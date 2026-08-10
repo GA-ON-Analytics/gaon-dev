@@ -1,4 +1,10 @@
-export type AiChatToolName = 'get_grid_data' | 'run_simulation';
+export type AiChatToolName =
+  | 'get_grid_data'
+  | 'rank_policies'
+  | 'search_docs'
+  | 'run_simulation'
+  | 'simulate_policy'
+  | 'get_field_source';
 
 export interface AiChatRequest {
   message: string;
@@ -18,6 +24,12 @@ export interface AiFeatureCatalogItem {
    */
   min?: number;
   max?: number;
+  /**
+   * 표시 규칙. 백엔드 `format_grid_field_value`와 같은 규칙을 카드에서 쓰기 위한 것이다.
+   * 비율 필드는 원본이 0~1이라 그대로 보여주면 말풍선(16.45%)과 값이 달라 보인다.
+   */
+  is_ratio?: boolean;
+  display_decimals?: number;
 }
 
 export interface AiFeatureCatalogResponse {
@@ -28,6 +40,24 @@ export interface AiFeatureCatalogResponse {
 export interface AiChatChangedFeature {
   before: number;
   after: number;
+}
+
+/** `get_field_source`가 지표별로 돌려주는 출처. */
+export interface AiChatFieldSource {
+  label: string;
+  source: string;
+}
+
+/** `rank_policies`가 정책 하나에 대해 돌려주는 항목. */
+export interface AiChatRankedPolicy {
+  label: string;
+  delta_c: number;
+  /** 냉각 방향으로 순위가 매겨진 정책만 숫자가 있다. 나머지는 null. */
+  rank: number | null;
+  /** ranked · adverse · indistinguishable · no_room · unresponsive */
+  state: string;
+  clipped?: boolean;
+  clip_reason?: string;
 }
 
 export interface AiChatToolData {
@@ -43,10 +73,23 @@ export interface AiChatToolData {
   delta_c?: number;
   uncertainty_std?: number;
   delta_std?: number;
+  direction_confidence?: number;
   interpretation_basis?: string;
   warnings?: string[];
   limitations?: string[];
   policy_direction_notes?: string[];
+  /** `simulate_policy`가 채운다. 어떤 정책을 적용했는지. */
+  policy_id?: string;
+  policy_name?: string;
+  policy_scenario_label?: string;
+  policy_source_url?: string;
+  /** `get_field_source`가 채운다. 필드명 → 라벨·출처. */
+  sources?: Record<string, AiChatFieldSource>;
+  /** `rank_policies`가 채운다. */
+  policies?: AiChatRankedPolicy[];
+  ranked_count?: number;
+  tie_band_c?: number;
+  scenario_note?: string;
 }
 
 export interface AiChatResponse {

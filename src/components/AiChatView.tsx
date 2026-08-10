@@ -13,6 +13,8 @@ import {
 } from '../services/api';
 import type {
   AiChatChangedFeature,
+  AiChatFieldSource,
+  AiChatRankedPolicy,
   AiFeatureCatalogItem,
   AiChatMessage,
   AiChatResponse,
@@ -22,11 +24,26 @@ import type {
 
 const CHAT_STORAGE_KEY = 'gaon_ai_chat_messages';
 const GUIDE_COLLAPSED_STORAGE_KEY = 'gaon_ai_usage_guide_collapsed';
-const TOOL_NAMES: readonly AiChatToolName[] = ['get_grid_data', 'run_simulation'];
+// 백엔드 TOOL_FUNCTIONS와 같아야 한다. 여기 없는 Tool은 sanitizeToolNames가
+// 걸러내서 used_tools가 비고, 그러면 결과 카드가 뜨지 않는다.
+const TOOL_NAMES: readonly AiChatToolName[] = [
+  'get_grid_data',
+  'run_simulation',
+  'simulate_policy',
+  'get_field_source',
+  'rank_policies',
+  'search_docs'
+];
+// 시뮬레이션이 바꿀 수 있는 필드 전체. 여기 없는 필드는 sanitize에서 걸러져
+// 카드의 "실제 적용된 변경"에서 조용히 사라진다(실측: 쿨루프의 albedo).
+// 정책 프리셋이 바꾸는 road_ratio까지 포함한다.
 const CHANGE_FIELDS = [
   'green_ratio',
   'impervious_ratio',
-  'park_area_within_500m'
+  'park_area_within_500m',
+  'ndvi',
+  'albedo',
+  'road_ratio'
 ] as const;
 const LOOKUP_FIELD_PATTERN = /^[a-z][a-z0-9_]*$/;
 const UNSAFE_LOOKUP_FIELDS = new Set([
@@ -51,8 +68,8 @@ const LOOKUP_EXAMPLES = [
 ] as const;
 const SIMULATION_EXAMPLES = [
   '녹지율을 5%p 높여줘',
-  'NDVI를 0.05 높이면 어떻게 돼?',
-  '불투수율을 3%p 낮추고 알베도를 0.02 높여줘'
+  '식생지수를 0.05 높이면 어떻게 돼?',
+  '불투수율을 3%p 낮추고 표면 반사율을 0.02 높여줘'
 ] as const;
 const POLICY_RANKING_EXAMPLES = [
   '어떤 정책이 가장 효과적이야?',
@@ -60,7 +77,7 @@ const POLICY_RANKING_EXAMPLES = [
   '정책 우선순위 알려줘'
 ] as const;
 const DOC_SEARCH_EXAMPLES = [
-  'NDVI가 무슨 뜻이야?',
+  '식생지수가 무슨 뜻이야?',
   '녹지율 데이터 출처가 어디야?',
   '왜 딥러닝을 안 쓰고 다른 방법을 골랐어?'
 ] as const;
@@ -169,6 +186,48 @@ function sanitizeLookupValues(
   return sanitized;
 }
 
+function sanitizeFieldSources(
+  value: unknown
+): Record<string, AiChatFieldSource> | undefined {
+  if (!isRecord(value)) return undefined;
+
+  const sanitized: Record<string, AiChatFieldSource> = {};
+  for (const [field, entry] of Object.entries(value)) {
+    if (!LOOKUP_FIELD_PATTERN.test(field) || UNSAFE_LOOKUP_FIELDS.has(field)) continue;
+    if (!isRecord(entry)) continue;
+    const label = nonEmptyString(entry.label);
+    const source = nonEmptyString(entry.source);
+    if (label === undefined || source === undefined) continue;
+    sanitized[field] = { label, source };
+  }
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}
+
+function sanitizeRankedPolicies(value: unknown): AiChatRankedPolicy[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const sanitized: AiChatRankedPolicy[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const label = nonEmptyString(item.label);
+    const state = nonEmptyString(item.state);
+    const deltaC = finiteNumber(item.delta_c);
+    if (label === undefined || state === undefined || deltaC === undefined) continue;
+    const rank = finiteNumber(item.rank);
+    const policy: AiChatRankedPolicy = {
+      label,
+      state,
+      delta_c: deltaC,
+      rank: rank ?? null
+    };
+    if (typeof item.clipped === 'boolean') policy.clipped = item.clipped;
+    const clipReason = nonEmptyString(item.clip_reason);
+    if (clipReason !== undefined) policy.clip_reason = clipReason;
+    sanitized.push(policy);
+  }
+  return sanitized.length > 0 ? sanitized : undefined;
+}
+
 function sanitizeToolData(value: unknown): AiChatToolData | undefined {
   if (!isRecord(value)) return undefined;
 
@@ -194,7 +253,8 @@ function sanitizeToolData(value: unknown): AiChatToolData | undefined {
     'after_anomaly',
     'delta_c',
     'uncertainty_std',
-    'delta_std'
+    'delta_std',
+    'direction_confidence'
   ] as const) {
     const number = finiteNumber(value[field]);
     if (number !== undefined) sanitized[field] = number;
@@ -215,6 +275,31 @@ function sanitizeToolData(value: unknown): AiChatToolData | undefined {
     const items = sanitizeStringList(value[field]);
     if (items.length > 0) sanitized[field] = items;
   }
+
+  for (const field of [
+    'policy_id',
+    'policy_name',
+    'policy_scenario_label',
+    'policy_source_url'
+  ] as const) {
+    const text = nonEmptyString(value[field]);
+    if (text !== undefined) sanitized[field] = text;
+  }
+
+  const sources = sanitizeFieldSources(value.sources);
+  if (sources !== undefined) sanitized.sources = sources;
+
+  const policies = sanitizeRankedPolicies(value.policies);
+  if (policies !== undefined) sanitized.policies = policies;
+
+  const rankedCount = finiteNumber(value.ranked_count);
+  if (rankedCount !== undefined) sanitized.ranked_count = rankedCount;
+
+  const tieBand = finiteNumber(value.tie_band_c);
+  if (tieBand !== undefined) sanitized.tie_band_c = tieBand;
+
+  const scenarioNote = nonEmptyString(value.scenario_note);
+  if (scenarioNote !== undefined) sanitized.scenario_note = scenarioNote;
 
   return Object.keys(sanitized).length > 0 ? sanitized : undefined;
 }
@@ -332,7 +417,10 @@ function sanitizeFeatureCatalog(value: unknown): AiFeatureCatalogItem[] {
       description,
       semantic_definition: semanticDefinition,
       unit: typeof item.unit === 'string' ? item.unit : '',
-      category
+      category,
+      is_ratio: typeof item.is_ratio === 'boolean' ? item.is_ratio : undefined,
+      display_decimals:
+        typeof item.display_decimals === 'number' ? item.display_decimals : undefined
     });
   }
   return features;
@@ -419,7 +507,97 @@ function formatLookupValue(value: number): string {
   return value.toLocaleString('ko-KR', { maximumSignificantDigits: 8 });
 }
 
-function GridDataResultCard({ message }: { message: AiChatMessage }) {
+/**
+ * 필드명 → 표시 정보. `/api/features`에서 온다.
+ * 카탈로그가 아직 안 왔으면 비어 있고, 아래 함수들이 원본값을 그대로 쓴다.
+ */
+interface FieldDisplay {
+  label: string;
+  unit: string;
+  isRatio: boolean;
+  decimals: number;
+}
+type FieldLabels = Record<string, FieldDisplay>;
+
+function fieldLabel(labels: FieldLabels, field: string): string {
+  return labels[field]?.label ?? field;
+}
+
+/**
+ * 백엔드 `format_grid_field_value`와 같은 규칙으로 원본값을 문자열로 만든다.
+ *
+ * Tool이 돌려주는 비율 값은 0~1이다. 그대로 찍으면 말풍선에는 16.45%,
+ * 카드에는 0.1645가 나와 같은 값이 다르게 보인다.
+ */
+function formatFieldValue(labels: FieldLabels, field: string, value: number): string {
+  const display = labels[field];
+  if (display === undefined) return formatLookupValue(value);
+  if (display.isRatio) return `${(value * 100).toFixed(display.decimals)}%`;
+  const rounded = value.toFixed(display.decimals);
+  const trimmed = rounded.includes('.')
+    ? rounded.replace(/0+$/, '').replace(/\.$/, '')
+    : rounded;
+  const grouped = Number(trimmed).toLocaleString('ko-KR', {
+    maximumFractionDigits: display.decimals
+  });
+  return `${grouped}${display.unit}`;
+}
+
+/**
+ * 카드와 안내에 이미 나온 줄을 말풍선에서 걷어낸다.
+ *
+ * 백엔드 답변에는 값·경고·한계가 다 들어 있고, 화면은 그것들을 카드와
+ * `ChatNotices`로 또 보여준다. 그대로 두면 같은 문장을 두 번 읽게 된다.
+ * 답변 텍스트 자체는 손대지 않는다. API를 쓰는 다른 곳이 있을 수 있고,
+ * E2E도 답변 본문으로 검증한다.
+ */
+function visibleAnswerLines(message: AiChatMessage, hasDataCard: boolean): string {
+  const shownElsewhere = new Set(
+    uniqueItems(
+      message.warnings,
+      message.limitations,
+      message.tool_data?.warnings,
+      message.tool_data?.limitations,
+      message.tool_data?.policy_direction_notes
+    ).map((item) => item.trim())
+  );
+  const basis = message.tool_data?.interpretation_basis?.trim();
+  if (basis) shownElsewhere.add(basis);
+
+  // 카드가 뜨면 산문을 통째로 걷어낸다.
+  //
+  // 처음에는 카드·안내에 있는 문장을 하나씩 빼려 했는데, 답변 본문과 tool_data의
+  // 문장이 미묘하게 달라 안 맞았다. 실측으로 본문은 "모델 예측 anomaly",
+  // interpretation_basis는 "머신러닝 모델이 반환한 예측 anomaly"였다. 문자열을
+  // 맞춰 빼는 방식은 백엔드 문구가 조금만 바뀌어도 다시 어긋난다.
+  //
+  // 카드와 안내에 없는 것은 "해석 가정"뿐이라 그 구역만 남긴다.
+  if (hasDataCard) {
+    const lines = message.text.split('\n');
+    const from = lines.findIndex((line) => line.trim() === '해석 가정:');
+    return from === -1 ? '' : lines.slice(from).join('\n');
+  }
+
+  return message.text
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      if (shownElsewhere.has(trimmed)) return false;
+      // "경고: ..."는 ChatNotices가 경고 배지로 보여준다.
+      if (shownElsewhere.has(trimmed.replace(/^경고:\s*/, ''))) return false;
+      return true;
+    })
+    .join('\n');
+}
+
+function GridDataResultCard({
+  message,
+  labels
+}: {
+  message: AiChatMessage;
+  labels: FieldLabels;
+}) {
   const data = message.tool_data;
   if (
     !message.used_tools?.includes('get_grid_data') ||
@@ -442,7 +620,7 @@ function GridDataResultCard({ message }: { message: AiChatMessage }) {
     <div className="gdpSimulationResult">
       <div className="gdpSimulationDelta">
         <span>조회한 격자 데이터</span>
-        <strong>
+        <strong className="gdpChatCardSubject">
           {data.gu_name ? `${data.gu_name} · ` : ''}
           {data.grid_id ?? '선택 격자'}
         </strong>
@@ -450,8 +628,8 @@ function GridDataResultCard({ message }: { message: AiChatMessage }) {
       <dl className="gdpSimulationRows">
         {fields.map((field) => (
           <Fragment key={field}>
-            <dt>{field}</dt>
-            <dd>{formatLookupValue(values[field])}</dd>
+            <dt>{fieldLabel(labels, field)}</dt>
+            <dd>{formatFieldValue(labels, field, values[field])}</dd>
           </Fragment>
         ))}
       </dl>
@@ -459,10 +637,49 @@ function GridDataResultCard({ message }: { message: AiChatMessage }) {
   );
 }
 
-function SimulationResultCard({ message }: { message: AiChatMessage }) {
+function FieldSourceCard({ message }: { message: AiChatMessage }) {
+  const sources = message.tool_data?.sources;
+  if (!message.used_tools?.includes('get_field_source') || sources === undefined) {
+    return null;
+  }
+  const entries = Object.entries(sources);
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="gdpSimulationResult">
+      <div className="gdpSimulationDelta">
+        <span>데이터 출처</span>
+        <strong className="gdpChatCardSubject">
+          {entries.length === 1 ? entries[0][1].label : `지표 ${entries.length}개`}
+        </strong>
+      </div>
+      <dl className="gdpSimulationRows">
+        {entries.map(([field, entry]) => (
+          <Fragment key={field}>
+            <dt>{entry.label}</dt>
+            <dd className="gdpChatSourceValue">{entry.source}</dd>
+          </Fragment>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function SimulationResultCard({
+  message,
+  labels
+}: {
+  message: AiChatMessage;
+  labels: FieldLabels;
+}) {
   const data = message.tool_data;
+  // 정책 시뮬레이션도 같은 카드를 쓴다. 같은 예측을 두 가지 모양으로 보여주면
+  // 사용자가 다른 계산이라고 읽는다.
+  const isSimulation =
+    message.used_tools?.includes('run_simulation') ||
+    message.used_tools?.includes('simulate_policy');
   if (
-    !message.used_tools?.includes('run_simulation') ||
+    !isSimulation ||
     data === undefined ||
     typeof data.before_anomaly !== 'number' ||
     typeof data.after_anomaly !== 'number' ||
@@ -471,50 +688,141 @@ function SimulationResultCard({ message }: { message: AiChatMessage }) {
     return null;
   }
 
+  const applied = Object.entries(data.applied_changes ?? {});
+
   return (
     <div className="gdpSimulationResult">
       <div className="gdpSimulationDelta">
-        <span>모델 기준 예상 변화량</span>
+        <span>{data.policy_name ? `${data.policy_name} · 모델 기준 예상 변화량` : '모델 기준 예상 변화량'}</span>
         <strong>
           {formatDelta(data.delta_c)} {deltaDirection(data.delta_c)}
         </strong>
-      </div>
-      <dl className="gdpSimulationRows">
         {data.grid_id && (
-          <>
-            <dt>격자</dt>
-            <dd>{data.gu_name ? `${data.gu_name} · ` : ''}{data.grid_id}</dd>
-          </>
+          <em className="gdpChatCardSubject">
+            {data.gu_name ? `${data.gu_name} · ` : ''}
+            {data.grid_id}
+          </em>
         )}
-        <dt>변경 전 모델 예측 anomaly</dt>
+      </div>
+
+      {applied.length > 0 && (
+        <>
+          <p className="gdpChatCardHeading">실제 적용된 변경</p>
+          <dl className="gdpSimulationRows">
+            {applied.map(([field, change]) => (
+              <Fragment key={field}>
+                <dt>{fieldLabel(labels, field)}</dt>
+                <dd>
+                  {formatFieldValue(labels, field, change.before)} →{' '}
+                  {formatFieldValue(labels, field, change.after)}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        </>
+      )}
+
+      <p className="gdpChatCardHeading">모델 예측 anomaly</p>
+      <dl className="gdpSimulationRows">
+        <dt>변경 전</dt>
         <dd>{formatModelValue(data.before_anomaly)}</dd>
-        <dt>변경 후 모델 예측 anomaly</dt>
+        <dt>변경 후</dt>
         <dd>{formatModelValue(data.after_anomaly)}</dd>
-        {typeof data.delta_std === 'number' && (
+        {typeof data.direction_confidence === 'number' && (
           <>
-            <dt>트리 간 변화량 편차</dt>
-            <dd>{formatModelValue(data.delta_std)}</dd>
-          </>
-        )}
-        {typeof data.uncertainty_std === 'number' && (
-          <>
-            <dt>트리 간 예측 편차</dt>
-            <dd>{formatModelValue(data.uncertainty_std)}</dd>
+            <dt>모델 트리 방향 동의율</dt>
+            <dd>{(data.direction_confidence * 100).toFixed(1)}%</dd>
           </>
         )}
       </dl>
       <p className="gdpChatNotice limitation">
         이 값들은 절대온도가 아니라 모델이 예측한 anomaly와 그 변화입니다.
       </p>
-      {(typeof data.delta_std === 'number' ||
-        typeof data.uncertainty_std === 'number') && (
+      {typeof data.direction_confidence === 'number' && (
         <p className="gdpChatNotice limitation">
-          편차는 랜덤포레스트 개별 트리 예측값이 흩어진 정도입니다. 실제 오차범위나
-          신뢰구간이 아닙니다.
+          방향 동의율은 통계적 신뢰구간이나 실제 정책의 성공확률이 아닙니다.
         </p>
       )}
-      {data.interpretation_basis && (
-        <p className="gdpChatNotice limitation">{data.interpretation_basis}</p>
+      {data.policy_scenario_label && (
+        <p className="gdpChatNotice limitation">{data.policy_scenario_label}</p>
+      )}
+    </div>
+  );
+}
+
+const POLICY_STATE_LABEL: Record<string, string> = {
+  adverse: '온도 상승 방향이라 추천하지 않음',
+  indistinguishable: '차이가 동률 밴드보다 작아 순위를 못 매김',
+  no_room: '요청한 만큼 반영되지 않음',
+  unresponsive: '모델이 반응하지 않음'
+};
+
+function PolicyRankingCard({ message }: { message: AiChatMessage }) {
+  const data = message.tool_data;
+  if (!message.used_tools?.includes('rank_policies') || data?.policies === undefined) {
+    return null;
+  }
+
+  // 순위가 매겨진 것과 아닌 것을 섞지 않는다. 냉각 방향이 아닌 정책을
+  // 같은 표에 두면 몇 위인지로 읽힌다.
+  const ranked = data.policies
+    .filter((policy) => policy.state === 'ranked' && policy.rank !== null)
+    .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+  const others = data.policies.filter((policy) => policy.state !== 'ranked');
+  if (ranked.length === 0 && others.length === 0) return null;
+
+  return (
+    <div className="gdpSimulationResult">
+      <div className="gdpSimulationDelta">
+        <span>정책 우선순위</span>
+        <strong>
+          {ranked.length > 0 ? ranked[0].label : '추천할 정책 없음'}
+        </strong>
+        {data.grid_id && (
+          <em className="gdpChatCardSubject">
+            {data.gu_name ? `${data.gu_name} · ` : ''}
+            {data.grid_id}
+          </em>
+        )}
+      </div>
+
+      {ranked.length > 0 && (
+        <dl className="gdpSimulationRows">
+          {ranked.map((policy) => (
+            <Fragment key={policy.label}>
+              <dt>
+                {policy.rank}위 {policy.label}
+              </dt>
+              <dd>{formatDelta(policy.delta_c)}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+
+      {others.length > 0 && (
+        <>
+          <p className="gdpChatCardHeading">순위를 매기지 않은 정책</p>
+          <dl className="gdpSimulationRows">
+            {others.map((policy) => (
+              <Fragment key={policy.label}>
+                <dt>{policy.label}</dt>
+                <dd className="gdpChatSourceValue">
+                  {POLICY_STATE_LABEL[policy.state] ?? policy.state}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        </>
+      )}
+
+      {data.scenario_note && (
+        <p className="gdpChatNotice limitation">{data.scenario_note}</p>
+      )}
+      {typeof data.tie_band_c === 'number' && (
+        <p className="gdpChatNotice limitation">
+          동률 밴드는 {data.tie_band_c.toFixed(3)}℃이며, 이보다 작은 차이는 모델
+          추정오차 안이라 순위로 구분하지 않습니다.
+        </p>
       )}
     </div>
   );
@@ -594,7 +902,9 @@ function AiUsageGuide({
             <p>
               선택된 격자가 없습니다.
               <br />
-              대시보드에서 100m 격자를 먼저 선택해 주세요.
+              용어·데이터 출처 같은 질문은 그대로 물어보셔도 됩니다. 격자별
+              데이터 조회와 정책 시뮬레이션은 대시보드에서 100m 격자를 먼저
+              선택해 주세요.
             </p>
           )}
         </section>
@@ -624,7 +934,7 @@ function AiUsageGuide({
           </div>
           <p>변경할 지표, 증가·감소 방향, 수치를 함께 입력해 주세요.</p>
           <div className="gdpGuideLeverList" aria-label="지원 정책 레버">
-            {['녹지율', '불투수율', 'NDVI', '알베도'].map((lever) => (
+            {['녹지율', '불투수율', '식생지수', '표면 반사율'].map((lever) => (
               <span key={lever}>{lever}</span>
             ))}
           </div>
@@ -727,6 +1037,19 @@ export default function AiChatView({
   const [guideCollapsed, setGuideCollapsed] = useState(restoreGuideCollapsed);
   const [mobileGuideOpen, setMobileGuideOpen] = useState(false);
   const [features, setFeatures] = useState<AiFeatureCatalogItem[]>([]);
+  // 카드에 원본 필드명(green_ratio) 대신 한글 라벨을 쓰기 위한 표.
+  // 카탈로그가 아직 안 왔으면 비어 있고, fieldLabel이 필드명을 그대로 쓴다.
+  const fieldLabels: FieldLabels = Object.fromEntries(
+    features.map((item) => [
+      item.name,
+      {
+        label: item.label,
+        unit: item.unit,
+        isRatio: item.is_ratio ?? false,
+        decimals: item.display_decimals ?? 2
+      }
+    ])
+  );
   const [featuresLoading, setFeaturesLoading] = useState(false);
   const [featuresError, setFeaturesError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -996,21 +1319,41 @@ export default function AiChatView({
         )}
 
         <div className="gdpChatMessages" role="log" aria-live="polite">
-          {messages.map((message, index) => (
-            <div
-              className={`gdpChatMessage ${message.role}`}
-              key={`${message.role}-${index}`}
-            >
-              <div className="gdpChatBubble">{message.text}</div>
-              {message.role === 'assistant' && (
-                <>
-                  <GridDataResultCard message={message} />
-                  <SimulationResultCard message={message} />
-                  <ChatNotices message={message} />
-                </>
-              )}
-            </div>
-          ))}
+          {messages.map((message, index) => {
+            const hasDataCard =
+              message.role === 'assistant' &&
+              (message.used_tools?.some((tool) =>
+                [
+                  'get_grid_data',
+                  'run_simulation',
+                  'simulate_policy',
+                  'get_field_source',
+                  'rank_policies'
+                ].includes(tool)
+              ) ??
+                false);
+            const bubbleText =
+              message.role === 'assistant'
+                ? visibleAnswerLines(message, hasDataCard)
+                : message.text;
+            return (
+              <div
+                className={`gdpChatMessage ${message.role}`}
+                key={`${message.role}-${index}`}
+              >
+                {bubbleText && <div className="gdpChatBubble">{bubbleText}</div>}
+                {message.role === 'assistant' && (
+                  <>
+                    <GridDataResultCard message={message} labels={fieldLabels} />
+                    <FieldSourceCard message={message} />
+                    <SimulationResultCard message={message} labels={fieldLabels} />
+                    <PolicyRankingCard message={message} />
+                    <ChatNotices message={message} />
+                  </>
+                )}
+              </div>
+            );
+          })}
           {loading && (
             <div className="gdpChatLoading" role="status">
               GA:ON AI가 모델 결과를 확인하고 있어요…

@@ -11,13 +11,6 @@ from typing import Any
 from backend.ml import predict_core
 
 
-# 문서 검색은 "지금 사실"을 답하지 않는다. 문서 수치는 작성 시점 값이라
-# 지금 모델과 다르다(07.11 문서의 R² 0.832가 지금 0.7861인 것이 그 예다).
-DOC_SEARCH_LIMITATIONS = [
-    "문서에 적힌 수치는 작성 시점 값이라 현재 모델·데이터와 다를 수 있습니다.",
-    "현재값이 필요하면 격자 데이터 조회나 시뮬레이션을 사용해 주세요.",
-]
-
 INTERPRETATION_BASIS = (
     "before_anomaly와 after_anomaly는 절대온도가 아니라 "
     "머신러닝 모델이 반환한 예측 anomaly이며, "
@@ -645,6 +638,9 @@ def run_simulation(
     impervious_ratio_delta: float = 0,
     ndvi_delta: float = 0,
     albedo_delta: float = 0,
+    # 라우터는 이 레버를 직접 내주지 않는다. 정책 프리셋(도로 가로녹지화)이
+    # 도로 비율을 줄이기 때문에 simulate_policy가 쓰려고 열어 둔 자리다.
+    road_ratio_delta: float = 0,
 ) -> dict[str, Any]:
     """기존 ``predict_core.predict``로 100m 격자 정책 시나리오를 실행한다.
 
@@ -665,6 +661,7 @@ def run_simulation(
         ("impervious_ratio_delta", impervious_ratio_delta),
         ("ndvi_delta", ndvi_delta),
         ("albedo_delta", albedo_delta),
+        ("road_ratio_delta", road_ratio_delta),
     ):
         normalized_value, error = _validated_delta(name, value)
         if error is not None:
@@ -683,6 +680,8 @@ def run_simulation(
         requested_changes["ndvi"] = validated_deltas["ndvi_delta"]
     if validated_deltas["albedo_delta"]:
         requested_changes["albedo"] = validated_deltas["albedo_delta"]
+    if validated_deltas["road_ratio_delta"]:
+        requested_changes["road_ratio"] = validated_deltas["road_ratio_delta"]
     result["requested_changes"] = requested_changes
 
     policy_direction_notes: list[str] = []
@@ -1031,7 +1030,13 @@ def search_docs(question: str) -> dict[str, Any]:
         "question": question if isinstance(question, str) else None,
         "hits": [],
         "retrieval": "hybrid(bm25+bge-m3, RRF)",
-        "limitations": list(DOC_SEARCH_LIMITATIONS),
+        # 비워 둔다. 예전에는 "문서 수치는 작성 시점 값" 면책을 항상 붙였는데,
+        # "NDVI가 무슨 뜻이야?" 같은 정의 질문처럼 답에 수치가 하나도 없는
+        # 경우에도 붙어서 본문보다 면책이 긴 답이 나왔다.
+        # 문서 수치가 낡는다는 사실 자체는 그대로다(07.11 문서의 R² 0.832가
+        # 지금 0.7861). 그건 "숫자는 RAG로 답하지 않는다"는 설계로 막고 있지,
+        # 모든 답변에 붙이는 꼬리말로 막을 일이 아니다.
+        "limitations": [],
         "error": None,
     }
     if not isinstance(question, str) or not question.strip():
@@ -1078,9 +1083,127 @@ def search_docs(question: str) -> dict[str, Any]:
     return result
 
 
+_POLICY_DELTA_ARGUMENT = {
+    "green_ratio": "green_ratio_delta",
+    "impervious_ratio": "impervious_ratio_delta",
+    "ndvi": "ndvi_delta",
+    "albedo": "albedo_delta",
+    "road_ratio": "road_ratio_delta",
+}
+
+
+def simulate_policy(grid_id: str, policy_id: str) -> dict[str, Any]:
+    """정책 프리셋 하나를 격자에 적용한 결과를 돌려준다.
+
+    변화량은 ``backend/policy_presets.py``에서 읽는다. 화면이 쓰는 정의와
+    같은 원본이라 챗봇과 화면이 다른 숫자를 말할 수 없다.
+
+    예측은 ``run_simulation``에 그대로 위임한다. 학습범위 clip, 경고 생성,
+    반환값 검증이 전부 거기 있어서 여기서 다시 만들면 두 벌이 갈라진다.
+
+    화면은 ``couple_land_cover=false``로 보내고 여기는 run_simulation의
+    기본값(True)을 쓴다. 6종 모두 결과가 같다. 녹지를 바꾸는 세 정책은
+    불투수면도 함께 명시해서 연동이 발동하지 않고, 나머지 셋은 녹지를
+    건드리지 않는다.
+    """
+
+    from backend.policy_presets import POLICY_PRESET_BY_ID
+
+    normalized_policy_id = policy_id.strip() if isinstance(policy_id, str) else ""
+    preset = POLICY_PRESET_BY_ID.get(normalized_policy_id)
+    if preset is None:
+        result = _empty_simulation_result(
+            grid_id.strip() if isinstance(grid_id, str) else None
+        )
+        result["error"] = f"지원하지 않는 정책입니다: {policy_id}"
+        return result
+
+    deltas = {
+        _POLICY_DELTA_ARGUMENT[feature]: value
+        for feature, value in preset["changes"].items()
+        if feature in _POLICY_DELTA_ARGUMENT
+    }
+    unsupported = set(preset["changes"]) - set(_POLICY_DELTA_ARGUMENT)
+    if unsupported:
+        # 정책이 시뮬레이션할 수 없는 지표를 건드리면 조용히 빼지 않는다.
+        # 일부만 적용한 결과는 그 정책의 효과가 아니다.
+        result = _empty_simulation_result(
+            grid_id.strip() if isinstance(grid_id, str) else None
+        )
+        result["error"] = (
+            f"{preset['name']} 정책이 시뮬레이션할 수 없는 지표를 포함합니다: "
+            f"{sorted(unsupported)}"
+        )
+        return result
+
+    result = run_simulation(grid_id, **deltas)
+    result["policy_id"] = preset["id"]
+    result["policy_name"] = preset["name"]
+    result["policy_description"] = preset["description"]
+    result["policy_scenario_label"] = preset["scenario_label"]
+    result["policy_source_url"] = preset["source_url"]
+    if result.get("success") is True:
+        result["limitations"] = [
+            *result.get("limitations", []),
+            *preset["assumptions"],
+        ]
+    return result
+
+
+def get_field_source(fields: list[str] | None = None) -> dict[str, Any]:
+    """지표의 데이터 출처를 GRID_FIELD_SPECS에서 그대로 읽어 온다.
+
+    출처는 격자와 무관하다. 같은 지표면 어느 격자든 출처가 같으므로
+    grid_id를 받지 않는다.
+
+    예전에는 출처 질문이 문서 검색으로 흘렀다. 문서에는 학습 대상 변수의
+    출처까지 섞여 있어서 "녹지율 출처"를 물으면 무더위쉼터·인구통계가
+    함께 나왔다. 여기 있는 값이 그 지표의 실제 출처다.
+
+    Args:
+        fields: 출처를 알려줄 필드 목록. 생략하면 18개 전부.
+
+    Returns:
+        성공 여부와 필드별 라벨·출처 매핑. 실패 시에도 ``error``를 채운다.
+    """
+
+    result: dict[str, Any] = {
+        "success": False,
+        "requested_fields": [],
+        "sources": {},
+        "error": None,
+    }
+    if fields is None:
+        requested_fields = list(ALLOWED_GRID_FIELDS)
+    else:
+        requested_fields, unsupported_fields, fields_error = (
+            _normalize_grid_fields(fields)
+        )
+        if fields_error is not None:
+            result["requested_fields"] = requested_fields
+            result["error"] = fields_error
+            result["available_fields"] = list(ALLOWED_GRID_FIELDS)
+            if unsupported_fields:
+                result["unsupported_fields"] = unsupported_fields
+            return result
+
+    result["requested_fields"] = requested_fields
+    result["sources"] = {
+        field: {
+            "label": GRID_FIELD_SPECS[field]["label"],
+            "source": GRID_FIELD_SPECS[field]["source"],
+        }
+        for field in requested_fields
+    }
+    result["success"] = True
+    return result
+
+
 TOOL_FUNCTIONS = {
     "get_grid_data": get_grid_data,
+    "get_field_source": get_field_source,
     "run_simulation": run_simulation,
+    "simulate_policy": simulate_policy,
     "rank_policies": rank_policies,
     "search_docs": search_docs,
 }
