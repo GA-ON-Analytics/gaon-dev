@@ -90,18 +90,21 @@ _SIMULATION_FIELD_TERMS = {
 _SUPPORTED_INTENTS = {
     "doc_search",
     "field_list",
+    "field_source",
     "lookup",
     "policy_ranking",
+    "service_info",
     "simulation",
     "unsupported",
 }
 # Tool을 부르지 않고 앞 단계에서 곧바로 답을 만드는 intent.
-_TOOLLESS_INTENTS = {"field_list", "unsupported"}
+_TOOLLESS_INTENTS = {"field_list", "service_info", "unsupported"}
 # intent → 실행할 Tool. intent가 늘어날 때 고칠 곳을 이 표 하나로 모은다.
 # 예전에는 "lookup이면 get_grid_data, 아니면 run_simulation" 삼항식이라 매핑이 코드 흐름에
 # 숨어 있었고, 새 intent가 조용히 run_simulation으로 새도 아무도 몰랐다.
 _INTENT_TOOL = {
     "doc_search": "search_docs",
+    "field_source": "get_field_source",
     "lookup": "get_grid_data",
     "policy_ranking": "rank_policies",
     "simulation": "run_simulation",
@@ -124,7 +127,14 @@ if not set(_INTENT_TOOL.values()) <= TOOL_FUNCTIONS.keys():
 # 예전에는 라우터를 부르기도 전에 격자를 요구해서 "NDVI가 무슨 뜻이야?" 같은
 # 문서 질문까지 전부 거절됐다. 무엇을 묻는지 알아야 격자가 필요한지 알 수 있다.
 _GRID_REQUIRED_INTENTS = {"lookup", "simulation", "policy_ranking"}
-_GRID_FREE_INTENTS = {"doc_search", "field_list", "unsupported"}
+_GRID_FREE_INTENTS = {
+    "doc_search",
+    "field_list",
+    # 출처는 지표의 성질이라 격자마다 다르지 않다. 격자를 고르지 않아도 답한다.
+    "field_source",
+    "service_info",
+    "unsupported",
+}
 # 양쪽에 다 적게 해서, 새 intent가 조용히 "격자 필요 없음"으로 새는 것을 막는다.
 # 한쪽만 봤다면 빠뜨린 intent가 기본값으로 통과해 격자 없이 Tool까지 갔을 것이다.
 if (
@@ -218,6 +228,15 @@ SUPPORTED_SCOPE_ANSWER = (
     "AI 화면의 사용 가이드를 확인하거나 "
     "“조회 가능한 데이터 목록 보여줘”라고 입력해 주세요."
 )
+SERVICE_INFO_ANSWER = (
+    "GA:ON은 서울 100m 격자의 도시환경 데이터로 여름철 지표면온도가 주변보다 "
+    "얼마나 높은지를 예측하고, 환경을 바꾸면 온도가 얼마나 달라지는지 "
+    "시뮬레이션하는 도구입니다. "
+    "AI에게는 네 가지를 물어볼 수 있습니다. "
+    "격자의 현재 데이터 조회, 정책을 적용했을 때의 예상 변화량, "
+    "어떤 정책부터 해야 하는지 우선순위, 지표의 뜻과 데이터 출처입니다. "
+    "격자별 데이터와 시뮬레이션은 지도에서 격자를 먼저 선택해 주세요."
+)
 FIELD_LIST_ANSWER = (
     "조회 가능한 데이터는 다음 18개입니다: "
     f"{_GRID_FIELD_LABELS}. "
@@ -231,17 +250,21 @@ ROUTER_OUTPUT_SCHEMA = {
             "enum": [
                 "unsupported",
                 "field_list",
+                "field_source",
                 "lookup",
                 "simulation",
                 "policy_ranking",
                 "doc_search",
+                "service_info",
             ],
             "description": (
                 "허용된 격자 지표의 현재값 조회와 전체 조회는 lookup, "
-                "조회 가능한 데이터 목록 요청은 field_list, 지원 정책 변경은 "
+                "조회 가능한 데이터 목록 요청은 field_list, 지표가 어디서 온 "
+                "데이터인지 출처를 묻는 요청은 field_source, 지원 정책 변경은 "
                 "simulation, 어떤 정책이 효과적인지 우선순위를 묻는 요청은 "
-                "policy_ranking, 데이터 정의·뜻·출처·모델 설명 같은 문서 질문은 "
-                "doc_search, 그 밖의 요청은 unsupported"
+                "policy_ranking, 데이터 정의·뜻·모델 설명 같은 문서 질문은 "
+                "doc_search, 이 서비스가 무엇이고 무엇을 할 수 있는지 묻는 "
+                "요청은 service_info, 그 밖의 요청은 unsupported"
             ),
         },
         "resolution": {
@@ -436,7 +459,9 @@ SYSTEM_PROMPT = (
 - 전체 범위를 말고·제외·필요 없고·보여주지 말고 등으로 부정하면 excluded_scope=true, lookup_all=false이고 실제 요청 필드만 requested_fields에 둔다.
 - "조회 가능한 데이터 목록"처럼 지원 조회 필드 목록 자체를 요구하면 intent=field_list, resolution=resolved다. 실제 격자 Tool 조회는 아니다.
 - 지표를 지정하지 않고 어떤 정책이 효과적인지·무엇부터 할지 우선순위를 물으면 intent=policy_ranking, resolution=resolved다.
-- 데이터 정의·뜻·계산식·출처, 모델 학습·성능·한계, API 사용법을 물으면 intent=doc_search, resolution=resolved다.
+- 지표가 어디서 온 데이터인지·어떤 기관이나 위성에서 수집했는지 출처를 물으면 intent=field_source, resolution=resolved다. 지표를 지목했으면 requested_fields에 그 필드를 두고, 지목하지 않았으면 requested_fields=[]다.
+- 데이터 정의·뜻·계산식, 모델 학습·성능·한계, API 사용법을 물으면 intent=doc_search, resolution=resolved다. 출처는 doc_search가 아니라 field_source다.
+- 이 서비스가 무엇인지·무엇을 할 수 있는지·어떤 기능이 있는지 물으면 intent=service_info, resolution=resolved다.
 - 격자의 현재 수치를 묻는 것은 doc_search가 아니라 lookup이다.
 - 위 어디에도 없는 요청만 intent=unsupported, resolution=unsupported다.
 - 인구·인구밀도처럼 카탈로그에 없는 지표는 unsupported다.
@@ -462,7 +487,10 @@ SYSTEM_PROMPT = (
 - "가장 높은 건물이 몇 층이야" → lookup/resolved, requested_fields=["max_ground_floor_count"].
 - "물이 스며들지 않는 땅의 비율" → lookup/resolved, requested_fields=["impervious_ratio"].
 - "표면이 햇빛을 얼마나 반사해" → lookup/resolved, requested_fields=["albedo"].
-- "NDVI가 무슨 뜻이야?"와 "녹지율의 출처가 어디야?" → doc_search/resolved.
+- "NDVI가 무슨 뜻이야?" → doc_search/resolved.
+- "녹지율의 출처가 어디야?" → field_source/resolved, requested_fields=["green_ratio"].
+- "이 데이터 출처가 어디야?"처럼 지표를 지목하지 않으면 → field_source/resolved, requested_fields=[].
+- "뭘 할 수 있어?"와 "이 서비스가 뭐야?" → service_info/resolved.
 - "녹지가 차지하는 비율을 5%p 높여줘" → simulation/resolved, green_ratio increase 5 percentage_point.
 - "여기 어떤 정책이 가장 효과적이야"와 "뭐부터 해야 해?" → policy_ranking/resolved.
 - "그거 5플오 해줘"처럼 변경 대상과 방향이 불명확하면 changes=[]와 unresolved=["change_field","change_operation"]을 사용한다.
@@ -748,6 +776,42 @@ def _has_explicit_current_lookup_intent(message: str) -> bool:
 def _is_meta_request(message: str) -> bool:
     compact_message = _compact_routing_text(message)
     return any(term in compact_message for term in _META_REQUEST_TERMS)
+
+
+def _is_source_request(message: str) -> bool:
+    """출처를 묻는 질문인지 본다.
+
+    _META_REQUEST_TERMS에 "출처"가 들어 있어서, 라우터가 이런 질문을 lookup으로
+    잘못 보내면 아래 메타 요청 가드가 unsupported로 바꿔 버린다. 답할 수 있는
+    질문이 거절되지 않도록 그 가드보다 먼저 본다.
+    """
+
+    compact_message = _compact_routing_text(message)
+    return any(term in compact_message for term in ("출처", "어디서수집", "어디데이터"))
+
+
+def _is_service_info_request(message: str) -> bool:
+    """서비스가 무엇이고 무엇을 할 수 있는지 묻는 질문인지 본다.
+
+    "뭘 할 수 있어?"는 _META_REQUEST_TERMS의 "뭘할수"에 걸려 unsupported로
+    갔다. 무엇을 할 수 있냐고 물었는데 "지원하지 않습니다"로 답이 시작하던
+    원인이다.
+    """
+
+    compact_message = _compact_routing_text(message)
+    return any(
+        term in compact_message
+        for term in (
+            "할수있",
+            "뭘할수",
+            "무엇을할수",
+            "무슨서비스",
+            "어떤서비스",
+            "이서비스",
+            "무슨기능",
+            "어떤기능",
+        )
+    )
 
 
 def _is_field_list_request(message: str) -> bool:
@@ -1243,6 +1307,8 @@ def _parse_normalized_request(
 
     has_full_scope, has_excluded_scope = _scope_signals(original_message)
     has_meta_request = _is_meta_request(original_message)
+    has_source_request = _is_source_request(original_message)
+    has_service_info_request = _is_service_info_request(original_message)
     has_field_list_request = _is_field_list_request(original_message)
     has_simulation_intent = _has_simulation_intent(original_message)
     has_generic_full_lookup = _is_generic_full_lookup_request(original_message)
@@ -1351,6 +1417,31 @@ def _parse_normalized_request(
         lookup_all = False
         excluded_scope = False
         lookup_evidence = ""
+    elif intent == "field_source":
+        # 출처는 격자와 무관하다. requested_fields만 남기고 나머지는 비운다.
+        # 지표를 지목하지 않았으면 라우터가 못 채웠어도 그대로 두고, Tool이
+        # 18개 전부를 돌려준다.
+        resolution = "resolved"
+        if not requested_fields and grounded_fields:
+            requested_fields = grounded_fields
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
+    elif intent == "service_info":
+        # 서비스 소개는 Tool도 격자도 필요 없다.
+        resolution = "resolved"
+        requested_fields = []
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
     elif intent == "policy_ranking":
         # 격자 하나에 정책 4개를 전부 돌려보는 요청이라 조회 필드도 변경 인자도
         # 필요 없다. 라우터가 실어 보낸 것이 있으면 그대로 흘리지 말고 비운다.
@@ -1430,6 +1521,31 @@ def _parse_normalized_request(
 
         if intent == "field_list":
             pass
+        elif has_source_request:
+            # 답할 수 있는 질문이다. 아래 메타 요청 가드보다 먼저 잡지 않으면
+            # unsupported로 바뀐다.
+            intent = "field_source"
+            resolution = "resolved"
+            lookup_all = False
+            if not requested_fields and grounded_fields:
+                requested_fields = grounded_fields
+            candidate_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            excluded_scope = False
+            lookup_evidence = ""
+        elif has_service_info_request:
+            intent = "service_info"
+            resolution = "resolved"
+            lookup_all = False
+            requested_fields = []
+            candidate_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            excluded_scope = False
+            lookup_evidence = ""
         elif has_meta_request:
             intent = "unsupported"
             resolution = "unsupported"
@@ -1503,6 +1619,29 @@ def _parse_normalized_request(
     else:
         if has_field_list_request:
             intent = "field_list"
+            resolution = "resolved"
+            requested_fields = []
+            candidate_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            lookup_all = False
+            excluded_scope = False
+            lookup_evidence = ""
+        elif has_source_request:
+            intent = "field_source"
+            resolution = "resolved"
+            if not requested_fields and grounded_fields:
+                requested_fields = grounded_fields
+            candidate_fields = []
+            changes = []
+            assumptions = []
+            unresolved = []
+            lookup_all = False
+            excluded_scope = False
+            lookup_evidence = ""
+        elif has_service_info_request:
+            intent = "service_info"
             resolution = "resolved"
             requested_fields = []
             candidate_fields = []
@@ -2410,6 +2549,27 @@ def _validate_doc_search_answer(
     # generate_doc_answer의 source 검사가 이미 보장한다.
 
 
+def _validate_field_source_answer(
+    answer: str,
+    tool_result: Mapping[str, Any],
+) -> None:
+    """출처 답변이 Tool 반환값 밖으로 나가지 않았는지 확인한다.
+
+    숫자 검증기는 걸지 않는다. 출처 문자열에는 `lt_c_upisuq161`이나
+    "Landsat 8/9"처럼 데이터셋 이름의 일부인 숫자가 섞여 있고, 그건
+    Tool이 준 값 그대로다. 대신 라벨과 출처가 실제로 답변에 실렸는지 본다.
+    """
+
+    sources = tool_result.get("sources")
+    if not isinstance(sources, Mapping) or not sources:
+        raise ChatProtocolError("출처 Tool 결과가 비어 있습니다.")
+    for entry in sources.values():
+        if str(entry["label"]) not in answer:
+            raise ChatProtocolError("출처 답변에 지표 이름이 없습니다.")
+        if str(entry["source"]) not in answer:
+            raise ChatProtocolError("출처 답변에 출처가 그대로 실리지 않았습니다.")
+
+
 def _validate_policy_ranking_answer(
     answer: str,
     tool_result: Mapping[str, Any],
@@ -3027,6 +3187,32 @@ def generate_doc_answer(
     return answer
 
 
+def format_field_source_answer(tool_result: Mapping[str, Any]) -> str:
+    """출처 답변을 Tool 반환값만으로 만든다. LLM을 부르지 않는다.
+
+    문서 검색과 달리 옮겨 적을 값이 이미 구조화돼 있어서, 문장을 만들려고
+    LLM을 부르면 출처 이름이 실행마다 조금씩 달라질 뿐이다.
+    """
+
+    error_answer = _tool_error_answer(tool_result)
+    if error_answer is not None:
+        return error_answer
+
+    sources = tool_result.get("sources")
+    if not isinstance(sources, Mapping) or not sources:
+        raise ChatProtocolError("출처 Tool 결과가 비어 있습니다.")
+
+    if len(sources) == 1:
+        (entry,) = sources.values()
+        return f"{entry['label']} 데이터의 출처는 {entry['source']}입니다."
+
+    lines = ["데이터 출처입니다."]
+    lines.extend(
+        f"- {entry['label']}: {entry['source']}" for entry in sources.values()
+    )
+    return "\n".join(lines)
+
+
 def _format_tool_answer(
     tool_name: str,
     tool_result: Mapping[str, Any],
@@ -3035,6 +3221,8 @@ def _format_tool_answer(
 ) -> str:
     if tool_name == "get_grid_data":
         return format_grid_data_answer(tool_result)
+    if tool_name == "get_field_source":
+        return format_field_source_answer(tool_result)
     if tool_name == "run_simulation":
         return format_simulation_answer(tool_result)
     if tool_name == "rank_policies":
@@ -3068,6 +3256,8 @@ def _validate_final_answer(
 
     if tool_name == "get_grid_data":
         _validate_grid_answer(answer, tool_result)
+    elif tool_name == "get_field_source":
+        _validate_field_source_answer(answer, tool_result)
     elif tool_name == "run_simulation":
         _validate_simulation_answer(answer, tool_result)
     elif tool_name == "rank_policies":
@@ -3419,6 +3609,14 @@ def _run_chat_with_client(
             first_content=first_content,
             metrics=metrics,
         )
+    if normalized_request.intent == "service_info":
+        metrics["final_branch"] = "service_info"
+        return _supported_scope_result(
+            answer=SERVICE_INFO_ANSWER,
+            first_thinking=first_thinking,
+            first_content=first_content,
+            metrics=metrics,
+        )
     if normalized_request.intent == "unsupported":
         metrics["final_branch"] = "supported_scope"
         return _supported_scope_result(
@@ -3464,6 +3662,14 @@ def _run_chat_with_client(
         elif normalized_request.intent == "doc_search":
             # 문서 검색은 격자와 무관하다. grid_id를 넘기지 말고 질문을 넘긴다.
             tool_arguments = {"question": router_message}
+            assumptions = []
+            preparation_error = None
+        elif normalized_request.intent == "field_source":
+            # 출처도 격자와 무관하다. 지목한 지표가 없으면 fields=None으로 두어
+            # 18개 전부를 돌려준다.
+            tool_arguments = {
+                "fields": list(normalized_request.requested_fields) or None
+            }
             assumptions = []
             preparation_error = None
         else:
