@@ -120,6 +120,23 @@ if not set(_INTENT_TOOL.values()) <= TOOL_FUNCTIONS.keys():
         "_INTENT_TOOL이 TOOL_FUNCTIONS에 없는 Tool을 가리킵니다: "
         f"{sorted(set(_INTENT_TOOL.values()) - TOOL_FUNCTIONS.keys())}"
     )
+# 격자를 선택해야만 답할 수 있는 intent. 나머지는 격자와 무관하다.
+# 예전에는 라우터를 부르기도 전에 격자를 요구해서 "NDVI가 무슨 뜻이야?" 같은
+# 문서 질문까지 전부 거절됐다. 무엇을 묻는지 알아야 격자가 필요한지 알 수 있다.
+_GRID_REQUIRED_INTENTS = {"lookup", "simulation", "policy_ranking"}
+_GRID_FREE_INTENTS = {"doc_search", "field_list", "unsupported"}
+# 양쪽에 다 적게 해서, 새 intent가 조용히 "격자 필요 없음"으로 새는 것을 막는다.
+# 한쪽만 봤다면 빠뜨린 intent가 기본값으로 통과해 격자 없이 Tool까지 갔을 것이다.
+if (
+    _GRID_REQUIRED_INTENTS | _GRID_FREE_INTENTS != _SUPPORTED_INTENTS
+    or _GRID_REQUIRED_INTENTS & _GRID_FREE_INTENTS
+):
+    raise RuntimeError(
+        "격자 필요 여부 표가 _SUPPORTED_INTENTS와 어긋났습니다. "
+        f"지원={sorted(_SUPPORTED_INTENTS)} "
+        f"격자필요={sorted(_GRID_REQUIRED_INTENTS)} "
+        f"격자불필요={sorted(_GRID_FREE_INTENTS)}"
+    )
 _SUPPORTED_RESOLUTIONS = {"resolved", "ambiguous", "unsupported"}
 _SUPPORTED_OPERATIONS = {"increase", "decrease"}
 _SUPPORTED_UNITS = {"percent", "percentage_point", "unitless"}
@@ -3067,7 +3084,10 @@ def _validate_final_answer(
         )
 
 
-def _resolved_grid_id(message: str, selected_grid_id: str | None) -> tuple[str, str]:
+def _resolved_grid_id(
+    message: str,
+    selected_grid_id: str | None,
+) -> tuple[str, str | None]:
     if not isinstance(message, str) or not message.strip():
         raise ChatInputError("질문을 입력해 주세요.")
     normalized_message = message.strip()
@@ -3085,10 +3105,10 @@ def _resolved_grid_id(message: str, selected_grid_id: str | None) -> tuple[str, 
     normalized_selected_grid_id = (
         selected_grid_id.strip() if isinstance(selected_grid_id, str) else ""
     )
+    # 격자가 없다고 여기서 거절하지 않는다. 무엇을 묻는지 아직 모르기 때문이다.
+    # 격자가 필요한 intent인지는 라우터가 판정한 뒤 _run_chat_with_client에서 본다.
     if not normalized_selected_grid_id:
-        raise ChatInputError(
-            "질문에 grid_id를 입력하거나 지도에서 100m 격자를 선택해 주세요."
-        )
+        return normalized_message, None
     return normalized_message, normalized_selected_grid_id
 
 
@@ -3112,6 +3132,61 @@ def _supported_scope_result(
         final_thinking="",
         final_content=answer,
         metrics=result_metrics,
+    )
+
+
+def _topic_particle(word: str) -> str:
+    """받침을 보고 은/는을 고른다.
+
+    지표 이름이 데이터에서 오기 때문에 "은(는)"으로 둘 수 없다. 화면에
+    그대로 나가는 문장이라 미완성 안내문처럼 보인다.
+
+    한글 음절은 유니코드에서 (초성, 중성, 종성) 순서로 채워져 있어
+    (코드 - 0xAC00) % 28이 0이 아니면 받침이 있다. 한글이 아닌 글자로
+    끝나면(영문 약어 등) 받침 없는 쪽으로 둔다. 읽었을 때 덜 어색하다.
+    """
+
+    if not word:
+        return "는"
+    last = word[-1]
+    if "가" <= last <= "힣":
+        return "은" if (ord(last) - 0xAC00) % 28 else "는"
+    return "는"
+
+
+def _grid_required_answer(normalized_request: _NormalizedRequest) -> str:
+    """격자가 필요한 질문인데 격자가 없을 때의 안내.
+
+    intent를 이미 알고 있으므로 무엇 때문에 격자가 필요한지 짚어 준다.
+    "격자를 선택해 주세요"만 반복하면 왜 필요한지 알 수 없어서, 사용자는
+    문서 질문까지 막혔던 예전 동작과 구분하지 못한다.
+
+    문장은 Tool 없이 여기서 만든다. 안내에는 숫자가 없으므로 LLM을 한 번
+    더 부를 이유가 없고, 부르면 답이 실행마다 흔들린다.
+    """
+
+    if normalized_request.intent == "simulation":
+        what = "정책 시뮬레이션은 선택한 격자의 현재 값에서 출발합니다"
+    elif normalized_request.intent == "policy_ranking":
+        what = "정책 우선순위는 격자마다 다르게 나옵니다"
+    elif normalized_request.lookup_all or not normalized_request.requested_fields:
+        what = "격자 데이터는 격자마다 값이 다릅니다"
+    else:
+        # 조회 가능 목록(_GRID_FIELD_LABELS)은 나열이라 「、」를 쓰지만
+        # 여기는 문장 안이라 쉼표가 읽힌다.
+        labels = ", ".join(
+            str(GRID_FIELD_SPECS[field]["label"])
+            for field in normalized_request.requested_fields
+            if field in GRID_FIELD_SPECS
+        )
+        what = (
+            f"{labels}{_topic_particle(labels)} 격자마다 값이 다릅니다"
+            if labels
+            else "격자 데이터는 격자마다 값이 다릅니다"
+        )
+    return (
+        f"{what}. 지도에서 100m 격자를 하나 선택한 뒤 다시 질문해 주세요. "
+        "질문에 격자 ID를 직접 적어도 됩니다."
     )
 
 
@@ -3277,7 +3352,7 @@ def _prepare_simulation_arguments(
 def _run_chat_with_client(
     client: Any,
     message: str,
-    resolved_grid_id: str,
+    resolved_grid_id: str | None,
     metrics: dict[str, Any],
 ) -> ChatResult:
     router_message = _GRID_ID_PATTERN.sub("", message).strip()
@@ -3351,12 +3426,27 @@ def _run_chat_with_client(
             first_content=first_content,
             metrics=metrics,
         )
+    if (
+        normalized_request.intent in _GRID_REQUIRED_INTENTS
+        and resolved_grid_id is None
+    ):
+        # Tool을 부르기 전에 끊는다. 격자 없이 격자 데이터를 만들어 내면 안 된다.
+        # 답변 생성 LLM도 부르지 않는다 — 안내 문장은 위에서 이미 완성돼 있다.
+        metrics["final_branch"] = "grid_required"
+        return _supported_scope_result(
+            answer=_grid_required_answer(normalized_request),
+            first_thinking=first_thinking,
+            first_content=first_content,
+            metrics=metrics,
+        )
     # 위에서 _TOOLLESS_INTENTS를 모두 걸러냈고, 남은 intent에 Tool이 있다는 건 import 시점에
     # 검증했다. 그래서 직접 조회한다 — 표가 깨지면 서비스가 뜨기 전에 터진다.
     tool_name = _INTENT_TOOL[normalized_request.intent]
     metrics["tool_name"] = tool_name
     tool_function = TOOL_FUNCTIONS[tool_name]
     tool_started = time.perf_counter()
+    # 여기까지 내려온 격자 필요 intent는 grid_id가 반드시 있다. 위에서 걸렀다.
+    # grid_id 없이 내려올 수 있는 건 doc_search뿐이고, 아래에서 question으로 갈아 끼운다.
     tool_arguments: dict[str, Any] = {"grid_id": resolved_grid_id}
     try:
         if normalized_request.intent == "lookup":
