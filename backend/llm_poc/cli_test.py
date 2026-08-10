@@ -431,10 +431,16 @@ GENERAL_LOOKUP_ROUTING_CASES = (
     ),
     (
         # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 기대 문구가 None인 이유: 예전에는 항상 붙던 "작성 시점 값" 면책을
+        # 여기서 검사했는데 그 면책을 없앴다(#70). 문서 답변은 출처를 본문에
+        # 넣지 않으므로 남는 고정 문자열이 없다. 내용 검증은 search_docs로
+        # 라우팅됐는지와 _validate_doc_search_answer(발췌 존재·최소 길이)가
+        # 맡는다. 답변 문장에서 낱말을 골라 검사하면 실행마다 표현이 달라져
+        # 노이즈만 늘어난다.
         MODEL_EXPLANATION_QUESTION,
         "search_docs",
         None,
-        "작성 시점 값",
+        None,
         False,
         False,
     ),
@@ -456,19 +462,21 @@ GENERAL_LOOKUP_ROUTING_CASES = (
     ),
     (
         # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 기대 문구 None인 이유는 MODEL_EXPLANATION_QUESTION 쪽 주석 참고.
         DATA_SOURCE_QUESTION,
         "search_docs",
         None,
-        "작성 시점 값",
+        None,
         False,
         False,
     ),
     (
         # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 기대 문구 None인 이유는 MODEL_EXPLANATION_QUESTION 쪽 주석 참고.
         MODEL_DATA_EXPLANATION_QUESTION,
         "search_docs",
         None,
-        "작성 시점 값",
+        None,
         False,
         False,
     ),
@@ -600,19 +608,24 @@ SEMANTIC_ROUTING_CASES = (
     ),
     (
         # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 화면 예시 질문은 "식생지수"로 순화했지만(#70) 여기서는 일부러
+        # 옛 용어 "NDVI"를 그대로 둔다. 사용자가 원래 용어로 물어도 알아듣는지
+        # 확인하는 시나리오다. aliases에서 NDVI를 빼면 여기서 걸린다.
+        # 기대 문구 None인 이유는 MODEL_EXPLANATION_QUESTION 쪽 주석 참고.
         "NDVI가 무슨 뜻이야?",
         "search_docs",
         None,
-        "작성 시점 값",
+        None,
         "resolved",
         (),
     ),
     (
         # ④ 도입 전에는 unsupported였다. 문서 검색이 생겨 이제 답할 수 있다.
+        # 기대 문구 None인 이유는 MODEL_EXPLANATION_QUESTION 쪽 주석 참고.
         "녹지율 데이터 출처가 어디야?",
         "search_docs",
         None,
-        "작성 시점 값",
+        None,
         "resolved",
         (),
     ),
@@ -1139,6 +1152,30 @@ def _validate_missing_grid_context() -> None:
     print("선택 격자 없음 검증: Tool 실행 0회, used_tools=[], Ollama 0회")
 
 
+def _validate_doc_search_has_no_disclaimer() -> None:
+    """문서 검색이 꼬리말 면책을 다시 달지 않았는지 본다.
+
+    예전에는 문서 답변마다 "문서 수치는 작성 시점 값" 두 줄이 붙었고,
+    "NDVI가 무슨 뜻이야?"처럼 답에 수치가 없는 질문에도 붙었다(#70).
+    E2E 시나리오 쪽은 그 문구를 기대값에서 뺐을 뿐이라 누가 되살려도
+    잡히지 않는다. 그래서 여기서 명시적으로 없음을 확인한다.
+
+    빈 질문은 색인을 만들기 전에 곧바로 반환하므로 LLM도 임베딩도 타지
+    않는다. 검사 비용이 0이고 실행마다 결과가 흔들리지 않는다.
+    """
+
+    from backend.llm_poc import tools
+
+    result = tools.search_docs("")
+    limitations = result.get("limitations")
+    if limitations != []:
+        raise RuntimeError(
+            "search_docs가 limitations를 비워 두지 않았습니다. "
+            f"실제={limitations!r}"
+        )
+    print("문서 검색 면책 문구 검증: limitations 비어 있음")
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="GA:ON Ollama + Qwen 조회·시뮬레이션 Tool Calling PoC"
@@ -1315,6 +1352,12 @@ def main() -> int:
         except RuntimeError as exc:
             failed_cases.append((len(cases) + 1, str(exc)))
             print(f"선택 격자 없음 검증 오류: {exc}", file=sys.stderr)
+
+        try:
+            _validate_doc_search_has_no_disclaimer()
+        except RuntimeError as exc:
+            failed_cases.append((len(cases) + 2, str(exc)))
+            print(f"문서 검색 면책 문구 검증 오류: {exc}", file=sys.stderr)
 
     exit_code = 1 if failed_cases else 0
     print(f"전체 종료 코드: {exit_code}")
