@@ -14,6 +14,7 @@ import {
 import type {
   AiChatChangedFeature,
   AiChatFieldSource,
+  AiChatRankedPolicy,
   AiFeatureCatalogItem,
   AiChatMessage,
   AiChatResponse,
@@ -29,7 +30,9 @@ const TOOL_NAMES: readonly AiChatToolName[] = [
   'get_grid_data',
   'run_simulation',
   'simulate_policy',
-  'get_field_source'
+  'get_field_source',
+  'rank_policies',
+  'search_docs'
 ];
 // 시뮬레이션이 바꿀 수 있는 필드 전체. 여기 없는 필드는 sanitize에서 걸러져
 // 카드의 "실제 적용된 변경"에서 조용히 사라진다(실측: 쿨루프의 albedo).
@@ -200,6 +203,31 @@ function sanitizeFieldSources(
   return Object.keys(sanitized).length > 0 ? sanitized : undefined;
 }
 
+function sanitizeRankedPolicies(value: unknown): AiChatRankedPolicy[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const sanitized: AiChatRankedPolicy[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const label = nonEmptyString(item.label);
+    const state = nonEmptyString(item.state);
+    const deltaC = finiteNumber(item.delta_c);
+    if (label === undefined || state === undefined || deltaC === undefined) continue;
+    const rank = finiteNumber(item.rank);
+    const policy: AiChatRankedPolicy = {
+      label,
+      state,
+      delta_c: deltaC,
+      rank: rank ?? null
+    };
+    if (typeof item.clipped === 'boolean') policy.clipped = item.clipped;
+    const clipReason = nonEmptyString(item.clip_reason);
+    if (clipReason !== undefined) policy.clip_reason = clipReason;
+    sanitized.push(policy);
+  }
+  return sanitized.length > 0 ? sanitized : undefined;
+}
+
 function sanitizeToolData(value: unknown): AiChatToolData | undefined {
   if (!isRecord(value)) return undefined;
 
@@ -260,6 +288,18 @@ function sanitizeToolData(value: unknown): AiChatToolData | undefined {
 
   const sources = sanitizeFieldSources(value.sources);
   if (sources !== undefined) sanitized.sources = sources;
+
+  const policies = sanitizeRankedPolicies(value.policies);
+  if (policies !== undefined) sanitized.policies = policies;
+
+  const rankedCount = finiteNumber(value.ranked_count);
+  if (rankedCount !== undefined) sanitized.ranked_count = rankedCount;
+
+  const tieBand = finiteNumber(value.tie_band_c);
+  if (tieBand !== undefined) sanitized.tie_band_c = tieBand;
+
+  const scenarioNote = nonEmptyString(value.scenario_note);
+  if (scenarioNote !== undefined) sanitized.scenario_note = scenarioNote;
 
   return Object.keys(sanitized).length > 0 ? sanitized : undefined;
 }
@@ -705,6 +745,84 @@ function SimulationResultCard({
       )}
       {data.policy_scenario_label && (
         <p className="gdpChatNotice limitation">{data.policy_scenario_label}</p>
+      )}
+    </div>
+  );
+}
+
+const POLICY_STATE_LABEL: Record<string, string> = {
+  adverse: '온도 상승 방향이라 추천하지 않음',
+  indistinguishable: '차이가 동률 밴드보다 작아 순위를 못 매김',
+  no_room: '요청한 만큼 반영되지 않음',
+  unresponsive: '모델이 반응하지 않음'
+};
+
+function PolicyRankingCard({ message }: { message: AiChatMessage }) {
+  const data = message.tool_data;
+  if (!message.used_tools?.includes('rank_policies') || data?.policies === undefined) {
+    return null;
+  }
+
+  // 순위가 매겨진 것과 아닌 것을 섞지 않는다. 냉각 방향이 아닌 정책을
+  // 같은 표에 두면 몇 위인지로 읽힌다.
+  const ranked = data.policies
+    .filter((policy) => policy.state === 'ranked' && policy.rank !== null)
+    .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+  const others = data.policies.filter((policy) => policy.state !== 'ranked');
+  if (ranked.length === 0 && others.length === 0) return null;
+
+  return (
+    <div className="gdpSimulationResult">
+      <div className="gdpSimulationDelta">
+        <span>정책 우선순위</span>
+        <strong>
+          {ranked.length > 0 ? ranked[0].label : '추천할 정책 없음'}
+        </strong>
+        {data.grid_id && (
+          <em className="gdpChatCardSubject">
+            {data.gu_name ? `${data.gu_name} · ` : ''}
+            {data.grid_id}
+          </em>
+        )}
+      </div>
+
+      {ranked.length > 0 && (
+        <dl className="gdpSimulationRows">
+          {ranked.map((policy) => (
+            <Fragment key={policy.label}>
+              <dt>
+                {policy.rank}위 {policy.label}
+              </dt>
+              <dd>{formatDelta(policy.delta_c)}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+
+      {others.length > 0 && (
+        <>
+          <p className="gdpChatCardHeading">순위를 매기지 않은 정책</p>
+          <dl className="gdpSimulationRows">
+            {others.map((policy) => (
+              <Fragment key={policy.label}>
+                <dt>{policy.label}</dt>
+                <dd className="gdpChatSourceValue">
+                  {POLICY_STATE_LABEL[policy.state] ?? policy.state}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        </>
+      )}
+
+      {data.scenario_note && (
+        <p className="gdpChatNotice limitation">{data.scenario_note}</p>
+      )}
+      {typeof data.tie_band_c === 'number' && (
+        <p className="gdpChatNotice limitation">
+          동률 밴드는 {data.tie_band_c.toFixed(3)}℃이며, 이보다 작은 차이는 모델
+          추정오차 안이라 순위로 구분하지 않습니다.
+        </p>
       )}
     </div>
   );
@@ -1205,9 +1323,13 @@ export default function AiChatView({
             const hasDataCard =
               message.role === 'assistant' &&
               (message.used_tools?.some((tool) =>
-                ['get_grid_data', 'run_simulation', 'simulate_policy', 'get_field_source'].includes(
-                  tool
-                )
+                [
+                  'get_grid_data',
+                  'run_simulation',
+                  'simulate_policy',
+                  'get_field_source',
+                  'rank_policies'
+                ].includes(tool)
               ) ??
                 false);
             const bubbleText =
@@ -1225,6 +1347,7 @@ export default function AiChatView({
                     <GridDataResultCard message={message} labels={fieldLabels} />
                     <FieldSourceCard message={message} />
                     <SimulationResultCard message={message} labels={fieldLabels} />
+                    <PolicyRankingCard message={message} />
                     <ChatNotices message={message} />
                   </>
                 )}
