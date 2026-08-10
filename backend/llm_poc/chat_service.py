@@ -801,6 +801,25 @@ def _is_meta_request(message: str) -> bool:
     return any(term in compact_message for term in _META_REQUEST_TERMS)
 
 
+def _has_change_signal(message: str) -> bool:
+    """시뮬레이션 요청으로 볼 만한 신호가 있는지 본다.
+
+    시뮬레이션에는 바꾸라는 동사(높여·낮춰·늘려·줄여)나 수치가 있다.
+    둘 다 없으면 무엇을 얼마나 바꿀지 되물을 게 아니라 애초에 시뮬레이션
+    요청이 아니다.
+
+    "왜 딥러닝을 안 쓰고 다른 방법을 골랐어?"가 라우터에서 가끔 simulation
+    으로 새서 "변경할 지표를 알려주세요"로 답했다. 화면 사용 가이드의 예시
+    질문이라 처음 들어온 사람이 바로 부딪히는 자리다.
+    """
+
+    if not isinstance(message, str):
+        return False
+    return bool(
+        _SIMULATION_ACTION_PATTERN.search(message) or re.search(r"\d", message)
+    )
+
+
 def _is_policy_application_request(message: str) -> bool:
     """정책 이름 + "적용/설치/조성/하면" 같은 실행 표현이 함께 있는지 본다.
 
@@ -1363,6 +1382,7 @@ def _parse_normalized_request(
     has_source_request = _is_source_request(original_message)
     matched_policy_id = _matched_policy_id(original_message)
     has_policy_application = _is_policy_application_request(original_message)
+    has_change_signal = _has_change_signal(original_message)
     has_service_info_request = _is_service_info_request(original_message)
     has_field_list_request = _is_field_list_request(original_message)
     has_simulation_intent = _has_simulation_intent(original_message)
@@ -1537,6 +1557,20 @@ def _parse_normalized_request(
         # 필요 없다. 라우터가 실어 보낸 것이 있으면 그대로 흘리지 말고 비운다.
         # 이 분기가 없으면 새 intent가 아래 어느 elif에도 안 걸려 검증을 통째로
         # 건너뛴다.
+        resolution = "resolved"
+        requested_fields = []
+        candidate_fields = []
+        changes = []
+        assumptions = []
+        unresolved = []
+        lookup_all = False
+        excluded_scope = False
+        lookup_evidence = ""
+    elif intent == "simulation" and not changes and not has_change_signal:
+        # 바꾸라는 동사도 수치도 없다. 시뮬레이션 요청이 아니다.
+        # 되묻지 말고 문서에서 답을 찾아본다. 문서에 없으면 search_docs가
+        # "관련 내용을 찾지 못했습니다"라고 답하므로 되묻기보다 낫다.
+        intent = "doc_search"
         resolution = "resolved"
         requested_fields = []
         candidate_fields = []
@@ -3215,6 +3249,69 @@ _CASUAL_ENDING_PATTERN = re.compile(r"(?<!니)다[.!?。]")
 _FULLWIDTH_PUNCTUATION = str.maketrans({"。": ".", "，": ",", "！": "!", "？": "?"})
 
 
+_HANGUL_BASE = 0xAC00
+_JONG_COUNT = 28
+_JONG_NIEUN = 4
+_JONG_BIEUP = 17
+
+
+def _to_polite_ending(word: str) -> str:
+    """"~다"로 끝나는 낱말을 "~니다/습니다"로 바꾼다.
+
+    한글 음절은 (초성, 중성, 종성)이 코드로 합쳐져 있어 종성만 갈아 끼울 수
+    있다. 그 성질을 써서 규칙 세 줄로 처리한다.
+
+        먹는다 → 먹습니다     "는다"는 통째로 바꾼다
+        한다   → 합니다       종성 ㄴ을 ㅂ으로 바꾸고 "니다"
+        크다   → 큽니다       종성이 없으면 ㅂ을 넣고 "니다"
+        있다   → 있습니다     그 밖의 종성이면 "습니다"
+
+    낱말 사전을 두지 않는 이유는 코퍼스에 나오는 서술어를 다 적을 수 없기
+    때문이다. 규칙으로 처리하면 처음 보는 서술어도 바뀐다.
+    """
+
+    if word.endswith("는다"):
+        return word[:-2] + "습니다"
+    stem = word[:-1]
+    if not stem:
+        return word
+    last = stem[-1]
+    if not ("가" <= last <= "힣"):
+        return word
+    index = ord(last) - _HANGUL_BASE
+    jong = index % _JONG_COUNT
+    if jong == _JONG_NIEUN:
+        swapped = chr(_HANGUL_BASE + index - _JONG_NIEUN + _JONG_BIEUP)
+        return stem[:-1] + swapped + "니다"
+    if jong == 0:
+        return stem[:-1] + chr(_HANGUL_BASE + index + _JONG_BIEUP) + "니다"
+    return stem + "습니다"
+
+
+_CASUAL_SENTENCE_PATTERN = re.compile(r"([가-힣]+다)([.!?。])")
+
+
+def _politen(text: str) -> str:
+    """문장 끝의 반말 종결을 존댓말로 바꾼다.
+
+    재시도로 말투를 고치게 해도 마지막 시도에서 반말이 남을 수 있다. 그때
+    그대로 내보내면 같은 챗봇이 어떤 답은 존댓말, 어떤 답은 반말이 된다.
+    생성에 기대지 않고 여기서 확정한다.
+
+    이미 존댓말인 문장은 건드리지 않는다. 정규식 뒤쪽 부정 탐색으로는 안
+    된다. 낱말 전체를 잡기 때문에 검사 위치가 낱말 앞이 되어 "입니다"가
+    그대로 통과하고 "입닙니다"가 된다. 잡은 뒤에 끝을 확인해야 한다.
+    """
+
+    def convert(match: re.Match[str]) -> str:
+        word = match.group(1)
+        if word.endswith("니다"):
+            return match.group(0)
+        return _to_polite_ending(word) + match.group(2)
+
+    return _CASUAL_SENTENCE_PATTERN.sub(convert, text)
+
+
 def _casual_sentence_endings(text: str) -> list[str]:
     """문서 답변에 남은 반말 종결을 찾는다.
 
@@ -3268,7 +3365,7 @@ def generate_doc_answer(
             if not isinstance(payload, Mapping):
                 last_error = "문서 답변이 객체가 아닙니다."
                 continue
-            candidate = (
+            candidate = _politen(
                 str(payload.get("answer") or "")
                 .translate(_FULLWIDTH_PUNCTUATION)
                 .strip()
