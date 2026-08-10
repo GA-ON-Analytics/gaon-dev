@@ -72,6 +72,13 @@ export interface PolicyPreset {
   minimumRequirements: readonly PolicyMinimumRequirement[];
 }
 
+/** `/api/policies` 응답. 정책 정의의 원본은 `backend/policy_presets.py`다. */
+export interface PolicyPresetsResponse {
+  count: number;
+  policies: PolicyPreset[];
+  featureLabels: Record<string, string>;
+}
+
 export interface PolicyApplicability {
   applicable: boolean;
   reason?: string;
