@@ -16,6 +16,10 @@ from backend.llm_poc.chat_service import (
     run_chat,
 )
 from backend.llm_poc.tools import ALLOWED_GRID_FIELDS, GRID_FIELD_SPECS
+from backend.policy_presets import (
+    POLICY_FEATURE_LABELS,
+    policy_presets_payload,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -369,6 +373,22 @@ def features() -> Any:
     return {
         "count": len(feature_meta),
         "features": feature_meta,
+    }
+
+
+@app.get("/api/policies")
+def policies() -> Any:
+    """정책 프리셋 정의. 화면과 챗봇이 같은 정의를 보게 하는 통로다.
+
+    모델 준비 여부를 보지 않는다. 정책 정의는 예측 결과가 아니라 상수라서
+    모델이 없어도 답할 수 있어야 한다.
+    """
+
+    presets = policy_presets_payload()
+    return {
+        "count": len(presets),
+        "policies": presets,
+        "featureLabels": dict(POLICY_FEATURE_LABELS),
     }
 
 

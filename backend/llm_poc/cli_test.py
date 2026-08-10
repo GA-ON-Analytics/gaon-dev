@@ -632,6 +632,25 @@ SEMANTIC_ROUTING_CASES = (
         (),
     ),
     (
+        # 정책 이름만 있고 수치가 없다. 변화량은 정책 정의에 있으므로 되묻지
+        # 않는다(#76). 예전에는 "증가 또는 감소 방향을 알려주세요"로 답했다.
+        "쿨루프 적용하면 어떻게 돼?",
+        "simulate_policy",
+        {"grid_id": ROUTING_GRID_ID, "policy_id": "cool_roof"},
+        "쿨루프",
+        "resolved",
+        (),
+    ),
+    (
+        # 별칭으로도 찾는다. 정의상의 이름은 "옥상녹화"다.
+        "옥상정원 설치하면?",
+        "simulate_policy",
+        {"grid_id": ROUTING_GRID_ID, "policy_id": "green_roof"},
+        "옥상녹화",
+        "resolved",
+        (),
+    ),
+    (
         SEMANTIC_GREEN_SIMULATION_QUESTION,
         "run_simulation",
         _simulation_arguments(ROUTING_GRID_ID, green_ratio_delta=0.05),
@@ -682,6 +701,17 @@ def _validate_expected_arguments(
             raise RuntimeError(
                 "출처 조회가 기대한 fields를 확정하지 않았습니다. "
                 f"실제={tool_arguments.get('fields')!r}"
+            )
+        return
+
+    if tool_name == "simulate_policy":
+        # 변화량은 정책 정의에 있으므로 인자는 격자와 정책 id뿐이다.
+        if not set(tool_arguments).issubset({"grid_id", "policy_id"}):
+            raise RuntimeError("simulate_policy에 예상하지 않은 인자가 전달되었습니다.")
+        if tool_arguments.get("policy_id") != expected_arguments.get("policy_id"):
+            raise RuntimeError(
+                "정책 시뮬레이션이 기대한 policy_id를 확정하지 않았습니다. "
+                f"실제={tool_arguments.get('policy_id')!r}"
             )
         return
 
@@ -1349,8 +1379,11 @@ def main() -> int:
             raise RuntimeError(
                 "기존 qwen3:4b E2E 49개 시나리오 수가 변경되었습니다."
             )
-        if len(SEMANTIC_ROUTING_CASES) != 18:
-            raise RuntimeError("신규 의미 기반 E2E 18개 시나리오 수가 변경되었습니다.")
+        # 18 → 20. 정책 이름 시뮬레이션 2개를 추가했다(#76).
+        # 이 숫자는 "시나리오를 실수로 빠뜨렸는지"를 보는 가드다. 의도적으로
+        # 늘렸으면 여기도 같이 올린다.
+        if len(SEMANTIC_ROUTING_CASES) != 20:
+            raise RuntimeError("신규 의미 기반 E2E 20개 시나리오 수가 변경되었습니다.")
 
     failed_cases: list[tuple[int, str]] = []
     for index, (

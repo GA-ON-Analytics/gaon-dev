@@ -638,6 +638,9 @@ def run_simulation(
     impervious_ratio_delta: float = 0,
     ndvi_delta: float = 0,
     albedo_delta: float = 0,
+    # 라우터는 이 레버를 직접 내주지 않는다. 정책 프리셋(도로 가로녹지화)이
+    # 도로 비율을 줄이기 때문에 simulate_policy가 쓰려고 열어 둔 자리다.
+    road_ratio_delta: float = 0,
 ) -> dict[str, Any]:
     """기존 ``predict_core.predict``로 100m 격자 정책 시나리오를 실행한다.
 
@@ -658,6 +661,7 @@ def run_simulation(
         ("impervious_ratio_delta", impervious_ratio_delta),
         ("ndvi_delta", ndvi_delta),
         ("albedo_delta", albedo_delta),
+        ("road_ratio_delta", road_ratio_delta),
     ):
         normalized_value, error = _validated_delta(name, value)
         if error is not None:
@@ -676,6 +680,8 @@ def run_simulation(
         requested_changes["ndvi"] = validated_deltas["ndvi_delta"]
     if validated_deltas["albedo_delta"]:
         requested_changes["albedo"] = validated_deltas["albedo_delta"]
+    if validated_deltas["road_ratio_delta"]:
+        requested_changes["road_ratio"] = validated_deltas["road_ratio_delta"]
     result["requested_changes"] = requested_changes
 
     policy_direction_notes: list[str] = []
@@ -1077,6 +1083,73 @@ def search_docs(question: str) -> dict[str, Any]:
     return result
 
 
+_POLICY_DELTA_ARGUMENT = {
+    "green_ratio": "green_ratio_delta",
+    "impervious_ratio": "impervious_ratio_delta",
+    "ndvi": "ndvi_delta",
+    "albedo": "albedo_delta",
+    "road_ratio": "road_ratio_delta",
+}
+
+
+def simulate_policy(grid_id: str, policy_id: str) -> dict[str, Any]:
+    """정책 프리셋 하나를 격자에 적용한 결과를 돌려준다.
+
+    변화량은 ``backend/policy_presets.py``에서 읽는다. 화면이 쓰는 정의와
+    같은 원본이라 챗봇과 화면이 다른 숫자를 말할 수 없다.
+
+    예측은 ``run_simulation``에 그대로 위임한다. 학습범위 clip, 경고 생성,
+    반환값 검증이 전부 거기 있어서 여기서 다시 만들면 두 벌이 갈라진다.
+
+    화면은 ``couple_land_cover=false``로 보내고 여기는 run_simulation의
+    기본값(True)을 쓴다. 6종 모두 결과가 같다. 녹지를 바꾸는 세 정책은
+    불투수면도 함께 명시해서 연동이 발동하지 않고, 나머지 셋은 녹지를
+    건드리지 않는다.
+    """
+
+    from backend.policy_presets import POLICY_PRESET_BY_ID
+
+    normalized_policy_id = policy_id.strip() if isinstance(policy_id, str) else ""
+    preset = POLICY_PRESET_BY_ID.get(normalized_policy_id)
+    if preset is None:
+        result = _empty_simulation_result(
+            grid_id.strip() if isinstance(grid_id, str) else None
+        )
+        result["error"] = f"지원하지 않는 정책입니다: {policy_id}"
+        return result
+
+    deltas = {
+        _POLICY_DELTA_ARGUMENT[feature]: value
+        for feature, value in preset["changes"].items()
+        if feature in _POLICY_DELTA_ARGUMENT
+    }
+    unsupported = set(preset["changes"]) - set(_POLICY_DELTA_ARGUMENT)
+    if unsupported:
+        # 정책이 시뮬레이션할 수 없는 지표를 건드리면 조용히 빼지 않는다.
+        # 일부만 적용한 결과는 그 정책의 효과가 아니다.
+        result = _empty_simulation_result(
+            grid_id.strip() if isinstance(grid_id, str) else None
+        )
+        result["error"] = (
+            f"{preset['name']} 정책이 시뮬레이션할 수 없는 지표를 포함합니다: "
+            f"{sorted(unsupported)}"
+        )
+        return result
+
+    result = run_simulation(grid_id, **deltas)
+    result["policy_id"] = preset["id"]
+    result["policy_name"] = preset["name"]
+    result["policy_description"] = preset["description"]
+    result["policy_scenario_label"] = preset["scenario_label"]
+    result["policy_source_url"] = preset["source_url"]
+    if result.get("success") is True:
+        result["limitations"] = [
+            *result.get("limitations", []),
+            *preset["assumptions"],
+        ]
+    return result
+
+
 def get_field_source(fields: list[str] | None = None) -> dict[str, Any]:
     """지표의 데이터 출처를 GRID_FIELD_SPECS에서 그대로 읽어 온다.
 
@@ -1130,6 +1203,7 @@ TOOL_FUNCTIONS = {
     "get_grid_data": get_grid_data,
     "get_field_source": get_field_source,
     "run_simulation": run_simulation,
+    "simulate_policy": simulate_policy,
     "rank_policies": rank_policies,
     "search_docs": search_docs,
 }
