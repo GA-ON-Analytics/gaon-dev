@@ -1,5 +1,7 @@
 export type AiChatToolName =
   | 'get_grid_data'
+  | 'rank_policies'
+  | 'search_docs'
   | 'run_simulation'
   | 'simulate_policy'
   | 'get_field_source';
@@ -46,6 +48,18 @@ export interface AiChatFieldSource {
   source: string;
 }
 
+/** `rank_policies`가 정책 하나에 대해 돌려주는 항목. */
+export interface AiChatRankedPolicy {
+  label: string;
+  delta_c: number;
+  /** 냉각 방향으로 순위가 매겨진 정책만 숫자가 있다. 나머지는 null. */
+  rank: number | null;
+  /** ranked · adverse · indistinguishable · no_room · unresponsive */
+  state: string;
+  clipped?: boolean;
+  clip_reason?: string;
+}
+
 export interface AiChatToolData {
   success?: boolean;
   grid_id?: string;
@@ -71,6 +85,11 @@ export interface AiChatToolData {
   policy_source_url?: string;
   /** `get_field_source`가 채운다. 필드명 → 라벨·출처. */
   sources?: Record<string, AiChatFieldSource>;
+  /** `rank_policies`가 채운다. */
+  policies?: AiChatRankedPolicy[];
+  ranked_count?: number;
+  tie_band_c?: number;
+  scenario_note?: string;
 }
 
 export interface AiChatResponse {
