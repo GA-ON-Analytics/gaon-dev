@@ -11,7 +11,6 @@ from typing import Any
 
 from backend.llm_poc.chat_service import (
     DOC_ANSWER_MAX_ATTEMPTS,
-    ChatInputError,
     ChatProtocolError,
     ChatResult,
     run_chat,
@@ -1131,25 +1130,59 @@ def run_tool_calling(
 
 
 def _validate_missing_grid_context() -> None:
-    class _NoCallClient:
-        call_count = 0
+    """격자 없이 격자 데이터를 지어내지 않는지 본다.
 
-        def chat(self, **_: Any) -> None:
-            self.call_count += 1
-            raise AssertionError("격자 문맥 없이 Ollama를 호출했습니다.")
+    예전에는 "Ollama 0회"를 조건으로 걸었다. 격자 검사가 라우터보다 앞에
+    있어서 아무 질문도 해석되기 전에 거절됐기 때문이다. 그 탓에 격자와
+    무관한 문서 질문까지 전부 막혔다(#72).
 
-    client = _NoCallClient()
-    try:
-        run_chat(GENERIC_DATA_TELL_QUESTION, client=client)
-    except ChatInputError as exc:
-        if "격자" not in str(exc):
-            raise RuntimeError("격자 선택 안내가 명확하지 않습니다.") from exc
-    else:
-        raise RuntimeError("선택된 grid_id가 없는데 요청이 실행되었습니다.")
+    지금은 라우터를 먼저 부른다. 그래서 Ollama 호출은 해석 1회가 정상이다.
+    지켜야 할 본질은 호출 횟수가 아니라 **격자 없이 Tool이 실행되지 않는
+    것**이므로 그쪽을 본다. 답변 생성까지 가지 않는 것도 함께 본다 —
+    안내 문장은 Tool 없이 만들어지므로 2회차 호출이 있으면 경로가 샌 것이다.
+    """
 
-    if client.call_count != 0:
-        raise RuntimeError("선택된 grid_id 없이 Ollama가 호출되었습니다.")
-    print("선택 격자 없음 검증: Tool 실행 0회, used_tools=[], Ollama 0회")
+    result = run_chat(GENERIC_DATA_TELL_QUESTION)
+    if result.used_tools:
+        raise RuntimeError(
+            f"격자 없이 Tool이 실행되었습니다: {result.used_tools}"
+        )
+    if result.tool_data:
+        raise RuntimeError("격자 없이 Tool 반환값이 답변에 실렸습니다.")
+    if "격자" not in result.answer:
+        raise RuntimeError("격자 선택 안내가 명확하지 않습니다.")
+
+    call_count = result.metrics.get("ollama_call_count")
+    if call_count != 1:
+        raise RuntimeError(
+            "격자 없는 조회 질문은 해석 1회로 끝나야 합니다. "
+            f"실제={call_count!r}"
+        )
+    if result.metrics.get("final_branch") != "grid_required":
+        raise RuntimeError(
+            "격자 없는 조회 질문이 grid_required 분기로 가지 않았습니다. "
+            f"실제={result.metrics.get('final_branch')!r}"
+        )
+    print("선택 격자 없음 검증: Tool 실행 0회, used_tools=[], 해석 1회로 종료")
+
+
+def _validate_grid_free_questions_without_grid() -> None:
+    """격자와 무관한 질문은 격자를 안 골라도 답해야 한다.
+
+    #72의 본체다. 화면 예시 질문으로 넣어 둔 문서 질문이 격자를 고르기
+    전에는 답을 못 하던 것이 문제였다. 처음 들어온 사람이 제일 먼저 누를
+    버튼이라 여기서 막히면 서비스가 아무것도 못 하는 것처럼 보인다.
+    """
+
+    for question in ("NDVI가 무슨 뜻이야?", CAPABILITY_QUESTION):
+        result = run_chat(question)
+        if not result.answer.strip():
+            raise RuntimeError(f"격자 없이 답하지 못했습니다: {question}")
+        if result.metrics.get("final_branch") == "grid_required":
+            raise RuntimeError(
+                f"격자와 무관한 질문인데 격자를 요구했습니다: {question}"
+            )
+    print("격자 무관 질문 검증: 격자 없이도 답변 생성됨")
 
 
 def _validate_doc_search_has_no_disclaimer() -> None:
@@ -1358,6 +1391,12 @@ def main() -> int:
         except RuntimeError as exc:
             failed_cases.append((len(cases) + 2, str(exc)))
             print(f"문서 검색 면책 문구 검증 오류: {exc}", file=sys.stderr)
+
+        try:
+            _validate_grid_free_questions_without_grid()
+        except RuntimeError as exc:
+            failed_cases.append((len(cases) + 3, str(exc)))
+            print(f"격자 무관 질문 검증 오류: {exc}", file=sys.stderr)
 
     exit_code = 1 if failed_cases else 0
     print(f"전체 종료 코드: {exit_code}")
