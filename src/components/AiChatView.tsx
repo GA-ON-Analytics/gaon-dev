@@ -31,10 +31,16 @@ const TOOL_NAMES: readonly AiChatToolName[] = [
   'simulate_policy',
   'get_field_source'
 ];
+// 시뮬레이션이 바꿀 수 있는 필드 전체. 여기 없는 필드는 sanitize에서 걸러져
+// 카드의 "실제 적용된 변경"에서 조용히 사라진다(실측: 쿨루프의 albedo).
+// 정책 프리셋이 바꾸는 road_ratio까지 포함한다.
 const CHANGE_FIELDS = [
   'green_ratio',
   'impervious_ratio',
-  'park_area_within_500m'
+  'park_area_within_500m',
+  'ndvi',
+  'albedo',
+  'road_ratio'
 ] as const;
 const LOOKUP_FIELD_PATTERN = /^[a-z][a-z0-9_]*$/;
 const UNSAFE_LOOKUP_FIELDS = new Set([
@@ -219,7 +225,8 @@ function sanitizeToolData(value: unknown): AiChatToolData | undefined {
     'after_anomaly',
     'delta_c',
     'uncertainty_std',
-    'delta_std'
+    'delta_std',
+    'direction_confidence'
   ] as const) {
     const number = finiteNumber(value[field]);
     if (number !== undefined) sanitized[field] = number;
@@ -517,34 +524,31 @@ function visibleAnswerLines(message: AiChatMessage, hasDataCard: boolean): strin
   const basis = message.tool_data?.interpretation_basis?.trim();
   if (basis) shownElsewhere.add(basis);
 
-  // "해석 가정:" 아래 항목은 카드에도 안내에도 없다. 이 구역에 들어가면
-  // 아무것도 걷어내지 않는다. "- "로 시작한다는 이유로 지우면 사라진다.
-  let inAssumptions = false;
-  const kept: string[] = [];
-  for (const line of message.text.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (trimmed === '해석 가정:') {
-      inAssumptions = true;
-      kept.push(line);
-      continue;
-    }
-    if (inAssumptions) {
-      kept.push(line);
-      continue;
-    }
-    if (shownElsewhere.has(trimmed)) continue;
-    // "경고: ..."는 ChatNotices가 경고 배지로 보여준다.
-    if (shownElsewhere.has(trimmed.replace(/^경고:\s*/, ''))) continue;
-    if (hasDataCard) {
-      // "- 녹지율: 16.45%" 같은 값 줄과 그 위 소제목("실제 적용된 변경:")은
-      // 카드가 표로 보여준다. 소제목만 남으면 빈 제목이 뜬다.
-      if (trimmed.startsWith('- ')) continue;
-      if (trimmed.endsWith(':')) continue;
-    }
-    kept.push(line);
+  // 카드가 뜨면 산문을 통째로 걷어낸다.
+  //
+  // 처음에는 카드·안내에 있는 문장을 하나씩 빼려 했는데, 답변 본문과 tool_data의
+  // 문장이 미묘하게 달라 안 맞았다. 실측으로 본문은 "모델 예측 anomaly",
+  // interpretation_basis는 "머신러닝 모델이 반환한 예측 anomaly"였다. 문자열을
+  // 맞춰 빼는 방식은 백엔드 문구가 조금만 바뀌어도 다시 어긋난다.
+  //
+  // 카드와 안내에 없는 것은 "해석 가정"뿐이라 그 구역만 남긴다.
+  if (hasDataCard) {
+    const lines = message.text.split('\n');
+    const from = lines.findIndex((line) => line.trim() === '해석 가정:');
+    return from === -1 ? '' : lines.slice(from).join('\n');
   }
-  return kept.join('\n');
+
+  return message.text
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      if (shownElsewhere.has(trimmed)) return false;
+      // "경고: ..."는 ChatNotices가 경고 배지로 보여준다.
+      if (shownElsewhere.has(trimmed.replace(/^경고:\s*/, ''))) return false;
+      return true;
+    })
+    .join('\n');
 }
 
 function GridDataResultCard({
@@ -684,10 +688,21 @@ function SimulationResultCard({
         <dd>{formatModelValue(data.before_anomaly)}</dd>
         <dt>변경 후</dt>
         <dd>{formatModelValue(data.after_anomaly)}</dd>
+        {typeof data.direction_confidence === 'number' && (
+          <>
+            <dt>모델 트리 방향 동의율</dt>
+            <dd>{(data.direction_confidence * 100).toFixed(1)}%</dd>
+          </>
+        )}
       </dl>
       <p className="gdpChatNotice limitation">
         이 값들은 절대온도가 아니라 모델이 예측한 anomaly와 그 변화입니다.
       </p>
+      {typeof data.direction_confidence === 'number' && (
+        <p className="gdpChatNotice limitation">
+          방향 동의율은 통계적 신뢰구간이나 실제 정책의 성공확률이 아닙니다.
+        </p>
+      )}
       {data.policy_scenario_label && (
         <p className="gdpChatNotice limitation">{data.policy_scenario_label}</p>
       )}
