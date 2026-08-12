@@ -2191,6 +2191,16 @@ td {
 }
 .gridDetailSidePanel .chip.ghost{ background:var(--gdp-sub); color:var(--gdp-ink2); }
 
+/* 요약 카드 → 시뮬레이션 카드로 내려가는 진입 버튼 */
+.gridDetailSidePanel .gdpSimJump{
+  display:flex; width:100%; margin-top:16px; padding:11px 14px; flex-direction:column;
+  align-items:flex-start; gap:2px; border:0; border-radius:12px;
+  background:var(--gdp-green); color:#fff; cursor:pointer;
+  font-size:12.5px; font-weight:700; text-align:left;
+}
+.gridDetailSidePanel .gdpSimJump small{ font-size:10px; font-weight:600; opacity:.78; }
+.gridDetailSidePanel .gdpSimJump:hover{ filter:brightness(1.12); }
+
 /* --- 핵심 타일 2개 --- */
 .gridDetailSidePanel .tiles{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .gridDetailSidePanel .tile{ background:var(--gdp-sub); border-radius:13px; padding:13px 14px; }
@@ -4090,4 +4100,222 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
     margin-top: 8px;
     margin-bottom: 10px;
   }
+}
+
+/* ── 정책 사례 요약 팝업 ────────────────────────────────────────────────
+   원문(news.seoul.go.kr)이 frame-ancestors 'self' 를 내려보내 iframe 으로는
+   띄울 수 없어서, 원문을 읽고 우리가 요약한 내용을 우리 디자인으로 보여준다.
+   document.body 로 portal 하기 때문에 상세 패널의 zoom 이 걸리지 않고,
+   gdp 팔레트도 여기서 다시 선언해야 살아있다(.gisLeftPanel 과 같은 방식). */
+.policyCaseBackdrop {
+  --gdp-card: #ffffff;
+  --gdp-sub: #f5f7f9;
+  --gdp-ink: #191f28;
+  --gdp-ink2: #4e5968;
+  --gdp-ink3: #8b95a1;
+  --gdp-line: #eceef1;
+  --gdp-green: #1f5121;
+  --gdp-green-soft: #e4f1e5;
+  position: fixed;
+  z-index: 1300;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 22, 33, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.policyCaseModal {
+  display: flex;
+  overflow: hidden;
+  width: min(460px, 100%);
+  max-height: min(640px, 100%);
+  flex-direction: column;
+  border-radius: 18px;
+  background: var(--gdp-card);
+  box-shadow: 0 18px 48px rgba(15, 22, 33, 0.28);
+  color: var(--gdp-ink);
+  cursor: default;
+}
+
+.policyCaseHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--gdp-line);
+}
+
+.policyCaseHeader > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.policyCaseKicker {
+  color: var(--gdp-green);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.policyCaseHeader strong {
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.policyCaseClose {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--gdp-sub);
+  color: var(--gdp-ink2);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.policyCaseClose:hover {
+  background: var(--gdp-line);
+}
+
+.policyCaseBody {
+  overflow-y: auto;
+  padding: 16px 18px 18px;
+}
+
+.policyCaseMeta {
+  display: grid;
+  margin: 0 0 14px;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.policyCaseMeta dt {
+  margin-bottom: 3px;
+  color: var(--gdp-ink3);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.policyCaseMeta dd {
+  margin: 0;
+  color: var(--gdp-ink2);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.policyCaseSummary p {
+  margin: 0 0 7px;
+  color: var(--gdp-ink2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.policyCaseFacts {
+  display: flex;
+  margin: 14px 0 0;
+  flex-direction: column;
+  gap: 9px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  background: var(--gdp-sub);
+  list-style: none;
+}
+
+.policyCaseFacts li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.policyCaseFacts span {
+  flex: none;
+  color: var(--gdp-ink3);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.policyCaseFacts b {
+  color: var(--gdp-ink);
+  font-size: 11.5px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+/* 좁은 화면에선 값이 오른쪽 정렬로 접히면서 마지막 글자만 다음 줄에 남는다.
+   라벨 아래로 내려 왼쪽 정렬로 읽게 한다. */
+@media (max-width: 520px) {
+  .policyCaseFacts li {
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .policyCaseFacts b {
+    text-align: left;
+  }
+}
+
+.policyCaseCaveat {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  border-left: 2px solid var(--gdp-green);
+  border-radius: 0 8px 8px 0;
+  background: var(--gdp-green-soft);
+  color: var(--gdp-ink2);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.policyCaseNote {
+  margin: 12px 0 0;
+  color: var(--gdp-ink3);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.policyCaseFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--gdp-line);
+  background: var(--gdp-sub);
+}
+
+.policyCaseFooter span {
+  color: var(--gdp-ink3);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.policyCaseFooter a {
+  flex: none;
+  color: var(--gdp-green);
+  font-size: 11px;
+  font-weight: 700;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+/* 상세 패널 안의 '정책 사례 보기' — 예전엔 새 탭 링크였다. 링크처럼 보이게 유지 */
+.gridDetailSidePanel .policyCaseOpen {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gdp-green);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
 }
