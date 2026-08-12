@@ -1902,7 +1902,15 @@ export function MapDashboard() {
           <ScaleControl position="topright" metric imperial={false} maxWidth={40} />
         </MapContainer>
       )}
-      <Map3DOverlay />
+      <Map3DOverlay
+        gridData={
+          selectedGridResolution === '100m' && selectedDistrict !== ALL_DISTRICTS
+            ? gridGeoJson
+            : null
+        }
+        resolution={selectedGridResolution}
+        selectedDistrict={selectedDistrict}
+      />
       {!loading && !error && gridLoading && (
         <div className="mapLoadingOverlay">
           <LoadingContent message={`${selectedGridResolution} 격자 데이터 로딩 중`} />
