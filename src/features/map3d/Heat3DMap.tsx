@@ -18,7 +18,17 @@ const GRID_SOURCE_ID = 'gaon-100m-grid';
 const GRID_FILL_LAYER_ID = 'gaon-100m-grid-fill';
 const GRID_LINE_LAYER_ID = 'gaon-100m-grid-line';
 const LST_PROPERTY = 'mean_actual_lst';
+const NUMERIC_LST_PROPERTY = '__gaon_numeric_lst';
 const VISUAL_HEIGHT_PROPERTY = '__gaon_lst_visual_height';
+// 기존 2D 지표면온도 범례와 동일한 고정 구간 및 색상이다.
+const LST_COLOR_LOW = '#6fbf73';
+const LST_COLOR_MEDIUM = '#f2cf5b';
+const LST_COLOR_HIGH = '#f29a4b';
+const LST_COLOR_VERY_HIGH = '#cf3f3f';
+const LST_COLOR_FALLBACK = '#d7dce3';
+const LST_BREAK_LOW = 35;
+const LST_BREAK_MEDIUM = 38;
+const LST_BREAK_HIGH = 41;
 // 현재 서울 전체 100m 데이터에서 검증된 공통 시각화 기준이다.
 const SEOUL_LST_MIN = 24.4014;
 const SEOUL_LST_MAX = 52.4678;
@@ -154,6 +164,7 @@ function prepareExtrusionData(gridData: FeatureCollection): FeatureCollection {
         ...feature,
         properties: {
           ...(feature.properties ?? {}),
+          [NUMERIC_LST_PROPERTY]: lst,
           [VISUAL_HEIGHT_PROPERTY]: visualHeight
         }
       };
@@ -181,7 +192,22 @@ function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
       source: GRID_SOURCE_ID,
       paint: {
         'fill-extrusion-base': 0,
-        'fill-extrusion-color': '#3f8f57',
+        'fill-extrusion-color': [
+          'case',
+          ['==', ['typeof', ['get', NUMERIC_LST_PROPERTY]], 'number'],
+          [
+            'step',
+            ['get', NUMERIC_LST_PROPERTY],
+            LST_COLOR_LOW,
+            LST_BREAK_LOW,
+            LST_COLOR_MEDIUM,
+            LST_BREAK_MEDIUM,
+            LST_COLOR_HIGH,
+            LST_BREAK_HIGH,
+            LST_COLOR_VERY_HIGH
+          ],
+          LST_COLOR_FALLBACK
+        ],
         'fill-extrusion-height': [
           'number',
           ['get', VISUAL_HEIGHT_PROPERTY],
