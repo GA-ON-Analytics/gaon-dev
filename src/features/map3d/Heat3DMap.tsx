@@ -5,7 +5,9 @@ import {
   setWorkerUrl,
   type GeoJSONSource,
   type LngLatBoundsLike,
-  type StyleSpecification
+  type MapLayerMouseEvent,
+  type StyleSpecification,
+  type Subscription
 } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type { GridResolution } from '../../types/dashboard';
@@ -65,7 +67,13 @@ interface Heat3DMapProps {
   gridData: FeatureCollection | null;
   resolution: GridResolution;
   selectedDistrict: string;
+  onGridFeatureClick: Map3DGridFeatureClickHandler;
 }
+
+export type Map3DGridFeatureClickHandler = (
+  feature: FeatureCollection['features'][number],
+  position: { lng: number; lat: number }
+) => void;
 
 interface MutableBounds {
   west: number;
@@ -145,6 +153,30 @@ function getFiniteLst(value: unknown): number | null {
   }
 
   return null;
+}
+
+function getGridId(properties: unknown): string | null {
+  if (!properties || typeof properties !== 'object') return null;
+
+  const record = properties as Record<string, unknown>;
+  const value = record.grid_id ?? record.display_grid_id;
+  if (typeof value === 'string' && value.trim() !== '') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function getOriginalGridFeature(
+  gridData: FeatureCollection | null,
+  renderedProperties: unknown
+): FeatureCollection['features'][number] | null {
+  const renderedGridId = getGridId(renderedProperties);
+  if (!gridData || !renderedGridId) return null;
+
+  return (
+    gridData.features.find(
+      (feature) => getGridId(feature.properties) === renderedGridId
+    ) ?? null
+  );
 }
 
 function getVisualHeight(lst: number): number {
@@ -248,14 +280,17 @@ function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
 export default function Heat3DMap({
   gridData,
   resolution,
-  selectedDistrict
+  selectedDistrict,
+  onGridFeatureClick
 }: Heat3DMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const gridDataRef = useRef(gridData);
+  const onGridFeatureClickRef = useRef(onGridFeatureClick);
   const isMapLoadedRef = useRef(false);
   const [initializationError, setInitializationError] = useState(false);
   gridDataRef.current = gridData;
+  onGridFeatureClickRef.current = onGridFeatureClick;
 
   const hasSupportedGridData =
     resolution === '100m' &&
@@ -268,6 +303,24 @@ export default function Heat3DMap({
 
     let map: Map;
     let handleLoad: (() => void) | null = null;
+    let gridClickSubscription: Subscription | null = null;
+
+    const handleGridClick = (event: MapLayerMouseEvent) => {
+      const renderedFeature = event.features?.[0];
+      if (!renderedFeature) return;
+
+      // MapLibre 전용 __gaon_* 속성이 상세 상태로 넘어가지 않도록 원본 feature를 되찾는다.
+      const originalFeature = getOriginalGridFeature(
+        gridDataRef.current,
+        renderedFeature.properties
+      );
+      if (!originalFeature) return;
+
+      onGridFeatureClickRef.current(originalFeature, {
+        lng: event.lngLat.lng,
+        lat: event.lngLat.lat
+      });
+    };
 
     try {
       map = new Map({
@@ -285,6 +338,7 @@ export default function Heat3DMap({
       handleLoad = () => {
         isMapLoadedRef.current = true;
         updateGridLayer(map, gridDataRef.current);
+        gridClickSubscription = map.on('click', GRID_FILL_LAYER_ID, handleGridClick);
       };
       map.once('load', handleLoad);
     } catch {
@@ -294,6 +348,7 @@ export default function Heat3DMap({
 
     return () => {
       if (handleLoad) map.off('load', handleLoad);
+      gridClickSubscription?.unsubscribe();
       isMapLoadedRef.current = false;
       map.remove();
       if (mapRef.current === map) {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { GridResolution } from '../../types/dashboard';
-import Heat3DMap from './Heat3DMap';
+import Heat3DMap, { type Map3DGridFeatureClickHandler } from './Heat3DMap';
 import Map3DToggle from './Map3DToggle';
 import './map3d.css';
 
@@ -10,12 +10,14 @@ interface Map3DOverlayProps {
   gridData: FeatureCollection | null;
   resolution: GridResolution;
   selectedDistrict: string;
+  onGridFeatureClick: Map3DGridFeatureClickHandler;
 }
 
 export default function Map3DOverlay({
   gridData,
   resolution,
-  selectedDistrict
+  selectedDistrict,
+  onGridFeatureClick
 }: Map3DOverlayProps) {
   const [is3DOpen, setIs3DOpen] = useState(false);
 
@@ -27,6 +29,7 @@ export default function Map3DOverlay({
             gridData={gridData}
             resolution={resolution}
             selectedDistrict={selectedDistrict}
+            onGridFeatureClick={onGridFeatureClick}
           />
         </div>
       )}
