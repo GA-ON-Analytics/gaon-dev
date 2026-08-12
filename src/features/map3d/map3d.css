@@ -33,6 +33,150 @@
   outline: none;
 }
 
+.heat3dMap .map3dGridInfoPopup .maplibregl-popup-tip {
+  display: none;
+}
+
+.heat3dMap .map3dGridInfoPopup .maplibregl-popup-content {
+  padding: 9px 28px 9px 12px;
+  border: 1px solid rgba(20, 24, 31, 0.18);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  color: #202733;
+  font-family:
+    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+}
+
+.heat3dMap .map3dGridInfoPopup .maplibregl-popup-close-button {
+  top: 2px;
+  right: 3px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 4px;
+  color: #66717d;
+  font-size: 20px;
+  line-height: 22px;
+}
+
+.heat3dMap .map3dGridInfoPopup .maplibregl-popup-close-button:hover {
+  background: rgba(31, 81, 33, 0.09);
+  color: #1f5121;
+}
+
+.map3dGridInfoContent .districtTempTooltipBody {
+  display: grid;
+  gap: 3px;
+  min-width: 150px;
+}
+
+.map3dGridInfoContent strong {
+  font-size: 12px;
+}
+
+.map3dGridInfoContent span {
+  color: #d72d2d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.map3dGridInfoContent small {
+  color: #66717d;
+  font-size: 11px;
+}
+
+.map3dShelterMarker {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+}
+
+.map3dShelterPinDot {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px 999px 999px 2px;
+  transform: rotate(-45deg);
+  background: #1f5121;
+  box-shadow: 0 2px 6px rgba(20, 30, 45, 0.35);
+}
+
+.map3dShelterPinDot i {
+  transform: rotate(45deg);
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.map3dShelterLabel {
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  display: grid;
+  gap: 1px;
+  padding: 7px 10px;
+  transform: translateX(-50%);
+  border-radius: 9px;
+  background: #1f5121;
+  box-shadow: 0 4px 14px rgba(31, 81, 33, 0.28);
+  color: #ffffff;
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.map3dShelterLabel::after {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  border: 6px solid transparent;
+  border-top-color: #1f5121;
+  content: '';
+  transform: translateX(-50%);
+}
+
+.map3dShelterLabel b {
+  color: #9fd6c2;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.map3dShelterDistance {
+  color: #bfe3d6;
+  font-size: 10.5px;
+}
+
+.heat3dMap .map3dShelterPopup .maplibregl-popup-content {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.map3dShelterPopupContent {
+  display: grid;
+  gap: 2px;
+}
+
+.map3dShelterPopupContent strong {
+  color: #1f5121;
+  font-size: 13px;
+}
+
+.map3dShelterPopupContent span {
+  color: #4e5968;
+}
+
 .heat3dMapError {
   position: absolute;
   inset: 0;

@@ -2,7 +2,12 @@ import { useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { GridResolution } from '../../types/dashboard';
-import Heat3DMap, { type Map3DGridFeatureClickHandler } from './Heat3DMap';
+import Heat3DMap, {
+  type Map3DClearSelectedGridHandler,
+  type Map3DGridFeatureClickHandler,
+  type Map3DGridInfoSign,
+  type Map3DShelterSign
+} from './Heat3DMap';
 import Map3DToggle from './Map3DToggle';
 import './map3d.css';
 
@@ -10,14 +15,20 @@ interface Map3DOverlayProps {
   gridData: FeatureCollection | null;
   resolution: GridResolution;
   selectedDistrict: string;
+  gridInfoSign: Map3DGridInfoSign | null;
+  shelterSign: Map3DShelterSign | null;
   onGridFeatureClick: Map3DGridFeatureClickHandler;
+  onClearSelectedGrid: Map3DClearSelectedGridHandler;
 }
 
 export default function Map3DOverlay({
   gridData,
   resolution,
   selectedDistrict,
-  onGridFeatureClick
+  gridInfoSign,
+  shelterSign,
+  onGridFeatureClick,
+  onClearSelectedGrid
 }: Map3DOverlayProps) {
   const [is3DOpen, setIs3DOpen] = useState(false);
 
@@ -29,7 +40,10 @@ export default function Map3DOverlay({
             gridData={gridData}
             resolution={resolution}
             selectedDistrict={selectedDistrict}
+            gridInfoSign={gridInfoSign}
+            shelterSign={shelterSign}
             onGridFeatureClick={onGridFeatureClick}
+            onClearSelectedGrid={onClearSelectedGrid}
           />
         </div>
       )}
