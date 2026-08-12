@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import {
   Map,
+  Marker,
+  Popup,
   setWorkerUrl,
   type GeoJSONSource,
   type LngLatBoundsLike,
@@ -67,7 +69,23 @@ interface Heat3DMapProps {
   gridData: FeatureCollection | null;
   resolution: GridResolution;
   selectedDistrict: string;
+  gridInfoSign: Map3DGridInfoSign | null;
+  shelterSign: Map3DShelterSign | null;
   onGridFeatureClick: Map3DGridFeatureClickHandler;
+  onClearSelectedGrid: Map3DClearSelectedGridHandler;
+}
+
+export interface Map3DGridInfoSign {
+  gridId: string;
+  position: { lng: number; lat: number };
+  html: string;
+}
+
+export interface Map3DShelterSign {
+  position: [number, number];
+  name: string;
+  addr: string;
+  distance: number | null;
 }
 
 export type Map3DGridFeatureClickHandler = (
@@ -75,11 +93,20 @@ export type Map3DGridFeatureClickHandler = (
   position: { lng: number; lat: number }
 ) => void;
 
+export type Map3DClearSelectedGridHandler = (gridId: string) => void;
+
 interface MutableBounds {
   west: number;
   south: number;
   east: number;
   north: number;
+}
+
+interface MapSignInstances {
+  gridInfoPopup: Popup | null;
+  gridInfoCloseSubscription: Subscription | null;
+  shelterMarker: Marker | null;
+  shelterPopup: Popup | null;
 }
 
 function extendBounds(input: unknown, bounds: MutableBounds): void {
@@ -177,6 +204,129 @@ function getOriginalGridFeature(
       (feature) => getGridId(feature.properties) === renderedGridId
     ) ?? null
   );
+}
+
+function clearMapSigns(instances: MapSignInstances): void {
+  // React props 갱신으로 제거할 때는 사용자 X close callback을 실행하지 않는다.
+  instances.gridInfoCloseSubscription?.unsubscribe();
+  instances.gridInfoCloseSubscription = null;
+  instances.gridInfoPopup?.remove();
+  instances.shelterPopup?.remove();
+  instances.shelterMarker?.remove();
+  instances.gridInfoPopup = null;
+  instances.shelterPopup = null;
+  instances.shelterMarker = null;
+}
+
+function createShelterMarkerElement(shelter: Map3DShelterSign): HTMLDivElement {
+  const element = document.createElement('div');
+  element.className = 'map3dShelterMarker';
+  element.setAttribute('aria-label', `무더위쉼터 ${shelter.name}`);
+
+  const label = document.createElement('span');
+  label.className = 'map3dShelterLabel';
+
+  const category = document.createElement('b');
+  category.textContent = '무더위쉼터';
+  label.append(category);
+
+  const name = document.createElement('span');
+  name.textContent = shelter.name;
+  label.append(name);
+
+  if (shelter.distance !== null) {
+    const distance = document.createElement('span');
+    distance.className = 'map3dShelterDistance';
+    distance.textContent = `여기서 약 ${Math.round(shelter.distance).toLocaleString()}m`;
+    label.append(distance);
+  }
+
+  const pin = document.createElement('span');
+  pin.className = 'map3dShelterPinDot';
+  const icon = document.createElement('i');
+  icon.textContent = '🏠';
+  pin.append(icon);
+
+  element.append(label, pin);
+  return element;
+}
+
+function createShelterPopupContent(shelter: Map3DShelterSign): HTMLDivElement {
+  const content = document.createElement('div');
+  content.className = 'map3dShelterPopupContent';
+
+  const name = document.createElement('strong');
+  name.textContent = shelter.name;
+  content.append(name);
+
+  if (shelter.addr) {
+    const address = document.createElement('span');
+    address.textContent = shelter.addr;
+    content.append(address);
+  }
+
+  if (shelter.distance !== null) {
+    const distance = document.createElement('span');
+    distance.textContent = `선택 격자에서 약 ${Math.round(shelter.distance)}m`;
+    content.append(distance);
+  }
+
+  return content;
+}
+
+function updateMapSigns(
+  map: Map,
+  instances: MapSignInstances,
+  gridInfoSign: Map3DGridInfoSign | null,
+  shelterSign: Map3DShelterSign | null,
+  onClearSelectedGrid: Map3DClearSelectedGridHandler
+): void {
+  clearMapSigns(instances);
+
+  if (gridInfoSign) {
+    const content = document.createElement('div');
+    content.className = 'map3dGridInfoContent';
+    // 2D Popup과 같은 buildGridTooltip 결과를 그대로 표시한다.
+    content.innerHTML = gridInfoSign.html;
+    const popup = new Popup({
+      anchor: 'bottom',
+      offset: 12,
+      closeButton: true,
+      closeOnClick: false,
+      focusAfterOpen: false,
+      maxWidth: 'none',
+      className: 'map3dGridInfoPopup'
+    })
+      .setLngLat([gridInfoSign.position.lng, gridInfoSign.position.lat])
+      .setDOMContent(content);
+    let hasHandledClose = false;
+    instances.gridInfoCloseSubscription = popup.on('close', () => {
+      if (hasHandledClose) return;
+      hasHandledClose = true;
+      onClearSelectedGrid(gridInfoSign.gridId);
+    });
+    instances.gridInfoPopup = popup.addTo(map);
+  }
+
+  if (shelterSign) {
+    const popup = new Popup({
+      offset: 40,
+      closeOnClick: false,
+      focusAfterOpen: false,
+      className: 'map3dShelterPopup'
+    }).setDOMContent(createShelterPopupContent(shelterSign));
+    const [latitude, longitude] = shelterSign.position;
+    const marker = new Marker({
+      element: createShelterMarkerElement(shelterSign),
+      anchor: 'bottom'
+    })
+      .setLngLat([longitude, latitude])
+      .setPopup(popup)
+      .addTo(map);
+
+    instances.shelterPopup = popup;
+    instances.shelterMarker = marker;
+  }
 }
 
 function getVisualHeight(lst: number): number {
@@ -281,21 +431,36 @@ export default function Heat3DMap({
   gridData,
   resolution,
   selectedDistrict,
-  onGridFeatureClick
+  gridInfoSign,
+  shelterSign,
+  onGridFeatureClick,
+  onClearSelectedGrid
 }: Heat3DMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const gridDataRef = useRef(gridData);
+  const gridInfoSignRef = useRef(gridInfoSign);
+  const shelterSignRef = useRef(shelterSign);
   const onGridFeatureClickRef = useRef(onGridFeatureClick);
+  const onClearSelectedGridRef = useRef(onClearSelectedGrid);
+  const mapSignsRef = useRef<MapSignInstances>({
+    gridInfoPopup: null,
+    gridInfoCloseSubscription: null,
+    shelterMarker: null,
+    shelterPopup: null
+  });
   const isMapLoadedRef = useRef(false);
   const [initializationError, setInitializationError] = useState(false);
   gridDataRef.current = gridData;
   onGridFeatureClickRef.current = onGridFeatureClick;
+  onClearSelectedGridRef.current = onClearSelectedGrid;
 
   const hasSupportedGridData =
     resolution === '100m' &&
     selectedDistrict !== ALL_DISTRICTS &&
     Boolean(gridData?.features.length);
+  gridInfoSignRef.current = hasSupportedGridData ? gridInfoSign : null;
+  shelterSignRef.current = hasSupportedGridData ? shelterSign : null;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -339,6 +504,13 @@ export default function Heat3DMap({
         isMapLoadedRef.current = true;
         updateGridLayer(map, gridDataRef.current);
         gridClickSubscription = map.on('click', GRID_FILL_LAYER_ID, handleGridClick);
+        updateMapSigns(
+          map,
+          mapSignsRef.current,
+          gridInfoSignRef.current,
+          shelterSignRef.current,
+          (gridId) => onClearSelectedGridRef.current(gridId)
+        );
       };
       map.once('load', handleLoad);
     } catch {
@@ -349,6 +521,7 @@ export default function Heat3DMap({
     return () => {
       if (handleLoad) map.off('load', handleLoad);
       gridClickSubscription?.unsubscribe();
+      clearMapSigns(mapSignsRef.current);
       isMapLoadedRef.current = false;
       map.remove();
       if (mapRef.current === map) {
@@ -363,6 +536,19 @@ export default function Heat3DMap({
 
     updateGridLayer(map, gridData);
   }, [gridData]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoadedRef.current) return;
+
+    updateMapSigns(
+      map,
+      mapSignsRef.current,
+      hasSupportedGridData ? gridInfoSign : null,
+      hasSupportedGridData ? shelterSign : null,
+      (gridId) => onClearSelectedGridRef.current(gridId)
+    );
+  }, [gridInfoSign, hasSupportedGridData, shelterSign]);
 
   return (
     <div className="heat3dMap" role="region" aria-label="서울 3D 지도">

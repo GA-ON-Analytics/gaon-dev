@@ -1466,6 +1466,13 @@ export function MapDashboard() {
     },
     [districtCodeByName, hydrateSelectedGridProperties, hydrateCompareProperties]
   );
+  const clearSelected100mGrid = useCallback((gridId: string) => {
+    if (selectedGridIdRef.current !== gridId) return;
+    selectedGridIdRef.current = null;
+    setSelected100mFeature(null);
+    setSelected100mPopupPosition(null);
+    setSelectedGridProperties(null);
+  }, []);
   const handle3DGridFeatureClick = useCallback(
     (
       feature: Feature<Geometry>,
@@ -1486,6 +1493,29 @@ export function MapDashboard() {
   const build100mTooltip = useCallback(
     (feature: Feature<Geometry>) => buildGridTooltip(feature, selectedLayer, 100),
     [selectedLayer]
+  );
+  const mapGridInfoSign = useMemo(
+    () =>
+      selected100mFeature && selected100mPopupPosition && selected100mGridId
+        ? {
+            gridId: selected100mGridId,
+            position: {
+              lng: selected100mPopupPosition.lng,
+              lat: selected100mPopupPosition.lat
+            },
+            html: build100mTooltip(selected100mFeature)
+          }
+        : null,
+    [
+      build100mTooltip,
+      selected100mFeature,
+      selected100mGridId,
+      selected100mPopupPosition
+    ]
+  );
+  const mapShelterSign = useMemo(
+    () => getShelterPin(selectedGridProperties),
+    [selectedGridProperties]
   );
   const selectedLayerKeyRef = useRef(selectedLayer);
   const isDistrictOverviewRef = useRef(isDistrictOverview);
@@ -1845,13 +1875,7 @@ export function MapDashboard() {
                 autoPan={false}
                 closeOnClick={false}
                 eventHandlers={{
-                  remove: () => {
-                    if (selectedGridIdRef.current !== selected100mGridId) return;
-                    selectedGridIdRef.current = null;
-                    setSelected100mFeature(null);
-                    setSelected100mPopupPosition(null);
-                    setSelectedGridProperties(null);
-                  }
+                  remove: () => clearSelected100mGrid(selected100mGridId)
                 }}
               >
                 <div
@@ -1920,7 +1944,10 @@ export function MapDashboard() {
         }
         resolution={selectedGridResolution}
         selectedDistrict={selectedDistrict}
+        gridInfoSign={mapGridInfoSign}
+        shelterSign={mapShelterSign}
         onGridFeatureClick={handle3DGridFeatureClick}
+        onClearSelectedGrid={clearSelected100mGrid}
       />
       {!loading && !error && gridLoading && (
         <div className="mapLoadingOverlay">
