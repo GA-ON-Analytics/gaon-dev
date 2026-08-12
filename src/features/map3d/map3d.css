@@ -44,6 +44,26 @@
   font-weight: 800;
 }
 
+.heat3dMapNotice {
+  position: absolute;
+  bottom: 34px;
+  left: 50%;
+  z-index: 1;
+  max-width: calc(100% - 32px);
+  padding: 9px 13px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(31, 81, 33, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 5px 18px rgba(20, 30, 45, 0.14);
+  color: #1f5121;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
 .map3dToggle {
   position: absolute;
   top: var(--panel-edge-gap);
