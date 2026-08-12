@@ -273,14 +273,23 @@ function Donut({
   );
 }
 
+// 빈 상세 패널의 제목은 '무엇을 누르라'는 행동만, 아래 설명은 '지금 어디를 보고
+// 있는지'만 말한다. 둘 다 "클릭하세요"로 쓰면 같은 말이 두 줄 반복된다.
+function selectionTitle(district: string, resolution: GridResolution) {
+  if (district === '전체' && resolution !== '100m') {
+    return '지도에서 지역을 클릭해 주세요';
+  }
+  return '지도에서 격자를 클릭해 주세요';
+}
+
 function selectionPrompt(district: string, resolution: GridResolution) {
   if (district === '전체' && resolution === '100m') {
-    return '서울 전체에서 분석할 격자를 클릭하세요.';
+    return '지금 서울 전체 격자를 보고 있어요.';
   }
   if (district === '전체') {
-    return '지도에서 분석할 지역을 클릭하세요.';
+    return '지역을 누르면 그 안의 격자를 볼 수 있어요.';
   }
-  return `${district}에서 분석할 격자를 클릭하세요.`;
+  return `지금 ${district} 범위를 보고 있어요.`;
 }
 
 function GridDetailSidePanel({
@@ -600,7 +609,7 @@ function GridDetailSidePanel({
           ) : (
             <div className="gridReportEmpty">
               <div className="emptyIcon" aria-hidden="true">🗺️</div>
-              <h2>격자를 선택해 주세요</h2>
+              <h2>{selectionTitle(selectedDistrict, selectedGridResolution)}</h2>
               <p>{selectionPrompt(selectedDistrict, selectedGridResolution)}</p>
               <p className="emptyHint">
                 격자를 클릭하면 온도·녹지·취약성과 개선 시뮬레이션을 볼 수 있어요.
