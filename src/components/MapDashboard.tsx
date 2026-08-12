@@ -39,6 +39,7 @@ import GridDetailSidePanel from './GridDetailSidePanel';
 import AiChatLauncher from './AiChatLauncher';
 import MapLegend from './MapLegend';
 import CanvasGridLayer, { featureContainsPoint } from './CanvasGridLayer';
+import Map3DOverlay from '../features/map3d/Map3DOverlay';
 
 const ALL_DISTRICTS = '전체';
 const DEFAULT_DISTRICT = ALL_DISTRICTS;
@@ -1901,6 +1902,7 @@ export function MapDashboard() {
           <ScaleControl position="topright" metric imperial={false} maxWidth={40} />
         </MapContainer>
       )}
+      <Map3DOverlay />
       {!loading && !error && gridLoading && (
         <div className="mapLoadingOverlay">
           <LoadingContent message={`${selectedGridResolution} 격자 데이터 로딩 중`} />
