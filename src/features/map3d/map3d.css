@@ -64,6 +64,12 @@
   pointer-events: none;
 }
 
+.heat3dHeightNotice {
+  width: max-content;
+  max-width: min(560px, calc(100% - 32px));
+  color: #3f4b43;
+}
+
 .map3dToggle {
   position: absolute;
   top: var(--panel-edge-gap);
