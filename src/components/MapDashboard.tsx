@@ -1466,6 +1466,16 @@ export function MapDashboard() {
     },
     [districtCodeByName, hydrateSelectedGridProperties, hydrateCompareProperties]
   );
+  const handle3DGridFeatureClick = useCallback(
+    (
+      feature: Feature<Geometry>,
+      position: { lng: number; lat: number }
+    ) => {
+      if (activeToolRef.current !== '지도선택') return;
+      handle100mFeatureClick(feature, L.latLng(position.lat, position.lng));
+    },
+    [handle100mFeatureClick]
+  );
   // 구·해상도 전환 effect가 기존 선택을 비운 뒤 검색 결과를 실제 100m 클릭과 같은 경로로 반영한다.
   useEffect(() => {
     if (!gridSearchHit) return;
@@ -1910,6 +1920,7 @@ export function MapDashboard() {
         }
         resolution={selectedGridResolution}
         selectedDistrict={selectedDistrict}
+        onGridFeatureClick={handle3DGridFeatureClick}
       />
       {!loading && !error && gridLoading && (
         <div className="mapLoadingOverlay">
