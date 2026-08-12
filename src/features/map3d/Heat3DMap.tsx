@@ -17,6 +17,14 @@ const ALL_DISTRICTS = '전체';
 const GRID_SOURCE_ID = 'gaon-100m-grid';
 const GRID_FILL_LAYER_ID = 'gaon-100m-grid-fill';
 const GRID_LINE_LAYER_ID = 'gaon-100m-grid-line';
+const LST_PROPERTY = 'mean_actual_lst';
+const VISUAL_HEIGHT_PROPERTY = '__gaon_lst_visual_height';
+// 현재 서울 전체 100m 데이터에서 검증된 공통 시각화 기준이다.
+const SEOUL_LST_MIN = 24.4014;
+const SEOUL_LST_MAX = 52.4678;
+// MapLibre는 extrusion 높이를 meter 단위로 해석하지만, 아래 값은 실제 고도가 아닌 시각적 범위다.
+const MIN_VISUAL_HEIGHT = 30;
+const MAX_VISUAL_HEIGHT = 400;
 const EMPTY_GRID_DATA: FeatureCollection = {
   type: 'FeatureCollection',
   features: []
@@ -116,8 +124,45 @@ function getGridBounds(gridData: FeatureCollection): LngLatBoundsLike | null {
   ];
 }
 
+function getFiniteLst(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function getVisualHeight(lst: number): number {
+  const normalized = (lst - SEOUL_LST_MIN) / (SEOUL_LST_MAX - SEOUL_LST_MIN);
+  const clamped = Math.min(1, Math.max(0, normalized));
+  return MIN_VISUAL_HEIGHT + clamped * (MAX_VISUAL_HEIGHT - MIN_VISUAL_HEIGHT);
+}
+
+function prepareExtrusionData(gridData: FeatureCollection): FeatureCollection {
+  return {
+    ...gridData,
+    features: gridData.features.map((feature) => {
+      const lst = getFiniteLst(feature.properties?.[LST_PROPERTY]);
+      const visualHeight = lst === null ? 0 : getVisualHeight(lst);
+
+      return {
+        ...feature,
+        properties: {
+          ...(feature.properties ?? {}),
+          [VISUAL_HEIGHT_PROPERTY]: visualHeight
+        }
+      };
+    })
+  };
+}
+
 function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
-  const data = gridData ?? EMPTY_GRID_DATA;
+  const data = gridData ? prepareExtrusionData(gridData) : EMPTY_GRID_DATA;
   const existingSource = map.getSource(GRID_SOURCE_ID);
 
   if (existingSource) {
@@ -132,11 +177,17 @@ function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
   if (!map.getLayer(GRID_FILL_LAYER_ID)) {
     map.addLayer({
       id: GRID_FILL_LAYER_ID,
-      type: 'fill',
+      type: 'fill-extrusion',
       source: GRID_SOURCE_ID,
       paint: {
-        'fill-color': '#3f8f57',
-        'fill-opacity': 0.3
+        'fill-extrusion-base': 0,
+        'fill-extrusion-color': '#3f8f57',
+        'fill-extrusion-height': [
+          'number',
+          ['get', VISUAL_HEIGHT_PROPERTY],
+          0
+        ],
+        'fill-extrusion-opacity': 0.72
       }
     });
   }
@@ -240,6 +291,12 @@ export default function Heat3DMap({
           {resolution === '100m' && selectedDistrict !== ALL_DISTRICTS
             ? '100m 격자 데이터를 준비 중입니다.'
             : '100m 3D 상세보기는 자치구 선택 후 이용할 수 있습니다.'}
+        </div>
+      )}
+      {hasSupportedGridData && !initializationError && (
+        <div className="heat3dMapNotice heat3dHeightNotice" role="note">
+          격자 높이는 서울 전체 100m 격자의 지표면온도 범위를 기준으로 표현한 상대적
+          시각화이며 실제 지형·건물 높이가 아닙니다.
         </div>
       )}
       {initializationError && (
