@@ -576,6 +576,28 @@ def simulate(payload: SimulationRequest) -> Any:
                                 couple_land_cover=payload.couple_land_cover)
 
 
+def _predict_batch_individually(
+    predict_core: Any,
+    grid_ids: list[str],
+    changes: dict[str, float],
+    couple_land_cover: bool,
+) -> list[dict[str, Any]]:
+    results = []
+    for grid_id in grid_ids:
+        try:
+            result = predict_core.predict(
+                grid_id,
+                changes,
+                couple_land_cover=couple_land_cover,
+            )
+        except Exception:
+            # 한 격자의 데이터/예측 문제가 나머지 성공 결과를 버리지 않게 개별 실패로 남긴다.
+            LOGGER.exception("Batch simulation failed for grid_id=%s", grid_id)
+            result = {"grid_id": grid_id, "error": "prediction failed"}
+        results.append(result)
+    return results
+
+
 @app.post("/api/simulate/batch")
 def simulate_batch(payload: BatchSimulationRequest) -> Any:
     if not _simulation_ready():
@@ -583,19 +605,34 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
 
     targets, target_mode = _batch_targets(payload)
     predict_core = _load_predict_core()
-    raw_results = []
-    for grid_id, _ in targets:
+    grid_ids = [grid_id for grid_id, _ in targets]
+    predict_many = getattr(predict_core, "predict_batch", None)
+    if callable(predict_many):
         try:
-            result = predict_core.predict(
-                grid_id,
+            raw_results = predict_many(
+                grid_ids,
                 payload.changes,
                 couple_land_cover=payload.couple_land_cover,
             )
+            if len(raw_results) != len(grid_ids):
+                raise ValueError("predict_batch result count does not match requested grids")
         except Exception:
-            # 한 격자의 데이터/예측 문제가 나머지 성공 결과를 버리지 않게 개별 실패로 남긴다.
-            LOGGER.exception("Batch simulation failed for grid_id=%s", grid_id)
-            result = {"grid_id": grid_id, "error": "prediction failed"}
-        raw_results.append(result)
+            # 예상하지 못한 matrix 실패에서도 기존 partial-failure contract를 보존한다.
+            LOGGER.exception("Vectorized batch simulation failed; falling back to single predict")
+            raw_results = _predict_batch_individually(
+                predict_core,
+                grid_ids,
+                payload.changes,
+                payload.couple_land_cover,
+            )
+    else:
+        # 테스트 fake와 구형 predict core도 기존 contract로 계속 지원한다.
+        raw_results = _predict_batch_individually(
+            predict_core,
+            grid_ids,
+            payload.changes,
+            payload.couple_land_cover,
+        )
     results = []
     for (grid_id, area_m2), result in zip(targets, raw_results):
         normalized = dict(result)
