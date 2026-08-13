@@ -1944,6 +1944,7 @@ export function MapDashboard() {
         }
         resolution={selectedGridResolution}
         selectedDistrict={selectedDistrict}
+        selectedGridId={selected100mGridId}
         gridInfoSign={mapGridInfoSign}
         shelterSign={mapShelterSign}
         onGridFeatureClick={handle3DGridFeatureClick}

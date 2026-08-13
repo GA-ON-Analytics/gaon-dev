@@ -15,6 +15,7 @@ interface Map3DOverlayProps {
   gridData: FeatureCollection | null;
   resolution: GridResolution;
   selectedDistrict: string;
+  selectedGridId: string | null;
   gridInfoSign: Map3DGridInfoSign | null;
   shelterSign: Map3DShelterSign | null;
   onGridFeatureClick: Map3DGridFeatureClickHandler;
@@ -25,6 +26,7 @@ export default function Map3DOverlay({
   gridData,
   resolution,
   selectedDistrict,
+  selectedGridId,
   gridInfoSign,
   shelterSign,
   onGridFeatureClick,
@@ -40,6 +42,7 @@ export default function Map3DOverlay({
             gridData={gridData}
             resolution={resolution}
             selectedDistrict={selectedDistrict}
+            selectedGridId={selectedGridId}
             gridInfoSign={gridInfoSign}
             shelterSign={shelterSign}
             onGridFeatureClick={onGridFeatureClick}
