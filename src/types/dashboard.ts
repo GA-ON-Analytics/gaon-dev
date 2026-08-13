@@ -155,7 +155,16 @@ export interface SimulationResponse {
   [key: string]: unknown;
 }
 
-// POST /api/simulate/batch 응답 (여러 격자에 같은 정책 → 평균 저감)
+export type SimulationBatchScope = 100 | 300 | 500;
+
+export interface BatchSimulationGridResult extends Partial<SimulationResponse> {
+  grid_id: string;
+  status: 'success' | 'failed';
+  area_m2?: number | null;
+  error?: string;
+}
+
+// POST /api/simulate/batch 응답. ML은 각 100m 격자를 개별 예측하고 마지막에 집계한다.
 export interface BatchSimulationResponse {
   count: number;
   mean_delta_c: number | null;
@@ -168,7 +177,23 @@ export interface BatchSimulationResponse {
    * 구별 200셀 표본에서 실제로 0.13~0.35℃ 차이가 났다(관악구는 -0.502 vs -0.177).
    */
   mean_delta_c_unclipped?: number | null;
-  results: SimulationResponse[];
+  grid_count: number;
+  requested_grid_count: number;
+  success_count: number;
+  failed_count: number;
+  mean_before_anomaly: number | null;
+  mean_after_anomaly: number | null;
+  improved_grid_count: number;
+  worsened_grid_count: number;
+  unchanged_grid_count: number;
+  no_change_threshold_c: number;
+  aggregation: 'area_weighted' | 'unweighted' | null;
+  total_area_m2: number | null;
+  successful_area_m2: number | null;
+  target_mode: 'explicit_grid_ids' | 'spatial_scope';
+  center_grid_id: string | null;
+  scope_m: SimulationBatchScope | null;
+  results: BatchSimulationGridResult[];
 }
 
 export interface GridAnalysisProperties {

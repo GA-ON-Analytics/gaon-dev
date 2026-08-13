@@ -1,6 +1,8 @@
+import logging
+import math
 from pathlib import Path
 from re import fullmatch
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,10 +22,12 @@ from backend.policy_presets import (
     POLICY_FEATURE_LABELS,
     policy_presets_payload,
 )
+from backend.simulation_scope import load_grid_spatial_index
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = Path(__file__).resolve().parent
+LOGGER = logging.getLogger(__name__)
 
 
 def _resolve_public_dir() -> Path:
@@ -108,7 +112,11 @@ class SimulationRequest(BaseModel):
 
 
 class BatchSimulationRequest(BaseModel):
-    grid_ids: list[str]
+    # 기존 250/500m 집계 격자의 명시적 구성 셀 요청을 계속 지원한다.
+    grid_ids: list[str] | None = None
+    # 100m 중심 격자 주변 정책 범위 요청. scope_m은 Pydantic이 422로 검증한다.
+    grid_id: str | None = None
+    scope_m: Literal[100, 300, 500] | None = None
     changes: dict[str, float] = Field(default_factory=dict)
     couple_land_cover: bool = True
 
@@ -217,6 +225,137 @@ def _load_predict_core():
         from ml import predict_core
 
     return predict_core
+
+
+BATCH_NO_CHANGE_THRESHOLD_C = 0.132
+
+
+def _batch_targets(payload: BatchSimulationRequest) -> tuple[list[tuple[str, float | None]], str]:
+    has_explicit_ids = payload.grid_ids is not None
+    has_spatial_scope = payload.grid_id is not None or payload.scope_m is not None
+    if has_explicit_ids and has_spatial_scope:
+        raise HTTPException(
+            status_code=422,
+            detail="Use either grid_ids or grid_id with scope_m, not both",
+        )
+
+    if has_explicit_ids:
+        grid_ids = payload.grid_ids or []
+        # 기존 endpoint의 단순 평균 contract와 지도 파일 비의존성을 보존한다.
+        return [(grid_id, None) for grid_id in grid_ids], "explicit_grid_ids"
+
+    if payload.grid_id is None or payload.scope_m is None:
+        raise HTTPException(
+            status_code=422,
+            detail="grid_id and scope_m are required when grid_ids is not provided",
+        )
+
+    try:
+        index = load_grid_spatial_index(str(DASHBOARD_100M_MAP_PATH))
+        cells = index.select_scope(payload.grid_id, payload.scope_m)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="center grid_id not found") from None
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Seoul 100m map data is unavailable") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Invalid Seoul 100m map data") from exc
+
+    return [(cell.grid_id, cell.area_m2) for cell in cells], "spatial_scope"
+
+
+def _mean(values: list[tuple[float, float | None]]) -> tuple[float | None, str | None]:
+    if not values:
+        return None, None
+    if all(area is not None and area > 0 for _, area in values):
+        total_area = sum(float(area) for _, area in values if area is not None)
+        weighted = sum(value * float(area) for value, area in values if area is not None)
+        return round(weighted / total_area, 3), "area_weighted"
+    return round(sum(value for value, _ in values) / len(values), 3), "unweighted"
+
+
+def _is_successful_prediction(result: dict[str, Any]) -> bool:
+    values = (
+        result.get("delta_c"),
+        result.get("before_anomaly"),
+        result.get("after_anomaly"),
+    )
+    return all(
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        for value in values
+    )
+
+
+def _batch_summary(
+    targets: list[tuple[str, float | None]],
+    results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    successful = [
+        (target, result)
+        for target, result in zip(targets, results)
+        if _is_successful_prediction(result)
+    ]
+    before_mean, aggregation = _mean(
+        [(float(result["before_anomaly"]), target[1]) for target, result in successful]
+    )
+    after_mean, _ = _mean(
+        [(float(result["after_anomaly"]), target[1]) for target, result in successful]
+    )
+    delta_mean, _ = _mean(
+        [(float(result["delta_c"]), target[1]) for target, result in successful]
+    )
+    unclipped = [
+        (target, result)
+        for target, result in successful
+        if not any("clip" in str(warning) for warning in result.get("warnings") or [])
+    ]
+    unclipped_mean, _ = _mean(
+        [(float(result["delta_c"]), target[1]) for target, result in unclipped]
+    )
+
+    improved = sum(
+        float(result["delta_c"]) < -BATCH_NO_CHANGE_THRESHOLD_C
+        for _, result in successful
+    )
+    worsened = sum(
+        float(result["delta_c"]) > BATCH_NO_CHANGE_THRESHOLD_C
+        for _, result in successful
+    )
+    unchanged = len(successful) - improved - worsened
+    areas = [area for _, area in targets]
+    successful_areas = [target[1] for target, _ in successful]
+
+    return {
+        # 기존 batch consumer가 사용하는 필드.
+        "count": len(results),
+        "mean_delta_c": delta_mean,
+        "clipped_count": len(successful) - len(unclipped),
+        "valid_count": len(successful),
+        "mean_delta_c_unclipped": unclipped_mean,
+        # 중심 범위 batch가 지역 단위 결과를 해석하는 필드.
+        "grid_count": len(targets),
+        "requested_grid_count": len(targets),
+        "success_count": len(successful),
+        "failed_count": len(results) - len(successful),
+        "mean_before_anomaly": before_mean,
+        "mean_after_anomaly": after_mean,
+        "improved_grid_count": improved,
+        "worsened_grid_count": worsened,
+        "unchanged_grid_count": unchanged,
+        "no_change_threshold_c": BATCH_NO_CHANGE_THRESHOLD_C,
+        "aggregation": aggregation,
+        "total_area_m2": (
+            round(sum(float(area) for area in areas if area is not None), 2)
+            if areas and all(area is not None for area in areas)
+            else None
+        ),
+        "successful_area_m2": (
+            round(sum(float(area) for area in successful_areas if area is not None), 2)
+            if successful_areas and all(area is not None for area in successful_areas)
+            else None
+        ),
+    }
 
 
 @app.get("/api/health")
@@ -442,36 +581,35 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
     if not _simulation_ready():
         return _simulation_not_connected_response()
 
+    targets, target_mode = _batch_targets(payload)
     predict_core = _load_predict_core()
-    results = [predict_core.predict(grid_id, payload.changes,
-                                    couple_land_cover=payload.couple_land_cover)
-               for grid_id in payload.grid_ids]
-    valid_results = [result for result in results if "delta_c" in result]
-    mean_delta = (
-        round(sum(result["delta_c"] for result in valid_results) / len(valid_results), 3)
-        if valid_results
-        else None
-    )
+    raw_results = []
+    for grid_id, _ in targets:
+        try:
+            result = predict_core.predict(
+                grid_id,
+                payload.changes,
+                couple_land_cover=payload.couple_land_cover,
+            )
+        except Exception:
+            # 한 격자의 데이터/예측 문제가 나머지 성공 결과를 버리지 않게 개별 실패로 남긴다.
+            LOGGER.exception("Batch simulation failed for grid_id=%s", grid_id)
+            result = {"grid_id": grid_id, "error": "prediction failed"}
+        raw_results.append(result)
+    results = []
+    for (grid_id, area_m2), result in zip(targets, raw_results):
+        normalized = dict(result)
+        normalized.setdefault("grid_id", grid_id)
+        normalized["area_m2"] = area_m2
+        results.append(normalized)
 
-    # 학습범위 clip에 걸린 셀은 요청보다 적은 개입을 받았는데도 저감이 크게 나온다.
-    # 실측(구별 200셀 표본)에서 그냥 평균하면 clip 제외 평균보다 0.13~0.35℃ 더 시원하게 나왔고,
-    # 이는 delta_c 추정오차(0.132℃)를 넘는다. 즉 반올림 오차가 아니라 계통 편향이다.
-    # 평균값 자체는 바꾸지 않고(사용자가 보던 수가 말없이 달라지면 더 혼란스럽다)
-    # 몇 개가 잘렸는지와 잘린 셀을 뺀 평균을 함께 돌려준다.
-    unclipped = [
-        result
-        for result in valid_results
-        if not any("clip" in str(warning) for warning in result.get("warnings") or [])
-    ]
+    summary = _batch_summary(targets, results)
+    for result in results:
+        result["status"] = "success" if _is_successful_prediction(result) else "failed"
     return {
-        "count": len(results),
-        "mean_delta_c": mean_delta,
-        "clipped_count": len(valid_results) - len(unclipped),
-        "valid_count": len(valid_results),
-        "mean_delta_c_unclipped": (
-            round(sum(result["delta_c"] for result in unclipped) / len(unclipped), 3)
-            if unclipped
-            else None
-        ),
+        **summary,
+        "target_mode": target_mode,
+        "center_grid_id": payload.grid_id if target_mode == "spatial_scope" else None,
+        "scope_m": payload.scope_m if target_mode == "spatial_scope" else None,
         "results": results,
     }

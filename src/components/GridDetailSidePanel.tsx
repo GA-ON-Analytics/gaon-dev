@@ -3,7 +3,8 @@ import {
   ApiRequestError,
   getAiFeatureCatalog,
   simulateBatchGridPolicy,
-  simulateGridPolicy
+  simulateGridPolicy,
+  simulateScopedGridPolicy
 } from '../services/api';
 import {
   POLICY_FEATURE_LABELS,
@@ -18,8 +19,8 @@ import type {
   GridResolution,
   PolicyFeature,
   PolicyPreset,
-  SimulationChangedFeature,
-  SimulationResponse
+  SimulationBatchScope,
+  SimulationChangedFeature
 } from '../types/dashboard';
 
 interface Props {
@@ -40,6 +41,7 @@ interface Props {
   isPickingCompare: boolean;
   onStartCompare: () => void;
   onClearCompare: () => void;
+  onBatchSimulationResult: (result: BatchSimulationResponse | null) => void;
 }
 
 // anomaly(구 평균 대비 ℃)로 라벨·색톤·막대 채움(%)을 정한다.
@@ -294,7 +296,8 @@ function GridDetailSidePanel({
   compareProperties,
   isPickingCompare,
   onStartCompare,
-  onClearCompare
+  onClearCompare,
+  onBatchSimulationResult
 }: Props) {
   const fmt = (key: keyof GridAnalysisProperties) => formatValue(properties, key);
   const guLabel = properties
@@ -585,6 +588,7 @@ function GridDetailSidePanel({
               properties={properties}
               selectedGridResolution={selectedGridResolution}
               incomplete={incomplete}
+              onBatchSimulationResult={onBatchSimulationResult}
             />
 
             {/* 다른 격자와 비교 (Phase 3) */}
@@ -964,18 +968,23 @@ function PolicyPresetSection({
   targetIds,
   selectedGridResolution,
   properties,
-  featureRanges
+  featureRanges,
+  scopeM,
+  onScopeChange,
+  onBatchSimulationResult
 }: {
   gridId: string;
   targetIds: string[];
   selectedGridResolution: GridResolution;
   properties: GridAnalysisProperties;
   featureRanges: Record<string, FeatureRange> | null;
+  scopeM: SimulationBatchScope;
+  onScopeChange: (scope: SimulationBatchScope) => void;
+  onBatchSimulationResult: (result: BatchSimulationResponse | null) => void;
 }) {
   const isBatchResolution =
     selectedGridResolution === '250m' || selectedGridResolution === '500m';
   const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyPreset['id'] | null>(null);
-  const [policyResult, setPolicyResult] = useState<SimulationResponse | null>(null);
   const [policyBatchResult, setPolicyBatchResult] = useState<BatchSimulationResponse | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [policyWarnings, setPolicyWarnings] = useState<string[]>([]);
@@ -986,12 +995,13 @@ function PolicyPresetSection({
   useEffect(() => {
     requestVersionRef.current += 1;
     setSelectedPolicyId(null);
-    setPolicyResult(null);
     setPolicyBatchResult(null);
     setPolicyError(null);
     setPolicyWarnings([]);
     setPolicyLoading(false);
-  }, [gridId, properties.display_grid_id, selectedGridResolution]);
+    onBatchSimulationResult(null);
+    return () => onBatchSimulationResult(null);
+  }, [gridId, properties.display_grid_id, selectedGridResolution, onBatchSimulationResult]);
 
   // 정책 정의는 `/api/policies`에서 온다. 도착 전에는 빈 목록이라
   // 아래 지도가 먼저 그려지고 정책 카드만 나중에 채워진다.
@@ -1007,11 +1017,21 @@ function PolicyPresetSection({
   function selectPolicy(preset: PolicyPreset) {
     requestVersionRef.current += 1;
     setSelectedPolicyId(preset.id);
-    setPolicyResult(null);
     setPolicyBatchResult(null);
     setPolicyError(null);
     setPolicyWarnings([]);
     setPolicyLoading(false);
+    onBatchSimulationResult(null);
+  }
+
+  function changeScope(scope: SimulationBatchScope) {
+    requestVersionRef.current += 1;
+    setPolicyBatchResult(null);
+    setPolicyError(null);
+    setPolicyWarnings([]);
+    setPolicyLoading(false);
+    onScopeChange(scope);
+    onBatchSimulationResult(null);
   }
 
   async function runPolicy() {
@@ -1026,10 +1046,10 @@ function PolicyPresetSection({
 
     const requestVersion = ++requestVersionRef.current;
     setPolicyLoading(true);
-    setPolicyResult(null);
     setPolicyBatchResult(null);
     setPolicyError(null);
     setPolicyWarnings([]);
+    onBatchSimulationResult(null);
 
     try {
       if (isBatchResolution) {
@@ -1061,19 +1081,35 @@ function PolicyPresetSection({
           setPolicyWarnings(warnings);
         }
         setPolicyBatchResult(response);
+        onBatchSimulationResult(response);
         return;
       }
 
-      const response = await simulateGridPolicy(
-        policySimulationRequest(gridId, selectedPolicy)
+      const request = policySimulationRequest(gridId, selectedPolicy);
+      const response = await simulateScopedGridPolicy(
+        gridId,
+        scopeM,
+        request.changes ?? {},
+        request.couple_land_cover ?? false
       );
       if (requestVersionRef.current !== requestVersion) return;
-      if (typeof response.error === 'string') {
+      if (response.success_count === 0 || response.mean_delta_c == null) {
         setPolicyError('선택한 격자를 정책 시뮬레이션할 수 없어요.');
         return;
       }
-      setPolicyResult(response);
-      setPolicyWarnings(response.warnings ?? []);
+      setPolicyBatchResult(response);
+      onBatchSimulationResult(response);
+      const clipped = response.clipped_count ?? 0;
+      const warnings: string[] = [];
+      if (clipped > 0) {
+        warnings.push(
+          `${response.success_count.toLocaleString()}개 중 ${clipped.toLocaleString()}개는 요청량을 다 반영하지 못함`
+        );
+      }
+      if (response.failed_count > 0) {
+        warnings.push(`${response.failed_count.toLocaleString()}개 격자는 예측하지 못함`);
+      }
+      setPolicyWarnings(warnings);
     } catch (requestError) {
       if (requestVersionRef.current !== requestVersion) return;
       if (requestError instanceof ApiRequestError && requestError.status === 501) {
@@ -1086,9 +1122,13 @@ function PolicyPresetSection({
     }
   }
 
-  const appliedFeatures = selectedPolicy && policyResult
+  const singleGridResult =
+    policyBatchResult?.grid_count === 1
+      ? policyBatchResult.results.find((result) => result.status === 'success')
+      : null;
+  const appliedFeatures = selectedPolicy && singleGridResult?.changed_features
     ? selectedPolicy.affectedFeatures.flatMap((feature) => {
-        const values = policyResult.changed_features[feature];
+        const values = singleGridResult.changed_features?.[feature];
         return values ? [{ feature, values }] : [];
       })
     : [];
@@ -1109,6 +1149,32 @@ function PolicyPresetSection({
       <p className="policyPresetNotice">
         정책 변수 변화량은 100m 격자에서 정책을 동일한 조건으로 비교하기 위한 표준 시나리오입니다.
       </p>
+
+      {selectedGridResolution === '100m' && (
+        <fieldset className="policyScopeSelector">
+          <legend>정책 적용 범위</legend>
+          {([
+            { scope: 100, label: '100m', description: '현재 격자만' },
+            { scope: 300, label: '300m', description: '주변 약 9개 격자' },
+            { scope: 500, label: '500m', description: '주변 약 25개 격자' }
+          ] as const).map((option) => (
+            <label key={option.scope}>
+              <input
+                type="radio"
+                name={`policy-scope-${gridId}`}
+                value={option.scope}
+                checked={scopeM === option.scope}
+                onChange={() => changeScope(option.scope)}
+              />
+              <span>
+                <b>{option.label}</b>
+                <small>{option.description}</small>
+              </span>
+            </label>
+          ))}
+          <p>서울 경계에서는 실제 존재하는 격자 수가 달라질 수 있습니다.</p>
+        </fieldset>
+      )}
 
       <div className="policyPresetGrid">
         {policyPresets.map((preset) => {
@@ -1181,31 +1247,57 @@ function PolicyPresetSection({
         </div>
       )}
 
-      {policyResult && (
+      {policyBatchResult && policyBatchResult.mean_delta_c != null && (
         <div className="policyResult" aria-live="polite">
           <div className="policyResultTitle">정책 시뮬레이션 결과</div>
           <dl className="policyAnomalyRows">
             <div>
-              <dt>현재 열 이상치</dt>
-              <dd>{formatAnomaly(policyResult.before_anomaly)}</dd>
+              <dt>적용 범위</dt>
+              <dd>
+                {policyBatchResult.scope_m
+                  ? `${policyBatchResult.scope_m}m × ${policyBatchResult.scope_m}m`
+                  : `${selectedGridResolution} 구성 셀`}
+              </dd>
             </div>
             <div>
-              <dt>정책 적용 후 열 이상치</dt>
-              <dd>{formatAnomaly(policyResult.after_anomaly)}</dd>
+              <dt>대상 100m 격자</dt>
+              <dd>{policyBatchResult.grid_count.toLocaleString()}개</dd>
+            </div>
+            <div>
+              <dt>정책 적용 전 평균 예측 이상치</dt>
+              <dd>
+                {policyBatchResult.mean_before_anomaly == null
+                  ? '—'
+                  : formatAnomaly(policyBatchResult.mean_before_anomaly)}
+              </dd>
+            </div>
+            <div>
+              <dt>정책 적용 후 평균 예측 이상치</dt>
+              <dd>
+                {policyBatchResult.mean_after_anomaly == null
+                  ? '—'
+                  : formatAnomaly(policyBatchResult.mean_after_anomaly)}
+              </dd>
             </div>
             <div className="policyDeltaRow">
-              <dt>예상 변화</dt>
-              <dd>{formatDelta(policyResult.delta_c)}</dd>
+              <dt>평균 예상 변화</dt>
+              <dd>{formatDelta(policyBatchResult.mean_delta_c)}</dd>
+            </div>
+            <div>
+              <dt>개선된 격자</dt>
+              <dd>{policyBatchResult.improved_grid_count.toLocaleString()}개</dd>
             </div>
           </dl>
           <p className="policyAnomalyNote">
-            열 이상치는 같은 날짜·같은 자치구의 평균 지표면온도 대비 편차입니다.
+            {policyBatchResult.aggregation === 'area_weighted'
+              ? '각 100m 격자를 개별 예측한 뒤 실제 격자 면적으로 가중한 열 이상치 결과입니다.'
+              : '각 구성 100m 격자를 개별 예측한 뒤 단순 평균한 열 이상치 결과입니다.'}
+            {' '}±{policyBatchResult.no_change_threshold_c.toFixed(3)}℃ 이내는 변화 거의 없음으로 분류합니다.
           </p>
-
-          <div className="policyAppliedFeatures">
-            <span className="policyListTitle">모델에 실제 적용된 값</span>
-            {appliedFeatures.length > 0 ? (
-              appliedFeatures.map(({ feature, values }) => (
+          {appliedFeatures.length > 0 && (
+            <div className="policyAppliedFeatures">
+              <span className="policyListTitle">모델에 실제 적용된 값</span>
+              {appliedFeatures.map(({ feature, values }) => (
                 <div key={feature}>
                   <span>{POLICY_FEATURE_LABELS[feature]}</span>
                   <b>
@@ -1213,30 +1305,9 @@ function PolicyPresetSection({
                     {formatPolicyFeatureValue(feature, values.after)}
                   </b>
                 </div>
-              ))
-            ) : (
-              <p>모델에 반영된 feature 변화가 없습니다.</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {policyBatchResult && policyBatchResult.mean_delta_c != null && (
-        <div className="policyResult" aria-live="polite">
-          <div className="policyResultTitle">정책 시뮬레이션 결과</div>
-          <dl className="policyAnomalyRows">
-            <div>
-              <dt>분석한 구성 100m 셀</dt>
-              <dd>{policyBatchResult.count.toLocaleString()}개</dd>
+              ))}
             </div>
-            <div className="policyDeltaRow">
-              <dt>평균 예상 변화</dt>
-              <dd>{formatDelta(policyBatchResult.mean_delta_c)}</dd>
-            </div>
-          </dl>
-          <p className="policyAnomalyNote">
-            각 구성 100m 셀의 정책 적용 결과를 기존 batch 방식으로 평균한 값입니다.
-          </p>
+          )}
         </div>
       )}
 
@@ -1251,11 +1322,13 @@ function PolicyPresetSection({
 function SimulationCard({
   properties,
   selectedGridResolution,
-  incomplete
+  incomplete,
+  onBatchSimulationResult
 }: {
   properties: GridAnalysisProperties;
   selectedGridResolution: GridResolution;
   incomplete: boolean;
+  onBatchSimulationResult: (result: BatchSimulationResponse | null) => void;
 }) {
   const gridId = typeof properties.grid_id === 'string' ? properties.grid_id : '';
   const memberIds = readMemberIds(properties.member_grid_ids);
@@ -1276,6 +1349,7 @@ function SimulationCard({
     null
   );
   const [couple, setCouple] = useState(true);
+  const [scopeM, setScopeM] = useState<SimulationBatchScope>(500);
   const featureRanges = useFeatureRanges();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1374,6 +1448,11 @@ function SimulationCard({
         selectedGridResolution={selectedGridResolution}
         properties={properties}
         featureRanges={featureRanges}
+        scopeM={scopeM}
+        onScopeChange={(scope) => {
+          setScopeM(scope);
+        }}
+        onBatchSimulationResult={onBatchSimulationResult}
       />
       <div className="sec-title manualSimulationTitle">
         직접 시뮬레이션
