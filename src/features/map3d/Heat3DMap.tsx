@@ -29,9 +29,11 @@ const NUMERIC_LST_PROPERTY = '__gaon_numeric_lst';
 const VISUAL_HEIGHT_PROPERTY = '__gaon_lst_visual_height';
 const AFTER_VISUAL_LST_PROPERTY = '__gaon_after_visual_lst';
 const AFTER_VISUAL_HEIGHT_PROPERTY = '__gaon_after_visual_height';
-// 정책 UI와 같은 서비스 green. 온도 범례 색을 정책 범위 의미로 재사용하지 않는다.
+// MapLibre 6.3에는 extrusion top outline/line z-offset이 없다. 서비스 green을 매우 얇고
+// 투명한 top accent로만 사용해 아래 LST 색이 주 시각 정보로 남게 한다.
 const GRID_POLICY_SCOPE_COLOR = '#1f5121';
-const GRID_POLICY_SCOPE_CAP_HEIGHT = 6;
+const GRID_POLICY_SCOPE_CAP_HEIGHT = 2;
+const GRID_POLICY_SCOPE_OPACITY = 0.18;
 // 2D 선택 외곽선과 같은 색을 사용하며, 실제 데이터 높이와 구분되는 얇은 선택 cap이다.
 const GRID_SELECTION_COLOR = '#111827';
 const GRID_SELECTION_CAP_HEIGHT = 12;
@@ -615,7 +617,7 @@ function updateGridLayer(
         ),
         'fill-extrusion-height-transition': { duration: 400, delay: 0 },
         'fill-extrusion-color': GRID_POLICY_SCOPE_COLOR,
-        'fill-extrusion-opacity': 0.92
+        'fill-extrusion-opacity': GRID_POLICY_SCOPE_OPACITY
       }
     });
   }
