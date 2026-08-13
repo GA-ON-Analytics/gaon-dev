@@ -6,13 +6,14 @@ import {
   Popup,
   setWorkerUrl,
   type GeoJSONSource,
+  type ExpressionSpecification,
   type LngLatBoundsLike,
   type MapLayerMouseEvent,
   type StyleSpecification,
   type Subscription
 } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import type { GridResolution } from '../../types/dashboard';
+import type { BatchSimulationResponse, GridResolution } from '../../types/dashboard';
 
 setWorkerUrl(workerUrl);
 
@@ -21,10 +22,16 @@ const ALL_DISTRICTS = '전체';
 const GRID_SOURCE_ID = 'gaon-100m-grid';
 const GRID_FILL_LAYER_ID = 'gaon-100m-grid-fill';
 const GRID_LINE_LAYER_ID = 'gaon-100m-grid-line';
+const GRID_POLICY_SCOPE_LAYER_ID = 'gaon-100m-grid-policy-scope';
 const GRID_SELECTION_LAYER_ID = 'gaon-100m-grid-selection';
 const LST_PROPERTY = 'mean_actual_lst';
 const NUMERIC_LST_PROPERTY = '__gaon_numeric_lst';
 const VISUAL_HEIGHT_PROPERTY = '__gaon_lst_visual_height';
+const AFTER_VISUAL_LST_PROPERTY = '__gaon_after_visual_lst';
+const AFTER_VISUAL_HEIGHT_PROPERTY = '__gaon_after_visual_height';
+// 정책 UI와 같은 서비스 green. 온도 범례 색을 정책 범위 의미로 재사용하지 않는다.
+const GRID_POLICY_SCOPE_COLOR = '#1f5121';
+const GRID_POLICY_SCOPE_CAP_HEIGHT = 6;
 // 2D 선택 외곽선과 같은 색을 사용하며, 실제 데이터 높이와 구분되는 얇은 선택 cap이다.
 const GRID_SELECTION_COLOR = '#111827';
 const GRID_SELECTION_CAP_HEIGHT = 12;
@@ -71,6 +78,8 @@ const OSM_RASTER_STYLE: StyleSpecification = {
 
 interface Heat3DMapProps {
   gridData: FeatureCollection | null;
+  batchSimulationResult: BatchSimulationResponse | null;
+  viewMode: Map3DViewMode;
   resolution: GridResolution;
   selectedDistrict: string;
   selectedGridId: string | null;
@@ -79,6 +88,8 @@ interface Heat3DMapProps {
   onGridFeatureClick: Map3DGridFeatureClickHandler;
   onClearSelectedGrid: Map3DClearSelectedGridHandler;
 }
+
+export type Map3DViewMode = 'before' | 'after';
 
 export interface Map3DGridInfoSign {
   gridId: string;
@@ -340,19 +351,62 @@ function getVisualHeight(lst: number): number {
   return MIN_VISUAL_HEIGHT + clamped * (MAX_VISUAL_HEIGHT - MIN_VISUAL_HEIGHT);
 }
 
-function prepareExtrusionData(gridData: FeatureCollection): FeatureCollection {
+function getSuccessfulPolicyDeltas(
+  batchSimulationResult: BatchSimulationResponse | null
+): globalThis.Map<string, number> {
+  const deltas = new globalThis.Map<string, number>();
+  for (const result of batchSimulationResult?.results ?? []) {
+    if (result.status !== 'success') continue;
+    const delta = getFiniteLst(result.delta_c);
+    if (delta !== null) deltas.set(result.grid_id, delta);
+  }
+  return deltas;
+}
+
+function getPolicyGridIds(
+  batchSimulationResult: BatchSimulationResponse | null
+): string[] {
+  return [
+    ...new Set(
+      (batchSimulationResult?.results ?? [])
+        .map((result) => result.grid_id.trim())
+        .filter(Boolean)
+    )
+  ];
+}
+
+function prepareExtrusionData(
+  gridData: FeatureCollection,
+  batchSimulationResult: BatchSimulationResponse | null
+): FeatureCollection {
+  const successfulDeltas = getSuccessfulPolicyDeltas(batchSimulationResult);
+
   return {
     ...gridData,
     features: gridData.features.map((feature) => {
       const lst = getFiniteLst(feature.properties?.[LST_PROPERTY]);
       const visualHeight = lst === null ? 0 : getVisualHeight(lst);
+      const gridId = getGridId(feature.properties);
+      const delta = gridId ? successfulDeltas.get(gridId) : undefined;
+      // delta_c는 고정된 anomaly reference에서 예측한 변화량이다.
+      // 실측 After가 아니라 관측 LST에 모델 변화량을 더한 시나리오 표현에만 쓴다.
+      const afterVisualLst =
+        lst !== null && delta !== undefined ? lst + delta : null;
+      const afterVisualHeight =
+        afterVisualLst === null ? null : getVisualHeight(afterVisualLst);
 
       return {
         ...feature,
         properties: {
           ...(feature.properties ?? {}),
           [NUMERIC_LST_PROPERTY]: lst,
-          [VISUAL_HEIGHT_PROPERTY]: visualHeight
+          [VISUAL_HEIGHT_PROPERTY]: visualHeight,
+          ...(afterVisualLst === null
+            ? {}
+            : {
+                [AFTER_VISUAL_LST_PROPERTY]: afterVisualLst,
+                [AFTER_VISUAL_HEIGHT_PROPERTY]: afterVisualHeight
+              })
         }
       };
     })
@@ -360,6 +414,61 @@ function prepareExtrusionData(gridData: FeatureCollection): FeatureCollection {
 }
 
 type GridSelectionFilter = NonNullable<Parameters<Map['setFilter']>[1]>;
+
+function getDisplayedLstExpression(viewMode: Map3DViewMode): ExpressionSpecification {
+  return viewMode === 'after'
+    ? [
+        'coalesce',
+        ['get', AFTER_VISUAL_LST_PROPERTY],
+        ['get', NUMERIC_LST_PROPERTY]
+      ]
+    : ['get', NUMERIC_LST_PROPERTY];
+}
+
+function getDisplayedHeightExpression(
+  viewMode: Map3DViewMode
+): ExpressionSpecification {
+  return [
+    'number',
+    viewMode === 'after'
+      ? [
+          'coalesce',
+          ['get', AFTER_VISUAL_HEIGHT_PROPERTY],
+          ['get', VISUAL_HEIGHT_PROPERTY]
+        ]
+      : ['get', VISUAL_HEIGHT_PROPERTY],
+    0
+  ];
+}
+
+function getDisplayedColorExpression(
+  viewMode: Map3DViewMode
+): ExpressionSpecification {
+  const lst = getDisplayedLstExpression(viewMode);
+  return [
+    'case',
+    ['==', ['typeof', lst], 'number'],
+    [
+      'step',
+      lst,
+      LST_COLOR_LOW,
+      LST_BREAK_LOW,
+      LST_COLOR_MEDIUM,
+      LST_BREAK_MEDIUM,
+      LST_COLOR_HIGH,
+      LST_BREAK_HIGH,
+      LST_COLOR_VERY_HIGH
+    ],
+    LST_COLOR_FALLBACK
+  ];
+}
+
+function getCapHeightExpression(
+  viewMode: Map3DViewMode,
+  capHeight: number
+): ExpressionSpecification {
+  return ['+', getDisplayedHeightExpression(viewMode), capHeight];
+}
 
 function getGridSelectionFilter(selectedGridId: string | null): GridSelectionFilter {
   if (selectedGridId === null) {
@@ -378,8 +487,42 @@ function updateGridSelection(map: Map, selectedGridId: string | null): void {
   map.setFilter(GRID_SELECTION_LAYER_ID, getGridSelectionFilter(selectedGridId));
 }
 
-function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
-  const data = gridData ? prepareExtrusionData(gridData) : EMPTY_GRID_DATA;
+function getGridPolicyScopeFilter(policyGridIds: string[]): GridSelectionFilter {
+  if (policyGridIds.length === 0) {
+    return ['==', ['literal', true], ['literal', false]];
+  }
+
+  return [
+    'any',
+    [
+      'in',
+      ['to-string', ['get', 'grid_id']],
+      ['literal', policyGridIds]
+    ],
+    [
+      'in',
+      ['to-string', ['get', 'display_grid_id']],
+      ['literal', policyGridIds]
+    ]
+  ];
+}
+
+function updateGridPolicyScope(map: Map, policyGridIds: string[]): void {
+  if (!map.getLayer(GRID_POLICY_SCOPE_LAYER_ID)) return;
+  map.setFilter(
+    GRID_POLICY_SCOPE_LAYER_ID,
+    getGridPolicyScopeFilter(policyGridIds)
+  );
+}
+
+function setGridSourceData(
+  map: Map,
+  gridData: FeatureCollection | null,
+  batchSimulationResult: BatchSimulationResponse | null
+): void {
+  const data = gridData
+    ? prepareExtrusionData(gridData, batchSimulationResult)
+    : EMPTY_GRID_DATA;
   const existingSource = map.getSource(GRID_SOURCE_ID);
 
   if (existingSource) {
@@ -390,6 +533,44 @@ function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
       data
     });
   }
+}
+
+function updateGridViewMode(map: Map, viewMode: Map3DViewMode): void {
+  const height = getDisplayedHeightExpression(viewMode);
+
+  if (map.getLayer(GRID_FILL_LAYER_ID)) {
+    map.setPaintProperty(
+      GRID_FILL_LAYER_ID,
+      'fill-extrusion-color',
+      getDisplayedColorExpression(viewMode)
+    );
+    map.setPaintProperty(GRID_FILL_LAYER_ID, 'fill-extrusion-height', height);
+  }
+  if (map.getLayer(GRID_POLICY_SCOPE_LAYER_ID)) {
+    map.setPaintProperty(GRID_POLICY_SCOPE_LAYER_ID, 'fill-extrusion-base', height);
+    map.setPaintProperty(
+      GRID_POLICY_SCOPE_LAYER_ID,
+      'fill-extrusion-height',
+      getCapHeightExpression(viewMode, GRID_POLICY_SCOPE_CAP_HEIGHT)
+    );
+  }
+  if (map.getLayer(GRID_SELECTION_LAYER_ID)) {
+    map.setPaintProperty(GRID_SELECTION_LAYER_ID, 'fill-extrusion-base', height);
+    map.setPaintProperty(
+      GRID_SELECTION_LAYER_ID,
+      'fill-extrusion-height',
+      getCapHeightExpression(viewMode, GRID_SELECTION_CAP_HEIGHT)
+    );
+  }
+}
+
+function updateGridLayer(
+  map: Map,
+  gridData: FeatureCollection | null,
+  batchSimulationResult: BatchSimulationResponse | null,
+  viewMode: Map3DViewMode
+): void {
+  setGridSourceData(map, gridData, batchSimulationResult);
 
   if (!map.getLayer(GRID_FILL_LAYER_ID)) {
     map.addLayer({
@@ -398,27 +579,9 @@ function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
       source: GRID_SOURCE_ID,
       paint: {
         'fill-extrusion-base': 0,
-        'fill-extrusion-color': [
-          'case',
-          ['==', ['typeof', ['get', NUMERIC_LST_PROPERTY]], 'number'],
-          [
-            'step',
-            ['get', NUMERIC_LST_PROPERTY],
-            LST_COLOR_LOW,
-            LST_BREAK_LOW,
-            LST_COLOR_MEDIUM,
-            LST_BREAK_MEDIUM,
-            LST_COLOR_HIGH,
-            LST_BREAK_HIGH,
-            LST_COLOR_VERY_HIGH
-          ],
-          LST_COLOR_FALLBACK
-        ],
-        'fill-extrusion-height': [
-          'number',
-          ['get', VISUAL_HEIGHT_PROPERTY],
-          0
-        ],
+        'fill-extrusion-color': getDisplayedColorExpression(viewMode),
+        'fill-extrusion-height': getDisplayedHeightExpression(viewMode),
+        'fill-extrusion-height-transition': { duration: 400, delay: 0 },
         'fill-extrusion-opacity': 0.72
       }
     });
@@ -437,6 +600,26 @@ function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
     });
   }
 
+  if (!map.getLayer(GRID_POLICY_SCOPE_LAYER_ID)) {
+    map.addLayer({
+      id: GRID_POLICY_SCOPE_LAYER_ID,
+      type: 'fill-extrusion',
+      source: GRID_SOURCE_ID,
+      filter: getGridPolicyScopeFilter([]),
+      paint: {
+        'fill-extrusion-base': getDisplayedHeightExpression(viewMode),
+        'fill-extrusion-base-transition': { duration: 400, delay: 0 },
+        'fill-extrusion-height': getCapHeightExpression(
+          viewMode,
+          GRID_POLICY_SCOPE_CAP_HEIGHT
+        ),
+        'fill-extrusion-height-transition': { duration: 400, delay: 0 },
+        'fill-extrusion-color': GRID_POLICY_SCOPE_COLOR,
+        'fill-extrusion-opacity': 0.92
+      }
+    });
+  }
+
   if (!map.getLayer(GRID_SELECTION_LAYER_ID)) {
     map.addLayer({
       id: GRID_SELECTION_LAYER_ID,
@@ -444,21 +627,20 @@ function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
       source: GRID_SOURCE_ID,
       filter: getGridSelectionFilter(null),
       paint: {
-        'fill-extrusion-base': [
-          'number',
-          ['get', VISUAL_HEIGHT_PROPERTY],
-          0
-        ],
-        'fill-extrusion-height': [
-          '+',
-          ['number', ['get', VISUAL_HEIGHT_PROPERTY], 0],
+        'fill-extrusion-base': getDisplayedHeightExpression(viewMode),
+        'fill-extrusion-base-transition': { duration: 400, delay: 0 },
+        'fill-extrusion-height': getCapHeightExpression(
+          viewMode,
           GRID_SELECTION_CAP_HEIGHT
-        ],
+        ),
+        'fill-extrusion-height-transition': { duration: 400, delay: 0 },
         'fill-extrusion-color': GRID_SELECTION_COLOR,
         'fill-extrusion-opacity': 1
       }
     });
   }
+
+  updateGridViewMode(map, viewMode);
 
   if (!gridData || gridData.features.length === 0) return;
 
@@ -476,6 +658,8 @@ function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
 
 export default function Heat3DMap({
   gridData,
+  batchSimulationResult,
+  viewMode,
   resolution,
   selectedDistrict,
   selectedGridId,
@@ -487,6 +671,9 @@ export default function Heat3DMap({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const gridDataRef = useRef(gridData);
+  const batchSimulationResultRef = useRef(batchSimulationResult);
+  const viewModeRef = useRef(viewMode);
+  const policyGridIdsRef = useRef(getPolicyGridIds(batchSimulationResult));
   const selectedGridIdRef = useRef(selectedGridId);
   const gridInfoSignRef = useRef(gridInfoSign);
   const shelterSignRef = useRef(shelterSign);
@@ -501,6 +688,9 @@ export default function Heat3DMap({
   const isMapLoadedRef = useRef(false);
   const [initializationError, setInitializationError] = useState(false);
   gridDataRef.current = gridData;
+  batchSimulationResultRef.current = batchSimulationResult;
+  viewModeRef.current = viewMode;
+  policyGridIdsRef.current = getPolicyGridIds(batchSimulationResult);
   selectedGridIdRef.current = selectedGridId;
   onGridFeatureClickRef.current = onGridFeatureClick;
   onClearSelectedGridRef.current = onClearSelectedGrid;
@@ -552,7 +742,13 @@ export default function Heat3DMap({
 
       handleLoad = () => {
         isMapLoadedRef.current = true;
-        updateGridLayer(map, gridDataRef.current);
+        updateGridLayer(
+          map,
+          gridDataRef.current,
+          batchSimulationResultRef.current,
+          viewModeRef.current
+        );
+        updateGridPolicyScope(map, policyGridIdsRef.current);
         updateGridSelection(map, selectedGridIdRef.current);
         gridClickSubscription = map.on('click', GRID_FILL_LAYER_ID, handleGridClick);
         updateMapSigns(
@@ -585,8 +781,30 @@ export default function Heat3DMap({
     const map = mapRef.current;
     if (!map || !isMapLoadedRef.current) return;
 
-    updateGridLayer(map, gridData);
+    updateGridLayer(
+      map,
+      gridData,
+      batchSimulationResultRef.current,
+      viewModeRef.current
+    );
   }, [gridData]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoadedRef.current) return;
+
+    // 새 ML/API 호출 없이 기존 source data의 시나리오 속성만 교체한다.
+    setGridSourceData(map, gridDataRef.current, batchSimulationResult);
+    updateGridPolicyScope(map, getPolicyGridIds(batchSimulationResult));
+    updateGridViewMode(map, viewModeRef.current);
+  }, [batchSimulationResult]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoadedRef.current) return;
+
+    updateGridViewMode(map, viewMode);
+  }, [viewMode]);
 
   useEffect(() => {
     const map = mapRef.current;

@@ -830,6 +830,38 @@ function LoadingContent({ message }: { message: string }) {
   );
 }
 
+function PolicyScopeLayer({ data }: { data: FeatureCollection | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!data || data.features.length === 0) return;
+
+    let pane = map.getPane('gridPolicyScopePane');
+    if (!pane) pane = map.createPane('gridPolicyScopePane');
+    // 100m canvas(350) 위, 기존 단일 선택 outline(450) 아래에 정책 범위만 표시한다.
+    pane.style.zIndex = '425';
+    pane.style.pointerEvents = 'none';
+
+    const layer = L.geoJSON(data, {
+      pane: 'gridPolicyScopePane',
+      interactive: false,
+      style: {
+        color: '#1f5121',
+        weight: 2.5,
+        opacity: 1,
+        dashArray: '6 3',
+        fill: false
+      }
+    }).addTo(map);
+
+    return () => {
+      layer.removeFrom(map);
+    };
+  }, [data, map]);
+
+  return null;
+}
+
 function initialDetailPanelOpen() {
   return typeof window === 'undefined' || !window.matchMedia(MOBILE_LAYOUT_QUERY).matches;
 }
@@ -845,8 +877,9 @@ export function MapDashboard() {
   selectedGridResolutionRef.current = selectedGridResolution;
   const [selectedGridProperties, setSelectedGridProperties] =
     useState<GridAnalysisProperties | null>(null);
-  // 다음 3D Before/After 단계가 패널 내부 state에 다시 의존하지 않도록 결과를 상위에도 보관한다.
-  const [, setBatchSimulationResult] = useState<BatchSimulationResponse | null>(null);
+  // 정책 결과의 단일 source of truth. 2D/3D는 이 결과에서 표현 값만 파생한다.
+  const [batchSimulationResult, setBatchSimulationResult] =
+    useState<BatchSimulationResponse | null>(null);
   // 선택 격자가 속한 '구'의 전체 격자 수 (priority_rank의 분모). 100m 상세 로딩 때 채운다.
   const [selectedGridGuTotal, setSelectedGridGuTotal] = useState<number | null>(null);
   const [selected100mFeature, setSelected100mFeature] =
@@ -1520,6 +1553,67 @@ export function MapDashboard() {
     () => getShelterPin(selectedGridProperties),
     [selectedGridProperties]
   );
+  const activePolicyBatchResult =
+    selectedGridResolution === '100m' &&
+    selectedDistrict !== ALL_DISTRICTS &&
+    batchSimulationResult?.target_mode === 'spatial_scope'
+      ? batchSimulationResult
+      : null;
+  const policyGridIds = useMemo(() => {
+    const ids = activePolicyBatchResult?.results
+      .map((result) => result.grid_id.trim())
+      .filter(Boolean) ?? [];
+    return [...new Set(ids)];
+  }, [activePolicyBatchResult]);
+  const policyScopeGridData = useMemo<FeatureCollection | null>(() => {
+    if (policyGridIds.length === 0) return null;
+
+    const targetIds = new Set(policyGridIds);
+    const targetFeatures: FeatureCollection['features'] = [];
+    for (const feature of seoul100mMapCacheRef.current?.features ?? []) {
+      const gridId = getGridIdentifier(
+        getFeatureProperties(feature as Feature<Geometry>)
+      );
+      if (!targetIds.has(gridId)) continue;
+      targetFeatures.push(feature);
+      if (targetFeatures.length === targetIds.size) break;
+    }
+
+    return {
+      type: 'FeatureCollection',
+      features: targetFeatures
+    };
+  }, [policyGridIds]);
+  const map3DGridData = useMemo<FeatureCollection | null>(() => {
+    if (
+      selectedGridResolution !== '100m' ||
+      selectedDistrict === ALL_DISTRICTS ||
+      !gridGeoJson
+    ) {
+      return null;
+    }
+    if (!policyScopeGridData) return gridGeoJson;
+
+    const currentGridIds = new Set(
+      gridGeoJson.features.map((feature) =>
+        getGridIdentifier(getFeatureProperties(feature as Feature<Geometry>))
+      )
+    );
+    const missingTargetFeatures = policyScopeGridData.features.filter((feature) => {
+      const gridId = getGridIdentifier(
+        getFeatureProperties(feature as Feature<Geometry>)
+      );
+      return !currentGridIds.has(gridId);
+    });
+    if (missingTargetFeatures.length === 0) return gridGeoJson;
+
+    // 선택 자치구 + 경계 밖 정책 대상만 새 collection으로 합친다.
+    // 원본 cache/gridGeoJson은 mutate하지 않고, 서울 전체를 MapLibre에 넘기지 않는다.
+    return {
+      ...gridGeoJson,
+      features: [...gridGeoJson.features, ...missingTargetFeatures]
+    };
+  }, [gridGeoJson, policyScopeGridData, selectedDistrict, selectedGridResolution]);
   const selectedLayerKeyRef = useRef(selectedLayer);
   const isDistrictOverviewRef = useRef(isDistrictOverview);
   const hydrateSelectedGridPropertiesRef = useRef(hydrateSelectedGridProperties);
@@ -1818,6 +1912,9 @@ export function MapDashboard() {
               onFeatureClick={handle100mFeatureClick}
             />
           )}
+          {selectedGridResolution === '100m' && (
+            <PolicyScopeLayer data={policyScopeGridData} />
+          )}
           {gridGeoJson && selectedGridResolution !== '100m' && !isGuMode && (
             <GeoJSON
               ref={resolutionGridLayerRef}
@@ -1940,11 +2037,8 @@ export function MapDashboard() {
         </MapContainer>
       )}
       <Map3DOverlay
-        gridData={
-          selectedGridResolution === '100m' && selectedDistrict !== ALL_DISTRICTS
-            ? gridGeoJson
-            : null
-        }
+        gridData={map3DGridData}
+        batchSimulationResult={activePolicyBatchResult}
         resolution={selectedGridResolution}
         selectedDistrict={selectedDistrict}
         selectedGridId={selected100mGridId}
