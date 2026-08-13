@@ -21,9 +21,13 @@ const ALL_DISTRICTS = '전체';
 const GRID_SOURCE_ID = 'gaon-100m-grid';
 const GRID_FILL_LAYER_ID = 'gaon-100m-grid-fill';
 const GRID_LINE_LAYER_ID = 'gaon-100m-grid-line';
+const GRID_SELECTION_LAYER_ID = 'gaon-100m-grid-selection';
 const LST_PROPERTY = 'mean_actual_lst';
 const NUMERIC_LST_PROPERTY = '__gaon_numeric_lst';
 const VISUAL_HEIGHT_PROPERTY = '__gaon_lst_visual_height';
+// 2D 선택 외곽선과 같은 색을 사용하며, 실제 데이터 높이와 구분되는 얇은 선택 cap이다.
+const GRID_SELECTION_COLOR = '#111827';
+const GRID_SELECTION_CAP_HEIGHT = 12;
 // 기존 2D 지표면온도 범례와 동일한 고정 구간 및 색상이다.
 const LST_COLOR_LOW = '#6fbf73';
 const LST_COLOR_MEDIUM = '#f2cf5b';
@@ -69,6 +73,7 @@ interface Heat3DMapProps {
   gridData: FeatureCollection | null;
   resolution: GridResolution;
   selectedDistrict: string;
+  selectedGridId: string | null;
   gridInfoSign: Map3DGridInfoSign | null;
   shelterSign: Map3DShelterSign | null;
   onGridFeatureClick: Map3DGridFeatureClickHandler;
@@ -354,6 +359,25 @@ function prepareExtrusionData(gridData: FeatureCollection): FeatureCollection {
   };
 }
 
+type GridSelectionFilter = NonNullable<Parameters<Map['setFilter']>[1]>;
+
+function getGridSelectionFilter(selectedGridId: string | null): GridSelectionFilter {
+  if (selectedGridId === null) {
+    return ['==', ['literal', true], ['literal', false]];
+  }
+
+  return [
+    'any',
+    ['==', ['to-string', ['get', 'grid_id']], selectedGridId],
+    ['==', ['to-string', ['get', 'display_grid_id']], selectedGridId]
+  ];
+}
+
+function updateGridSelection(map: Map, selectedGridId: string | null): void {
+  if (!map.getLayer(GRID_SELECTION_LAYER_ID)) return;
+  map.setFilter(GRID_SELECTION_LAYER_ID, getGridSelectionFilter(selectedGridId));
+}
+
 function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
   const data = gridData ? prepareExtrusionData(gridData) : EMPTY_GRID_DATA;
   const existingSource = map.getSource(GRID_SOURCE_ID);
@@ -413,6 +437,29 @@ function updateGridLayer(map: Map, gridData: FeatureCollection | null): void {
     });
   }
 
+  if (!map.getLayer(GRID_SELECTION_LAYER_ID)) {
+    map.addLayer({
+      id: GRID_SELECTION_LAYER_ID,
+      type: 'fill-extrusion',
+      source: GRID_SOURCE_ID,
+      filter: getGridSelectionFilter(null),
+      paint: {
+        'fill-extrusion-base': [
+          'number',
+          ['get', VISUAL_HEIGHT_PROPERTY],
+          0
+        ],
+        'fill-extrusion-height': [
+          '+',
+          ['number', ['get', VISUAL_HEIGHT_PROPERTY], 0],
+          GRID_SELECTION_CAP_HEIGHT
+        ],
+        'fill-extrusion-color': GRID_SELECTION_COLOR,
+        'fill-extrusion-opacity': 1
+      }
+    });
+  }
+
   if (!gridData || gridData.features.length === 0) return;
 
   const bounds = getGridBounds(gridData);
@@ -431,6 +478,7 @@ export default function Heat3DMap({
   gridData,
   resolution,
   selectedDistrict,
+  selectedGridId,
   gridInfoSign,
   shelterSign,
   onGridFeatureClick,
@@ -439,6 +487,7 @@ export default function Heat3DMap({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const gridDataRef = useRef(gridData);
+  const selectedGridIdRef = useRef(selectedGridId);
   const gridInfoSignRef = useRef(gridInfoSign);
   const shelterSignRef = useRef(shelterSign);
   const onGridFeatureClickRef = useRef(onGridFeatureClick);
@@ -452,6 +501,7 @@ export default function Heat3DMap({
   const isMapLoadedRef = useRef(false);
   const [initializationError, setInitializationError] = useState(false);
   gridDataRef.current = gridData;
+  selectedGridIdRef.current = selectedGridId;
   onGridFeatureClickRef.current = onGridFeatureClick;
   onClearSelectedGridRef.current = onClearSelectedGrid;
 
@@ -503,6 +553,7 @@ export default function Heat3DMap({
       handleLoad = () => {
         isMapLoadedRef.current = true;
         updateGridLayer(map, gridDataRef.current);
+        updateGridSelection(map, selectedGridIdRef.current);
         gridClickSubscription = map.on('click', GRID_FILL_LAYER_ID, handleGridClick);
         updateMapSigns(
           map,
@@ -536,6 +587,13 @@ export default function Heat3DMap({
 
     updateGridLayer(map, gridData);
   }, [gridData]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoadedRef.current) return;
+
+    updateGridSelection(map, selectedGridId);
+  }, [selectedGridId]);
 
   useEffect(() => {
     const map = mapRef.current;
