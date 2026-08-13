@@ -6,6 +6,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend import main
+from backend.ml import predict_core
 from backend.simulation_scope import _geometry_centroid, load_grid_spatial_index
 
 
@@ -231,6 +232,164 @@ class SimulationBatchApiTests(unittest.TestCase):
         self.assertEqual(summary["mean_after_anomaly"], 1.6)
         self.assertEqual(summary["mean_delta_c"], 0.1)
         self.assertEqual(summary["successful_area_m2"], 10_000.0)
+
+
+class VectorizedPredictionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        _, feats, static, _ = predict_core._load()
+        valid = static.dropna(subset=feats)
+        # 자치구를 건너뛰 실제 grid로 lookup/feature order까지 검증한다.
+        cls.grid_ids = (
+            valid.groupby("gu_code", sort=True)
+            .head(1)["grid_id"]
+            .astype(str)
+            .tolist()[:12]
+        )
+        cls.clip_grid_id = str(valid.loc[valid["green_ratio"].idxmax(), "grid_id"])
+        cls.client = TestClient(main.app)
+
+    def assert_batch_matches_single(
+        self,
+        grid_ids: list[str],
+        changes: dict[str, float],
+        *,
+        couple_land_cover: bool,
+    ) -> None:
+        expected = [
+            predict_core.predict(
+                grid_id,
+                changes,
+                couple_land_cover=couple_land_cover,
+            )
+            for grid_id in grid_ids
+        ]
+        actual = predict_core.predict_batch(
+            grid_ids,
+            changes,
+            couple_land_cover=couple_land_cover,
+        )
+        self.assertEqual(actual, expected)
+
+    def test_multiple_grids_and_policies_match_single_exactly(self) -> None:
+        cases = (
+            ({"albedo": 0.04}, False),
+            ({"green_ratio": 0.05}, True),
+            ({"green_ratio": 0.1, "impervious_ratio": -0.1, "ndvi": 0.05}, False),
+        )
+        for changes, couple in cases:
+            with self.subTest(changes=changes, couple=couple):
+                self.assert_batch_matches_single(
+                    self.grid_ids,
+                    changes,
+                    couple_land_cover=couple,
+                )
+
+    def test_clipping_warning_and_changed_features_match_single(self) -> None:
+        self.assert_batch_matches_single(
+            [self.clip_grid_id],
+            {"green_ratio": 0.5},
+            couple_land_cover=True,
+        )
+        result = predict_core.predict_batch(
+            [self.clip_grid_id],
+            {"green_ratio": 0.5},
+            couple_land_cover=True,
+        )[0]
+        self.assertTrue(any("clip" in warning for warning in result["warnings"]))
+        self.assertIn("green_ratio", result["changed_features"])
+
+    def test_invalid_grid_is_partial_failure(self) -> None:
+        grid_ids = [self.grid_ids[0], "99999_99999", self.grid_ids[1]]
+        actual = predict_core.predict_batch(
+            grid_ids,
+            {"ndvi": 0.02},
+            couple_land_cover=False,
+        )
+        self.assertNotIn("error", actual[0])
+        self.assertIn("error", actual[1])
+        self.assertNotIn("error", actual[2])
+        self.assertEqual(
+            actual,
+            [
+                predict_core.predict(
+                    grid_id,
+                    {"ndvi": 0.02},
+                    couple_land_cover=False,
+                )
+                for grid_id in grid_ids
+            ],
+        )
+
+    def test_vectorized_and_legacy_summary_are_identical(self) -> None:
+        targets = [
+            (grid_id, float(index + 1) * 10_000.0)
+            for index, grid_id in enumerate(self.grid_ids)
+        ]
+        changes = {"green_ratio": 0.05}
+        legacy = [
+            predict_core.predict(grid_id, changes, couple_land_cover=True)
+            for grid_id, _ in targets
+        ]
+        vectorized = predict_core.predict_batch(
+            [grid_id for grid_id, _ in targets],
+            changes,
+            couple_land_cover=True,
+        )
+        self.assertEqual(
+            main._batch_summary(targets, vectorized),
+            main._batch_summary(targets, legacy),
+        )
+
+    def test_real_single_and_batch_api_contracts(self) -> None:
+        changes = {"green_ratio": 0.05}
+        single = self.client.post(
+            "/api/simulate",
+            json={
+                "grid_id": self.grid_ids[0],
+                "changes": changes,
+                "couple_land_cover": True,
+            },
+        )
+        self.assertEqual(single.status_code, 200)
+        self.assertEqual(
+            single.json(),
+            predict_core.predict(self.grid_ids[0], changes, couple_land_cover=True),
+        )
+
+        requested_ids = [self.grid_ids[0], "99999_99999", self.grid_ids[1]]
+        batch = self.client.post(
+            "/api/simulate/batch",
+            json={
+                "grid_ids": requested_ids,
+                "changes": changes,
+                "couple_land_cover": True,
+            },
+        )
+        self.assertEqual(batch.status_code, 200)
+        payload = batch.json()
+        self.assertEqual(payload["grid_count"], 3)
+        self.assertEqual(payload["success_count"], 2)
+        self.assertEqual(payload["failed_count"], 1)
+        self.assertEqual(
+            [result["grid_id"] for result in payload["results"]],
+            requested_ids,
+        )
+        expected = predict_core.predict_batch(
+            requested_ids,
+            changes,
+            couple_land_cover=True,
+        )
+        for grid_id, actual_result, expected_result in zip(
+            requested_ids, payload["results"], expected
+        ):
+            normalized_expected = {**expected_result}
+            normalized_expected.setdefault("grid_id", grid_id)
+            self.assertEqual(
+                {key: value for key, value in actual_result.items()
+                 if key not in {"area_m2", "status"}},
+                normalized_expected,
+            )
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ compact 배포 모델(25MB)로 재예측한다. RandomForest는 비선형이라 
 from __future__ import annotations
 
 import json
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,8 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+
+LOGGER = logging.getLogger(__name__)
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 MODEL_PATH = BACKEND_DIR / "models" / "seoul_grid_explain_model.joblib"
@@ -149,21 +152,40 @@ def feature_meta() -> list[dict]:
              "is_ratio": f in RATIO_FEATURES} for f in feats]
 
 
-def get_grid_features(grid_id: str) -> dict | None:
-    _, feats, static, _ = _load()
-    row = static[static["grid_id"] == grid_id]
-    if row.empty:
-        return None
-    r = row.iloc[0]
-    missing = [f for f in feats if f not in r.index or pd.isna(r[f])]
+@lru_cache(maxsize=1)
+def _grid_rows_by_id() -> pd.DataFrame:
+    """Warm prediction에서 64k행 boolean scan을 반복하지 않는 read-only index."""
+    _, _, static, _ = _load()
+    return static.set_index("grid_id", drop=False)
+
+
+def _grid_features_from_row(row: pd.Series, feats: list[str]) -> dict:
+    missing = [
+        feature
+        for feature in feats
+        if feature not in row.index or pd.isna(row[feature])
+    ]
     if missing:
         return {
-            "_gu_name": r.get("gu_name"),
+            "_gu_name": row.get("gu_name"),
             "_missing_features": missing,
         }
-    out = {f: float(r[f]) for f in feats}
-    out["_gu_name"] = r.get("gu_name")
+    out = {feature: float(row[feature]) for feature in feats}
+    out["_gu_name"] = row.get("gu_name")
     return out
+
+
+def get_grid_features(grid_id: str) -> dict | None:
+    _, feats, _, _ = _load()
+    try:
+        row = _grid_rows_by_id().loc[grid_id]
+    except KeyError:
+        return None
+    # 현재 dataset의 grid_id는 unique이다. 향후 중복이 생겨도 기존 iloc[0]
+    # semantics를 유지해 단일 row만 사용한다.
+    if isinstance(row, pd.DataFrame):
+        row = row.iloc[0]
+    return _grid_features_from_row(row, feats)
 
 
 # 경고 문구는 대시보드 초록 안내창과 챗봇 답변에 그대로 노출된다. 변수명을 영어로 두면
@@ -329,26 +351,78 @@ def _strip(v):
     return v.lstrip("=") if isinstance(v, str) else v
 
 
-def predict(grid_id: str, changes: dict | None = None, top_k: int = 3,
-            couple_land_cover: bool = True) -> dict:
-    model, feats, static, ranges = _load()
+def _prepare_prediction(
+    grid_id: str,
+    changes: dict,
+    feats: list[str],
+    ranges: dict[str, tuple[float, float]],
+    couple_land_cover: bool,
+) -> tuple[dict | None, dict | None, dict | None, list[str] | None]:
+    """Single/batch가 같은 lookup·clip·coupling·warning 규칙을 쓰게 한다."""
     base = get_grid_features(grid_id)
     if base is None:
-        return {"error": f"grid_id 없음: {grid_id}"}
+        return None, None, {"error": f"grid_id 없음: {grid_id}"}, None
     if "_missing_features" in base:
-        return {
+        return None, None, {
             "error": "필수 모델 입력값 누락",
             "grid_id": grid_id,
             "gu_name": base.get("_gu_name"),
             "missing_features": base["_missing_features"],
-        }
+        }, None
+
+    scen, changed_features, warnings = _apply_and_constrain(
+        base,
+        changes,
+        feats,
+        ranges,
+        couple=couple_land_cover,
+    )
+    return base, scen, changed_features, warnings
+
+
+def _build_prediction_result(
+    grid_id: str,
+    base: dict,
+    baseline: float,
+    predicted: float,
+    uncertainty_std: float,
+    delta_std: float,
+    direction_confidence: float | None,
+    changed_features: dict,
+    warnings: list[str],
+) -> dict:
+    return {
+        "grid_id": grid_id,
+        "gu_name": base.get("_gu_name"),
+        "before_anomaly": round(float(baseline), 3),
+        "after_anomaly": round(float(predicted), 3),
+        "delta_c": round(float(predicted) - float(baseline), 3),
+        "uncertainty_std": round(float(uncertainty_std), 3),
+        "delta_std": round(float(delta_std), 3),
+        "direction_confidence": direction_confidence,
+        "changed_features": changed_features,
+        "message": "ML simulation completed",
+        "warnings": warnings,
+    }
+
+
+def predict(grid_id: str, changes: dict | None = None, top_k: int = 3,
+            couple_land_cover: bool = True) -> dict:
+    del top_k  # 기존 public signature 호환성을 유지한다.
+    model, feats, _, ranges = _load()
     changes = changes or {}
+    base, scen, changed_features, warnings = _prepare_prediction(
+        grid_id,
+        changes,
+        feats,
+        ranges,
+        couple_land_cover,
+    )
+    if base is None or scen is None:
+        return changed_features or {"grid_id": grid_id, "error": "prediction failed"}
 
     Xb = pd.DataFrame([[base[f] for f in feats]], columns=feats)
     baseline = float(model.predict(Xb)[0])
-
-    scen, changed_features, warnings = _apply_and_constrain(
-        base, changes, feats, ranges, couple=couple_land_cover)
     Xs = pd.DataFrame([[scen[f] for f in feats]], columns=feats)
     predicted = float(model.predict(Xs)[0])
 
@@ -379,17 +453,127 @@ def predict(grid_id: str, changes: dict | None = None, top_k: int = 3,
         direction_confidence = None
         warnings.append("모델 estimator 분산을 계산할 수 없어 uncertainty_std=0.0 반환")
 
-    result = {
-        "grid_id": grid_id,
-        "gu_name": base.get("_gu_name"),
-        "before_anomaly": round(baseline, 3),
-        "after_anomaly": round(predicted, 3),
-        "delta_c": round(predicted - baseline, 3),
-        "uncertainty_std": round(std, 3),
-        "delta_std": round(delta_std, 3),
-        "direction_confidence": direction_confidence,
-        "changed_features": changed_features,
-        "message": "ML simulation completed",
-        "warnings": warnings,
-    }
-    return result
+    return _build_prediction_result(
+        grid_id,
+        base,
+        baseline,
+        predicted,
+        std,
+        delta_std,
+        direction_confidence,
+        changed_features,
+        warnings,
+    )
+
+
+def predict_batch(
+    grid_ids: list[str],
+    changes: dict | None = None,
+    top_k: int = 3,
+    couple_land_cover: bool = True,
+) -> list[dict]:
+    """N개 격자를 독립 행으로 유지한 sklearn matrix batch prediction.
+
+    전처리에서 실패한 grid는 제자리에 error result로 남고, 정상 grid만
+    (N, F) matrix에 넣는다. 모델/tree 호출 횟수만 줄이며 single semantics는 공유한다.
+    """
+    del top_k  # 기존 predict signature와 동일한 호출 형태를 지원한다.
+    if not grid_ids:
+        return []
+
+    model, feats, _, ranges = _load()
+    changes = changes or {}
+    results: list[dict | None] = [None] * len(grid_ids)
+    valid_indexes: list[int] = []
+    bases: list[dict] = []
+    scenarios: list[dict] = []
+    changed_by_grid: list[dict] = []
+    warnings_by_grid: list[list[str]] = []
+
+    for index, grid_id in enumerate(grid_ids):
+        try:
+            base, scen, changed_features, warnings = _prepare_prediction(
+                grid_id,
+                changes,
+                feats,
+                ranges,
+                couple_land_cover,
+            )
+        except Exception:
+            LOGGER.exception("Batch preprocessing failed for grid_id=%s", grid_id)
+            results[index] = {"grid_id": grid_id, "error": "prediction failed"}
+            continue
+
+        if base is None or scen is None:
+            results[index] = changed_features or {
+                "grid_id": grid_id,
+                "error": "prediction failed",
+            }
+            continue
+        valid_indexes.append(index)
+        bases.append(base)
+        scenarios.append(scen)
+        changed_by_grid.append(changed_features or {})
+        warnings_by_grid.append(warnings or [])
+
+    if not valid_indexes:
+        return [
+            result or {"grid_id": grid_ids[index], "error": "prediction failed"}
+            for index, result in enumerate(results)
+        ]
+
+    Xb = pd.DataFrame(
+        [[base[feature] for feature in feats] for base in bases],
+        columns=feats,
+    )
+    Xs = pd.DataFrame(
+        [[scen[feature] for feature in feats] for scen in scenarios],
+        columns=feats,
+    )
+    baselines = np.asarray(model.predict(Xb), dtype=float)
+    predictions = np.asarray(model.predict(Xs), dtype=float)
+
+    if hasattr(model, "estimators_"):
+        Xb_arr = Xb.to_numpy()
+        Xs_arr = Xs.to_numpy()
+        # 300 trees x 5,000 rows x float64 = matrix당 약 12MB. before matrix를
+        # delta로 제자리 변환해 세 번째 대형 matrix를 만들지 않는다.
+        per_tree_before = np.asarray(
+            [tree.predict(Xb_arr) for tree in model.estimators_],
+            dtype=float,
+        )
+        per_tree_after = np.asarray(
+            [tree.predict(Xs_arr) for tree in model.estimators_],
+            dtype=float,
+        )
+        uncertainty_stds = per_tree_after.std(axis=0, ddof=1)
+        np.subtract(per_tree_after, per_tree_before, out=per_tree_before)
+        delta_stds = per_tree_before.std(axis=0, ddof=1)
+        direction_confidences = [
+            _direction_confidence(per_tree_before[:, column])
+            for column in range(len(valid_indexes))
+        ]
+    else:
+        uncertainty_stds = np.zeros(len(valid_indexes), dtype=float)
+        delta_stds = np.zeros(len(valid_indexes), dtype=float)
+        direction_confidences = [None] * len(valid_indexes)
+        for warnings in warnings_by_grid:
+            warnings.append("모델 estimator 분산을 계산할 수 없어 uncertainty_std=0.0 반환")
+
+    for column, result_index in enumerate(valid_indexes):
+        results[result_index] = _build_prediction_result(
+            grid_ids[result_index],
+            bases[column],
+            baselines[column],
+            predictions[column],
+            uncertainty_stds[column],
+            delta_stds[column],
+            direction_confidences[column],
+            changed_by_grid[column],
+            warnings_by_grid[column],
+        )
+
+    return [
+        result or {"grid_id": grid_ids[index], "error": "prediction failed"}
+        for index, result in enumerate(results)
+    ]
