@@ -5,6 +5,7 @@ import type {
   GridResolution,
   PolicyPresetsResponse,
   SimulationRequest,
+  SimulationBatchScope,
   SimulationResponse
 } from '../types/dashboard';
 import type {
@@ -165,7 +166,7 @@ export function getPolicyPresets(): Promise<PolicyPresetsResponse> {
   return fetchJson<PolicyPresetsResponse>('/api/policies');
 }
 
-// 여러 100m 격자에 같은 정책을 적용해 평균 저감을 구한다 (250/500m 집계 격자 시뮬레이션용).
+// 여러 100m 격자에 같은 정책을 적용해 평균 예측 변화를 구한다 (250/500m 집계 격자용).
 export function simulateBatchGridPolicy(
   gridIds: string[],
   changes: Record<string, number>,
@@ -176,6 +177,29 @@ export function simulateBatchGridPolicy(
     { grid_ids: string[]; changes: Record<string, number>; couple_land_cover: boolean }
   >('/api/simulate/batch', {
     grid_ids: gridIds,
+    changes,
+    couple_land_cover: coupleLandCover
+  });
+}
+
+// 중심 100m 격자와 실제 공간 범위를 보내면 backend가 자치구 경계와 무관하게 대상 셀을 찾는다.
+export function simulateScopedGridPolicy(
+  gridId: string,
+  scopeM: SimulationBatchScope,
+  changes: Record<string, number>,
+  coupleLandCover = true
+): Promise<BatchSimulationResponse> {
+  return postJson<
+    BatchSimulationResponse,
+    {
+      grid_id: string;
+      scope_m: SimulationBatchScope;
+      changes: Record<string, number>;
+      couple_land_cover: boolean;
+    }
+  >('/api/simulate/batch', {
+    grid_id: gridId,
+    scope_m: scopeM,
     changes,
     couple_land_cover: coupleLandCover
   });

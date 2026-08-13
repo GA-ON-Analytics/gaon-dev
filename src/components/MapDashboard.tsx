@@ -30,6 +30,7 @@ import {
   getResolutionGrid
 } from '../services/api';
 import type {
+  BatchSimulationResponse,
   DongSearchIndexEntry,
   GridAnalysisProperties,
   GridResolution,
@@ -844,6 +845,8 @@ export function MapDashboard() {
   selectedGridResolutionRef.current = selectedGridResolution;
   const [selectedGridProperties, setSelectedGridProperties] =
     useState<GridAnalysisProperties | null>(null);
+  // 다음 3D Before/After 단계가 패널 내부 state에 다시 의존하지 않도록 결과를 상위에도 보관한다.
+  const [, setBatchSimulationResult] = useState<BatchSimulationResponse | null>(null);
   // 선택 격자가 속한 '구'의 전체 격자 수 (priority_rank의 분모). 100m 상세 로딩 때 채운다.
   const [selectedGridGuTotal, setSelectedGridGuTotal] = useState<number | null>(null);
   const [selected100mFeature, setSelected100mFeature] =
@@ -1999,6 +2002,7 @@ export function MapDashboard() {
         isPickingCompare={isPickingCompare}
         onStartCompare={handleStartCompare}
         onClearCompare={handleClearCompare}
+        onBatchSimulationResult={setBatchSimulationResult}
       />
       <AiChatLauncher
         selectedGridId={chatGridId}
