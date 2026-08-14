@@ -156,6 +156,7 @@ export interface SimulationResponse {
 }
 
 export type SimulationBatchScope = 100 | 300 | 500;
+export type SimulationPolicyScope = SimulationBatchScope | 'district';
 
 export interface BatchSimulationGridResult extends Partial<SimulationResponse> {
   grid_id: string;
@@ -190,9 +191,12 @@ export interface BatchSimulationResponse {
   aggregation: 'area_weighted' | 'unweighted' | null;
   total_area_m2: number | null;
   successful_area_m2: number | null;
-  target_mode: 'explicit_grid_ids' | 'spatial_scope';
+  target_mode: 'explicit_grid_ids' | 'spatial_scope' | 'district';
   center_grid_id: string | null;
   scope_m: SimulationBatchScope | null;
+  gu_code?: string;
+  scope_mode?: 'district';
+  compact?: boolean;
   results: BatchSimulationGridResult[];
 }
 

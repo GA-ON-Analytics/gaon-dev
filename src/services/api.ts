@@ -204,3 +204,27 @@ export function simulateScopedGridPolicy(
     couple_land_cover: coupleLandCover
   });
 }
+
+// 선택 자치구의 실제 지도 100m 격자 ID는 backend가 gu_code로 찾고 compact 결과만 반환한다.
+export function simulateDistrictGridPolicy(
+  guCode: string,
+  changes: Record<string, number>,
+  coupleLandCover = true
+): Promise<BatchSimulationResponse> {
+  return postJson<
+    BatchSimulationResponse,
+    {
+      gu_code: string;
+      scope_mode: 'district';
+      compact: true;
+      changes: Record<string, number>;
+      couple_land_cover: boolean;
+    }
+  >('/api/simulate/batch', {
+    gu_code: guCode,
+    scope_mode: 'district',
+    compact: true,
+    changes,
+    couple_land_cover: coupleLandCover
+  });
+}

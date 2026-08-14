@@ -2335,7 +2335,7 @@ td {
   margin:-6px 0 13px; color:var(--gdp-ink3); font-size:11px; line-height:1.5;
 }
 .gridDetailSidePanel .policyScopeSelector{
-  display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px;
+  display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px;
   margin:0 0 12px; padding:0; border:0;
 }
 .gridDetailSidePanel .policyScopeSelector legend{
@@ -2354,6 +2354,9 @@ td {
 }
 .gridDetailSidePanel .policyScopeSelector input:focus-visible + span{
   outline:2px solid var(--gdp-green); outline-offset:2px;
+}
+.gridDetailSidePanel .policyScopeSelector input:disabled + span{
+  opacity:.48; cursor:not-allowed;
 }
 .gridDetailSidePanel .policyScopeSelector > p{
   grid-column:1 / -1; margin:0; color:var(--gdp-ink3); font-size:9px; line-height:1.4;

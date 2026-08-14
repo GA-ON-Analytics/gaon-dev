@@ -117,6 +117,11 @@ class BatchSimulationRequest(BaseModel):
     # 100m 중심 격자 주변 정책 범위 요청. scope_m은 Pydantic이 422로 검증한다.
     grid_id: str | None = None
     scope_m: Literal[100, 300, 500] | None = None
+    # 자치구 전체는 숫자 scope_m contract와 분리된 selector로 받는다.
+    gu_code: str | None = None
+    scope_mode: Literal["district"] | None = None
+    # 구 전체 결과에서만 개별 ML 진단 필드를 줄인다.
+    compact: bool = False
     changes: dict[str, float] = Field(default_factory=dict)
     couple_land_cover: bool = True
 
@@ -233,16 +238,53 @@ BATCH_NO_CHANGE_THRESHOLD_C = 0.132
 def _batch_targets(payload: BatchSimulationRequest) -> tuple[list[tuple[str, float | None]], str]:
     has_explicit_ids = payload.grid_ids is not None
     has_spatial_scope = payload.grid_id is not None or payload.scope_m is not None
-    if has_explicit_ids and has_spatial_scope:
+    has_district_scope = payload.gu_code is not None or payload.scope_mode is not None
+    selector_count = sum((has_explicit_ids, has_spatial_scope, has_district_scope))
+    if selector_count != 1:
         raise HTTPException(
             status_code=422,
-            detail="Use either grid_ids or grid_id with scope_m, not both",
+            detail=(
+                "Use exactly one selector: grid_ids, grid_id with scope_m, "
+                "or gu_code with district scope_mode"
+            ),
         )
 
     if has_explicit_ids:
+        if payload.compact:
+            raise HTTPException(
+                status_code=422,
+                detail="compact response is supported only for district scope",
+            )
         grid_ids = payload.grid_ids or []
         # 기존 endpoint의 단순 평균 contract와 지도 파일 비의존성을 보존한다.
         return [(grid_id, None) for grid_id in grid_ids], "explicit_grid_ids"
+
+    if has_district_scope:
+        if payload.gu_code is None or payload.scope_mode != "district":
+            raise HTTPException(
+                status_code=422,
+                detail="gu_code and scope_mode='district' are required for district scope",
+            )
+        if fullmatch(r"\d{5}", payload.gu_code) is None:
+            raise HTTPException(status_code=422, detail="gu_code must be exactly five digits")
+
+        try:
+            index = load_grid_spatial_index(str(DASHBOARD_100M_MAP_PATH))
+            cells = index.select_district(payload.gu_code)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="gu_code not found") from None
+        except FileNotFoundError:
+            raise HTTPException(status_code=503, detail="Seoul 100m map data is unavailable") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail="Invalid Seoul 100m map data") from exc
+
+        return [(cell.grid_id, cell.area_m2) for cell in cells], "district"
+
+    if payload.compact:
+        raise HTTPException(
+            status_code=422,
+            detail="compact response is supported only for district scope",
+        )
 
     if payload.grid_id is None or payload.scope_m is None:
         raise HTTPException(
@@ -598,6 +640,29 @@ def _predict_batch_individually(
     return results
 
 
+def _compact_batch_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compact_results = []
+    for result in results:
+        if result["status"] == "success":
+            compact_results.append(
+                {
+                    "grid_id": result["grid_id"],
+                    "status": "success",
+                    "delta_c": result["delta_c"],
+                    "area_m2": result.get("area_m2"),
+                }
+            )
+        else:
+            compact_results.append(
+                {
+                    "grid_id": result["grid_id"],
+                    "status": "failed",
+                    "error": str(result.get("error") or "prediction failed"),
+                }
+            )
+    return compact_results
+
+
 @app.post("/api/simulate/batch")
 def simulate_batch(payload: BatchSimulationRequest) -> Any:
     if not _simulation_ready():
@@ -643,10 +708,20 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
     summary = _batch_summary(targets, results)
     for result in results:
         result["status"] = "success" if _is_successful_prediction(result) else "failed"
-    return {
+    response_results = _compact_batch_results(results) if payload.compact else results
+    response = {
         **summary,
         "target_mode": target_mode,
         "center_grid_id": payload.grid_id if target_mode == "spatial_scope" else None,
         "scope_m": payload.scope_m if target_mode == "spatial_scope" else None,
-        "results": results,
+        "results": response_results,
     }
+    if target_mode == "district":
+        response.update(
+            {
+                "gu_code": payload.gu_code,
+                "scope_mode": payload.scope_mode,
+                "compact": payload.compact,
+            }
+        )
+    return response

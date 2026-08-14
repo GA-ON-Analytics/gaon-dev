@@ -122,6 +122,13 @@ class SeoulGridSpatialIndex:
         self.by_id = {cell.grid_id: cell for cell in cells}
         if len(self.by_id) != len(cells):
             raise ValueError("Duplicate grid_id in Seoul 100m map data")
+        district_cells: dict[str, list[GridCell]] = {}
+        for cell in cells:
+            district_cells.setdefault(cell.gu_code, []).append(cell)
+        self.by_gu_code = {
+            gu_code: tuple(sorted(items, key=lambda cell: cell.grid_id))
+            for gu_code, items in district_cells.items()
+        }
 
     @classmethod
     def from_geojson(cls, path: Path) -> "SeoulGridSpatialIndex":
@@ -179,6 +186,12 @@ class SeoulGridSpatialIndex:
             and abs(cell.y_m - center.y_m) <= half_scope_m + tolerance_m
         ]
         return tuple(sorted(selected, key=lambda cell: cell.grid_id))
+
+    def select_district(self, gu_code: str) -> tuple[GridCell, ...]:
+        cells = self.by_gu_code.get(gu_code)
+        if cells is None:
+            raise KeyError(gu_code)
+        return cells
 
 @lru_cache(maxsize=2)
 def load_grid_spatial_index(path: str) -> SeoulGridSpatialIndex:
