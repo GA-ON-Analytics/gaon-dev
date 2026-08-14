@@ -1565,10 +1565,12 @@ export function MapDashboard() {
   const selectedDistrictCode = districtCodeByName.get(selectedDistrict) ?? null;
   const activePolicyBatchResult =
     selectedGridResolution === '100m' &&
-    selectedDistrict !== ALL_DISTRICTS &&
-    (batchSimulationResult?.target_mode === 'spatial_scope' ||
-      (batchSimulationResult?.target_mode === 'district' &&
-        batchSimulationResult.gu_code === selectedDistrictCode))
+    ((selectedDistrict === ALL_DISTRICTS &&
+      batchSimulationResult?.target_mode === 'seoul') ||
+      (selectedDistrict !== ALL_DISTRICTS &&
+        (batchSimulationResult?.target_mode === 'spatial_scope' ||
+          (batchSimulationResult?.target_mode === 'district' &&
+            batchSimulationResult.gu_code === selectedDistrictCode))))
       ? batchSimulationResult
       : null;
   const policyGridIds = useMemo(() => {

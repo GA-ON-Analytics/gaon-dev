@@ -466,11 +466,113 @@ def predict(grid_id: str, changes: dict | None = None, top_k: int = 3,
     )
 
 
+def _predict_batch_compact(
+    model: Any,
+    feats: list[str],
+    grid_ids: list[str],
+    changes: dict,
+    ranges: dict[str, tuple[float, float]],
+) -> list[dict]:
+    """compact 응답용 벡터 전처리. 개별 격자 예측 의미와 순서는 유지한다."""
+    indexed = _grid_rows_by_id()
+    requested = indexed.reindex(grid_ids)
+    exists = requested["grid_id"].notna().to_numpy()
+    complete = requested[feats].notna().all(axis=1).to_numpy()
+    valid_mask = exists & complete
+    valid_indexes = np.flatnonzero(valid_mask)
+    results: list[dict | None] = [None] * len(grid_ids)
+
+    for index in np.flatnonzero(~valid_mask):
+        grid_id = grid_ids[int(index)]
+        if not exists[index]:
+            results[int(index)] = {"error": f"grid_id 없음: {grid_id}"}
+            continue
+        row = requested.iloc[int(index)]
+        missing = [feature for feature in feats if pd.isna(row[feature])]
+        results[int(index)] = {
+            "error": "필수 모델 입력값 누락",
+            "grid_id": grid_id,
+            "gu_name": row.get("gu_name"),
+            "missing_features": missing,
+        }
+
+    if valid_indexes.size == 0:
+        return [result or {"error": f"grid_id 없음: {grid_ids[index]}"}
+                for index, result in enumerate(results)]
+
+    base_values = requested.iloc[valid_indexes][feats].to_numpy(dtype=float, copy=True)
+    scenario_values = base_values.copy()
+    warnings_by_grid: list[list[str]] = [[] for _ in valid_indexes]
+    feature_indexes = {feature: index for index, feature in enumerate(feats)}
+
+    for feature, delta in changes.items():
+        column = feature_indexes.get(feature)
+        if column is None:
+            for warnings in warnings_by_grid:
+                warnings.append(f"알 수 없는 변수 무시: {feature}")
+            continue
+        requested_values = (
+            scenario_values[:, column] + float(delta)
+            if _is_delta(delta)
+            else np.full(len(valid_indexes), float(_strip(delta)), dtype=float)
+        )
+        lo, hi = ranges[feature]
+        clipped_values = np.clip(requested_values, lo, hi)
+        for row_index in np.flatnonzero(~np.isclose(requested_values, clipped_values)):
+            warnings_by_grid[int(row_index)].append(
+                _clip_warning(
+                    feature,
+                    float(requested_values[row_index]),
+                    float(clipped_values[row_index]),
+                    ranges,
+                )
+            )
+        scenario_values[:, column] = clipped_values
+
+    # _apply_and_constrain()과 같이 변경하지 않은 열도 마지막에 학습범위로 제한한다.
+    for column, feature in enumerate(feats):
+        lo, hi = ranges[feature]
+        values = scenario_values[:, column]
+        clipped_values = np.clip(values, lo, hi)
+        for row_index in np.flatnonzero(~np.isclose(values, clipped_values)):
+            warnings_by_grid[int(row_index)].append(
+                _clip_warning(
+                    feature,
+                    float(values[row_index]),
+                    float(clipped_values[row_index]),
+                    ranges,
+                )
+            )
+        scenario_values[:, column] = clipped_values
+
+    Xb = pd.DataFrame(base_values, columns=feats)
+    Xs = pd.DataFrame(scenario_values, columns=feats)
+    baselines = np.asarray(model.predict(Xb), dtype=float)
+    predictions = np.asarray(model.predict(Xs), dtype=float)
+
+    for column, result_index in enumerate(valid_indexes):
+        baseline = float(baselines[column])
+        prediction = float(predictions[column])
+        results[int(result_index)] = {
+            "grid_id": grid_ids[int(result_index)],
+            "before_anomaly": round(baseline, 3),
+            "after_anomaly": round(prediction, 3),
+            "delta_c": round(prediction - baseline, 3),
+            "warnings": warnings_by_grid[column],
+        }
+
+    return [
+        result or {"error": f"grid_id 없음: {grid_ids[index]}"}
+        for index, result in enumerate(results)
+    ]
+
+
 def predict_batch(
     grid_ids: list[str],
     changes: dict | None = None,
     top_k: int = 3,
     couple_land_cover: bool = True,
+    compact: bool = False,
 ) -> list[dict]:
     """N개 격자를 독립 행으로 유지한 sklearn matrix batch prediction.
 
@@ -483,6 +585,11 @@ def predict_batch(
 
     model, feats, _, ranges = _load()
     changes = changes or {}
+    # 정책 preset은 토지피복 연동을 끈 명시적 delta 요청이다. compact consumer에는
+    # 개별 진단 객체가 필요 없으므로 같은 행별 입력을 벡터로 준비한다.
+    if compact and not couple_land_cover:
+        return _predict_batch_compact(model, feats, grid_ids, changes, ranges)
+
     results: list[dict | None] = [None] * len(grid_ids)
     valid_indexes: list[int] = []
     bases: list[dict] = []
@@ -530,10 +637,7 @@ def predict_batch(
         [[scen[feature] for feature in feats] for scen in scenarios],
         columns=feats,
     )
-    baselines = np.asarray(model.predict(Xb), dtype=float)
-    predictions = np.asarray(model.predict(Xs), dtype=float)
-
-    if hasattr(model, "estimators_"):
+    if hasattr(model, "estimators_") and not compact:
         Xb_arr = Xb.to_numpy()
         Xs_arr = Xs.to_numpy()
         # 300 trees x 5,000 rows x float64 = matrix당 약 12MB. before matrix를
@@ -546,6 +650,11 @@ def predict_batch(
             [tree.predict(Xs_arr) for tree in model.estimators_],
             dtype=float,
         )
+        # RandomForestRegressor.predict()도 트리 예측의 산술평균이다. 아래 통계에
+        # 필요한 트리별 배열을 이미 만들었으므로 model.predict()로 모든 트리를
+        # 다시 두 번 순회하지 않고 같은 배열에서 평균을 구한다.
+        baselines = per_tree_before.mean(axis=0)
+        predictions = per_tree_after.mean(axis=0)
         uncertainty_stds = per_tree_after.std(axis=0, ddof=1)
         np.subtract(per_tree_after, per_tree_before, out=per_tree_before)
         delta_stds = per_tree_before.std(axis=0, ddof=1)
@@ -554,14 +663,17 @@ def predict_batch(
             for column in range(len(valid_indexes))
         ]
     else:
+        baselines = np.asarray(model.predict(Xb), dtype=float)
+        predictions = np.asarray(model.predict(Xs), dtype=float)
         uncertainty_stds = np.zeros(len(valid_indexes), dtype=float)
         delta_stds = np.zeros(len(valid_indexes), dtype=float)
         direction_confidences = [None] * len(valid_indexes)
-        for warnings in warnings_by_grid:
-            warnings.append("모델 estimator 분산을 계산할 수 없어 uncertainty_std=0.0 반환")
+        if not compact:
+            for warnings in warnings_by_grid:
+                warnings.append("모델 estimator 분산을 계산할 수 없어 uncertainty_std=0.0 반환")
 
     for column, result_index in enumerate(valid_indexes):
-        results[result_index] = _build_prediction_result(
+        prediction_result = _build_prediction_result(
             grid_ids[result_index],
             bases[column],
             baselines[column],
@@ -572,8 +684,25 @@ def predict_batch(
             changed_by_grid[column],
             warnings_by_grid[column],
         )
+        # compact batch consumer는 summary에 필요한 예측값과 clip 판정용 warning만
+        # 사용한다. 개별 진단 객체를 6만여 건 쌓지 않아도 delta 의미는 동일하다.
+        results[result_index] = (
+            {
+                "grid_id": prediction_result["grid_id"],
+                "before_anomaly": prediction_result["before_anomaly"],
+                "after_anomaly": prediction_result["after_anomaly"],
+                "delta_c": prediction_result["delta_c"],
+                "warnings": prediction_result.get("warnings") or [],
+            }
+            if compact
+            else prediction_result
+        )
 
     return [
         result or {"grid_id": grid_ids[index], "error": "prediction failed"}
         for index, result in enumerate(results)
     ]
+
+
+# main.py가 구형 test fake에 새 keyword를 보내지 않도록 명시적으로 capability를 확인한다.
+SUPPORTS_COMPACT_BATCH = True

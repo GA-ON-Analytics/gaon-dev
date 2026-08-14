@@ -228,3 +228,24 @@ export function simulateDistrictGridPolicy(
     couple_land_cover: coupleLandCover
   });
 }
+
+// 서울 지도에 실제로 존재하는 100m 격자 전체를 backend가 선택하고 compact 결과만 반환한다.
+export function simulateSeoulGridPolicy(
+  changes: Record<string, number>,
+  coupleLandCover = true
+): Promise<BatchSimulationResponse> {
+  return postJson<
+    BatchSimulationResponse,
+    {
+      scope_mode: 'seoul';
+      compact: true;
+      changes: Record<string, number>;
+      couple_land_cover: boolean;
+    }
+  >('/api/simulate/batch', {
+    scope_mode: 'seoul',
+    compact: true,
+    changes,
+    couple_land_cover: coupleLandCover
+  });
+}

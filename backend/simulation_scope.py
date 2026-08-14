@@ -193,6 +193,10 @@ class SeoulGridSpatialIndex:
             raise KeyError(gu_code)
         return cells
 
+    def select_seoul(self) -> tuple[GridCell, ...]:
+        """지도 GeoJSON에 실제로 존재하는 서울 100m 격자 전체를 반환한다."""
+        return self.cells
+
 @lru_cache(maxsize=2)
 def load_grid_spatial_index(path: str) -> SeoulGridSpatialIndex:
     return SeoulGridSpatialIndex.from_geojson(Path(path))
