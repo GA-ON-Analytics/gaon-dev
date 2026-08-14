@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ApiRequestError,
   getAiFeatureCatalog,
-  simulateBatchGridPolicy,
+  simulateAggregateGridPolicy,
   simulateDistrictGridPolicy,
   simulateGridPolicy,
   simulateSeoulGridPolicy,
@@ -375,7 +375,11 @@ function GridDetailSidePanel({
             {properties ? (
             <>
             <div className="card">
-              <div className="eyebrow">격자 상세</div>
+              <div className="eyebrow">
+                {selectedGridResolution === '250m' || selectedGridResolution === '500m'
+                  ? `${selectedGridResolution} 집계 격자 상세`
+                  : '격자 상세'}
+              </div>
               <div className="gu">{guLabel || '선택 격자'}</div>
               <div className="id">{gridId} · 면적 {fmt('area_m2')}</div>
 
@@ -628,7 +632,8 @@ function GridDetailSidePanel({
 // 슬라이더 5개(녹지·불투수·NDVI·알베도·공원면적)를 조절 → '시뮬레이션 적용' → 모델 재예측.
 // 슬라이더 값은 목업과 같은 정수 눈금, API에는 delta로 변환해 보낸다.
 // - 100m 격자: 그 격자를 그대로 재예측 → delta_c
-// - 250/500m 격자: 구성 100m 셀들(member_grid_ids)에 같은 정책을 적용해 batch 평균(mean_delta_c)
+// - 250/500m 격자: backend가 aggregate geometry의 실제 100m 셀을 선택해
+//   batch 면적가중 평균(mean_delta_c)을 계산
 // 기본값은 모두 0 — 격자를 클릭한 직후에는 그 격자의 현재 값이 그대로 유지되고,
 // 사용자가 움직인 것만 시나리오에 반영된다.
 //
@@ -773,19 +778,6 @@ function describeApplied(changed?: Record<string, SimulationChangedFeature>): st
       const amount = isRatio ? `${(diff * 100).toFixed(1)}%p` : diff.toFixed(3);
       return `${label} ${diff > 0 ? '+' : ''}${amount}`;
     });
-}
-
-// 구별 250m 파일 일부는 member_grid_ids가 배열이 아니라 numpy 배열을 그대로 문자열화한
-// 형태로 들어 있다 — "['11560_00004' '11560_00005']" 처럼 쉼표 없이 공백으로만 구분된다.
-// 서울 전체 파일(seoul_grid_250m/500m.geojson)은 정상 배열이라, '분석지역=전체'에서는
-// 시뮬레이션이 되고 구를 고르면 통째로 막혔다(Array.isArray가 false → 대상 0개).
-// 데이터를 다시 굽는 게 근본 해결이지만, 이미 배포된 파일도 읽히게 둔다.
-const GRID_ID_TOKEN = /\d{5}_\d{5}/g;
-
-function readMemberIds(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.filter((id): id is string => typeof id === 'string');
-  if (typeof raw === 'string') return raw.match(GRID_ID_TOKEN) ?? [];
-  return [];
 }
 
 // ── 슬라이더 한계 표시 ────────────────────────────────────────────────────────
@@ -973,9 +965,9 @@ function SeoulSimulationCard({
     <div className="card gdpSim">
       <PolicyPresetSection
         gridId=""
+        aggregateGridId={null}
         guCode={null}
         selectedDistrict="전체"
-        targetIds={[]}
         selectedGridResolution="100m"
         properties={null}
         featureRanges={null}
@@ -989,9 +981,9 @@ function SeoulSimulationCard({
 
 function PolicyPresetSection({
   gridId,
+  aggregateGridId,
   guCode,
   selectedDistrict,
-  targetIds,
   selectedGridResolution,
   properties,
   featureRanges,
@@ -1000,9 +992,9 @@ function PolicyPresetSection({
   onBatchSimulationResult
 }: {
   gridId: string;
+  aggregateGridId: string | null;
   guCode: string | null;
   selectedDistrict: string;
-  targetIds: string[];
   selectedGridResolution: GridResolution;
   properties: GridAnalysisProperties | null;
   featureRanges: Record<string, FeatureRange> | null;
@@ -1096,9 +1088,14 @@ function PolicyPresetSection({
 
     try {
       if (isBatchResolution) {
-        const request = policySimulationRequest(targetIds[0] ?? gridId, selectedPolicy);
-        const response = await simulateBatchGridPolicy(
-          targetIds,
+        if (!aggregateGridId) {
+          setPolicyError('선택한 집계 격자를 확인할 수 없어요.');
+          return;
+        }
+        const request = policySimulationRequest(aggregateGridId, selectedPolicy);
+        const response = await simulateAggregateGridPolicy(
+          selectedGridResolution,
+          aggregateGridId,
           request.changes ?? {},
           request.couple_land_cover ?? false
         );
@@ -1262,6 +1259,26 @@ function PolicyPresetSection({
         </fieldset>
       )}
 
+      {isBatchResolution && (
+        <fieldset className="policyScopeSelector">
+          <legend>정책 적용 범위</legend>
+          <label style={{ gridColumn: '1 / -1' }}>
+            <input
+              type="radio"
+              name={`policy-scope-${aggregateGridId ?? selectedGridResolution}`}
+              value={selectedGridResolution}
+              checked
+              readOnly
+            />
+            <span>
+              <b>선택한 {selectedGridResolution} 격자</b>
+              <small>실제 구성 100m 격자를 개별 예측</small>
+            </span>
+          </label>
+          <p>이 영역을 구성하는 실제 100m 격자에 동일 정책을 적용합니다.</p>
+        </fieldset>
+      )}
+
       <div className="policyPresetGrid">
         {policyPresets.map((preset) => {
           const applicability = isBatchResolution || isDistrictScope || isSeoulScope
@@ -1369,6 +1386,8 @@ function PolicyPresetSection({
                   ? '서울시 전체'
                   : policyBatchResult.target_mode === 'district'
                   ? `${selectedDistrict} 전체`
+                  : policyBatchResult.target_mode === 'aggregate'
+                  ? `선택한 ${selectedGridResolution} 격자`
                   : policyBatchResult.scope_m
                   ? `${policyBatchResult.scope_m}m × ${policyBatchResult.scope_m}m`
                   : `${selectedGridResolution} 구성 셀`}
@@ -1392,7 +1411,8 @@ function PolicyPresetSection({
                 <dd>{policyBatchResult.failed_count.toLocaleString()}개</dd>
               </div>
             )}
-            {(policyBatchResult.target_mode === 'district' ||
+            {(isBatchResolution ||
+              policyBatchResult.target_mode === 'district' ||
               policyBatchResult.target_mode === 'seoul') && (
               <>
                 <div>
@@ -1411,7 +1431,9 @@ function PolicyPresetSection({
             )}
           </dl>
           <p className="policyAnomalyNote">
-            {policyBatchResult.aggregation === 'area_weighted'
+            {isBatchResolution
+              ? '선택 영역을 구성하는 100m 격자를 개별 예측한 뒤 실제 격자 면적으로 가중해 집계한 정책 시나리오입니다.'
+              : policyBatchResult.aggregation === 'area_weighted'
               ? '평균 예상 변화는 각 100m 격자를 개별 예측한 뒤 실제 격자 면적으로 가중한 모델 결과입니다.'
               : '평균 예상 변화는 각 구성 100m 격자를 개별 예측한 뒤 단순 평균한 모델 결과입니다.'}
             {' '}정책 적용 후는 현재 관측 LST에 모델 예측 변화량을 반영한 시나리오이며 실제 미래 관측값이 아닙니다.
@@ -1456,14 +1478,15 @@ function SimulationCard({
   onBatchSimulationResult: (result: BatchSimulationResponse | null) => void;
 }) {
   const gridId = typeof properties.grid_id === 'string' ? properties.grid_id : '';
+  const aggregateGridId =
+    typeof properties.display_grid_id === 'string' ? properties.display_grid_id : null;
+  const isBatchResolution =
+    selectedGridResolution === '250m' || selectedGridResolution === '500m';
   const guCode =
     typeof properties.gu_code === 'string' || typeof properties.gu_code === 'number'
       ? String(properties.gu_code)
       : null;
-  const memberIds = readMemberIds(properties.member_grid_ids);
-  // 재예측 대상 100m 격자들: 100m면 자기 자신, 250/500m면 구성 100m 셀들
-  const targetIds = selectedGridResolution === '100m' ? (gridId ? [gridId] : []) : memberIds;
-  const canSimulate = targetIds.length > 0 && !incomplete;
+  const canSimulate = Boolean(isBatchResolution ? aggregateGridId : gridId) && !incomplete;
 
   const [values, setValues] = useState<Record<SimKey, number>>(
     () => Object.fromEntries(SIM_SLIDERS.map((s) => [s.key, s.def])) as Record<SimKey, number>
@@ -1494,9 +1517,39 @@ function SimulationCard({
     setResult(null);
     try {
       const changes = simChanges(values, couple);
-      if (targetIds.length === 1) {
+      if (isBatchResolution) {
+        if (!aggregateGridId) {
+          setError('선택한 집계 격자를 확인할 수 없어요.');
+          return;
+        }
+        const res = await simulateAggregateGridPolicy(
+          selectedGridResolution,
+          aggregateGridId,
+          changes,
+          couple
+        );
+        if (res.mean_delta_c == null) {
+          setError('시뮬레이션할 수 있는 구성 격자가 없어요.');
+          return;
+        }
+        const clipped = res.clipped_count ?? 0;
+        const unclipped = res.mean_delta_c_unclipped;
+        const applied: string[] = [];
+        if (clipped > 0) {
+          const total = res.valid_count ?? res.count;
+          applied.push(`${total.toLocaleString()}개 중 ${clipped.toLocaleString()}개는 요청량을 다 반영하지 못함`);
+          if (typeof unclipped === 'number' && Math.abs(unclipped - res.mean_delta_c) >= TIE_BAND_C) {
+            applied.push(`그 셀을 빼면 ${formatDelta(unclipped)}`);
+          }
+        }
+        setResult({
+          delta: res.mean_delta_c,
+          sub: `구성 100m 셀 ${res.count.toLocaleString()}개 면적가중 평균`,
+          applied
+        });
+      } else {
         const res = await simulateGridPolicy({
-          grid_id: targetIds[0],
+          grid_id: gridId,
           changes,
           couple_land_cover: couple
         });
@@ -1516,30 +1569,6 @@ function SimulationCard({
           sub,
           notes: res.warnings,
           applied: describeApplied(res.changed_features)
-        });
-      } else {
-        const res = await simulateBatchGridPolicy(targetIds, changes, couple);
-        if (res.mean_delta_c == null) {
-          setError('시뮬레이션할 수 있는 구성 격자가 없어요.');
-          return;
-        }
-        // 구성 셀 중 일부는 학습범위 clip에 걸려 요청량을 다 못 받는다. 그 셀들은 개입이
-        // 작은데도 저감이 크게 나와 평균을 끌어내리므로(구별 200셀 표본에서 0.13~0.35℃,
-        // 추정오차 0.132℃보다 크다) 몇 개가 잘렸는지와 뺀 평균을 함께 알린다.
-        const clipped = res.clipped_count ?? 0;
-        const unclipped = res.mean_delta_c_unclipped;
-        const applied: string[] = [];
-        if (clipped > 0) {
-          const total = res.valid_count ?? res.count;
-          applied.push(`${total.toLocaleString()}개 중 ${clipped.toLocaleString()}개는 요청량을 다 반영하지 못함`);
-          if (typeof unclipped === 'number' && Math.abs(unclipped - res.mean_delta_c) >= TIE_BAND_C) {
-            applied.push(`그 셀을 빼면 ${formatDelta(unclipped)}`);
-          }
-        }
-        setResult({
-          delta: res.mean_delta_c,
-          sub: `구성 100m 셀 ${res.count.toLocaleString()}개 평균`,
-          applied
         });
       }
     } catch (e) {
@@ -1577,9 +1606,9 @@ function SimulationCard({
       <PolicyPresetSection
         key={`${selectedGridResolution}:${gridId || properties.display_grid_id || ''}`}
         gridId={gridId}
+        aggregateGridId={aggregateGridId}
         guCode={guCode}
         selectedDistrict={selectedDistrict}
-        targetIds={targetIds}
         selectedGridResolution={selectedGridResolution}
         properties={properties}
         featureRanges={featureRanges}

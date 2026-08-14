@@ -30,6 +30,14 @@ class GridCell:
     y_m: float
 
 
+@dataclass(frozen=True)
+class AggregateGridCell:
+    display_grid_id: str
+    gu_code: str
+    geometry: dict[str, Any]
+    member_grid_ids: tuple[str, ...]
+
+
 def _ring_centroid(ring: list[list[float]]) -> tuple[float, float, float] | None:
     if len(ring) < 3 or len(ring[0]) < 2:
         return None
@@ -106,6 +114,91 @@ def _geometry_centroid(geometry: dict[str, Any]) -> tuple[float, float]:
             )
 
     raise ValueError(f"Unsupported or empty grid geometry: {geometry_type}")
+
+
+def _ring_contains_point(
+    ring: list[list[float]], longitude: float, latitude: float
+) -> bool:
+    """Ray casting with a half-open boundary rule.
+
+    100m centroids can lie exactly on a shared 250m/500m edge. A half-open rule
+    assigns such a point to at most one adjacent aggregate instead of duplicating it.
+    """
+    inside = False
+    previous = ring[-1]
+    for current in ring:
+        if len(previous) < 2 or len(current) < 2:
+            previous = current
+            continue
+        previous_longitude = float(previous[0])
+        previous_latitude = float(previous[1])
+        current_longitude = float(current[0])
+        current_latitude = float(current[1])
+        crosses_ray = (current_latitude > latitude) != (previous_latitude > latitude)
+        if crosses_ray:
+            intersection_longitude = (
+                (previous_longitude - current_longitude)
+                * (latitude - current_latitude)
+                / (previous_latitude - current_latitude)
+                + current_longitude
+            )
+            if longitude < intersection_longitude:
+                inside = not inside
+        previous = current
+    return inside
+
+
+def _polygon_contains_point(
+    rings: list[list[list[float]]], longitude: float, latitude: float
+) -> bool:
+    if not rings or not _ring_contains_point(rings[0], longitude, latitude):
+        return False
+    return not any(
+        _ring_contains_point(hole, longitude, latitude) for hole in rings[1:]
+    )
+
+
+def _geometry_contains_point(
+    geometry: dict[str, Any], longitude: float, latitude: float
+) -> bool:
+    geometry_type = geometry.get("type")
+    coordinates = geometry.get("coordinates")
+    if geometry_type == "Polygon" and isinstance(coordinates, list):
+        return _polygon_contains_point(coordinates, longitude, latitude)
+    if geometry_type == "MultiPolygon" and isinstance(coordinates, list):
+        return any(
+            _polygon_contains_point(polygon, longitude, latitude)
+            for polygon in coordinates
+            if isinstance(polygon, list)
+        )
+    raise ValueError(f"Unsupported aggregate geometry: {geometry_type}")
+
+
+def _geometry_bounds(geometry: dict[str, Any]) -> tuple[float, float, float, float]:
+    bounds = [math.inf, math.inf, -math.inf, -math.inf]
+
+    def visit(value: Any) -> None:
+        if (
+            isinstance(value, list)
+            and len(value) >= 2
+            and isinstance(value[0], (int, float))
+            and isinstance(value[1], (int, float))
+        ):
+            longitude = float(value[0])
+            latitude = float(value[1])
+            bounds[0] = min(bounds[0], longitude)
+            bounds[1] = min(bounds[1], latitude)
+            bounds[2] = max(bounds[2], longitude)
+            bounds[3] = max(bounds[3], latitude)
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(geometry.get("coordinates"))
+    if not all(math.isfinite(value) for value in bounds):
+        raise ValueError("Aggregate grid geometry has no finite coordinates")
+    return bounds[0], bounds[1], bounds[2], bounds[3]
 
 
 def _to_meter_coordinates(longitude: float, latitude: float) -> tuple[float, float]:
@@ -197,6 +290,125 @@ class SeoulGridSpatialIndex:
         """지도 GeoJSON에 실제로 존재하는 서울 100m 격자 전체를 반환한다."""
         return self.cells
 
+    def select_aggregate_geometry(
+        self, geometry: dict[str, Any], gu_code: str
+    ) -> tuple[GridCell, ...]:
+        """Select actual 100m map cells by aggregate geometry.
+
+        The current 250m ``member_grid_ids`` were restored with a bbox
+        approximation and contain duplicate assignments. The documented mapping
+        rule is therefore applied directly: a 100m geometry centroid belongs to
+        the aggregate polygon. Tiny clipped slivers with no centroid use the
+        nearest 100m centroid from the same district as the existing data-pipeline
+        fallback does.
+        """
+        west, south, east, north = _geometry_bounds(geometry)
+        selected = [
+            cell
+            for cell in self.cells
+            if west <= cell.longitude <= east
+            and south <= cell.latitude <= north
+            and _geometry_contains_point(geometry, cell.longitude, cell.latitude)
+        ]
+        if selected:
+            return tuple(sorted(selected, key=lambda cell: cell.grid_id))
+
+        district_cells = self.by_gu_code.get(gu_code)
+        if not district_cells:
+            raise KeyError(gu_code)
+        longitude, latitude = _geometry_centroid(geometry)
+        x_m, y_m = _to_meter_coordinates(longitude, latitude)
+        nearest = min(
+            district_cells,
+            key=lambda cell: (
+                (cell.x_m - x_m) ** 2 + (cell.y_m - y_m) ** 2,
+                cell.grid_id,
+            ),
+        )
+        return (nearest,)
+
+
+class SeoulAggregateGridIndex:
+    def __init__(self, cells: tuple[AggregateGridCell, ...]):
+        self.cells = cells
+        self.by_id = {cell.display_grid_id: cell for cell in cells}
+        if len(self.by_id) != len(cells):
+            raise ValueError("Duplicate display_grid_id in aggregate map data")
+
+    @classmethod
+    def from_geojson(cls, path: Path) -> "SeoulAggregateGridIndex":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        cells: list[AggregateGridCell] = []
+        for feature in payload.get("features", []):
+            properties = feature.get("properties") or {}
+            display_grid_id = properties.get("display_grid_id")
+            gu_code = properties.get("gu_code")
+            geometry = feature.get("geometry")
+            raw_member_ids = properties.get("member_grid_ids")
+            if not isinstance(display_grid_id, str) or not display_grid_id:
+                raise ValueError("Aggregate feature is missing display_grid_id")
+            if not isinstance(geometry, dict):
+                raise ValueError(
+                    f"Aggregate feature is missing geometry: {display_grid_id}"
+                )
+            member_grid_ids = tuple(
+                grid_id
+                for grid_id in raw_member_ids
+                if isinstance(grid_id, str) and grid_id
+            ) if isinstance(raw_member_ids, list) else ()
+            cells.append(
+                AggregateGridCell(
+                    display_grid_id=display_grid_id,
+                    gu_code=str(gu_code or ""),
+                    geometry=geometry,
+                    member_grid_ids=member_grid_ids,
+                )
+            )
+        if not cells:
+            raise ValueError("Aggregate map data has no features")
+        return cls(tuple(cells))
+
+    def select_constituents(
+        self,
+        display_grid_id: str,
+        grid_index: SeoulGridSpatialIndex,
+        *,
+        use_explicit_members: bool,
+    ) -> tuple[GridCell, ...]:
+        aggregate = self.by_id.get(display_grid_id)
+        if aggregate is None:
+            raise KeyError(display_grid_id)
+
+        if use_explicit_members:
+            if not aggregate.member_grid_ids:
+                raise ValueError(
+                    f"Aggregate feature has no member_grid_ids: {display_grid_id}"
+                )
+            members: list[GridCell] = []
+            seen: set[str] = set()
+            for grid_id in aggregate.member_grid_ids:
+                if grid_id in seen:
+                    raise ValueError(
+                        f"Duplicate member grid_id in aggregate: {display_grid_id}"
+                    )
+                seen.add(grid_id)
+                cell = grid_index.by_id.get(grid_id)
+                if cell is None:
+                    raise ValueError(
+                        f"Unknown member grid_id in aggregate: {display_grid_id}"
+                    )
+                members.append(cell)
+            return tuple(sorted(members, key=lambda cell: cell.grid_id))
+
+        return grid_index.select_aggregate_geometry(
+            aggregate.geometry, aggregate.gu_code
+        )
+
 @lru_cache(maxsize=2)
 def load_grid_spatial_index(path: str) -> SeoulGridSpatialIndex:
     return SeoulGridSpatialIndex.from_geojson(Path(path))
+
+
+@lru_cache(maxsize=2)
+def load_aggregate_grid_index(path: str) -> SeoulAggregateGridIndex:
+    return SeoulAggregateGridIndex.from_geojson(Path(path))

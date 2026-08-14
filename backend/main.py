@@ -22,7 +22,7 @@ from backend.policy_presets import (
     POLICY_FEATURE_LABELS,
     policy_presets_payload,
 )
-from backend.simulation_scope import load_grid_spatial_index
+from backend.simulation_scope import load_aggregate_grid_index, load_grid_spatial_index
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -120,6 +120,9 @@ class BatchSimulationRequest(BaseModel):
     # 자치구/서울 전체는 숫자 scope_m contract와 분리된 selector로 받는다.
     gu_code: str | None = None
     scope_mode: Literal["district", "seoul"] | None = None
+    # 250/500m aggregate 자체가 아니라, 해당 영역의 실제 100m 구성 셀을 선택한다.
+    aggregate_resolution: Literal["250m", "500m"] | None = None
+    aggregate_id: str | None = None
     # 행정구역 전체 결과에서는 개별 ML 진단 필드를 줄인다.
     compact: bool = False
     changes: dict[str, float] = Field(default_factory=dict)
@@ -240,13 +243,24 @@ def _batch_targets(payload: BatchSimulationRequest) -> tuple[list[tuple[str, flo
     has_explicit_ids = payload.grid_ids is not None
     has_spatial_scope = payload.grid_id is not None or payload.scope_m is not None
     has_administrative_scope = payload.gu_code is not None or payload.scope_mode is not None
-    selector_count = sum((has_explicit_ids, has_spatial_scope, has_administrative_scope))
+    has_aggregate_scope = (
+        payload.aggregate_resolution is not None or payload.aggregate_id is not None
+    )
+    selector_count = sum(
+        (
+            has_explicit_ids,
+            has_spatial_scope,
+            has_administrative_scope,
+            has_aggregate_scope,
+        )
+    )
     if selector_count != 1:
         raise HTTPException(
             status_code=422,
             detail=(
                 "Use exactly one selector: grid_ids, grid_id with scope_m, "
-                "gu_code with district scope_mode, or seoul scope_mode"
+                "gu_code with district scope_mode, seoul scope_mode, or "
+                "aggregate_resolution with aggregate_id"
             ),
         )
 
@@ -259,6 +273,40 @@ def _batch_targets(payload: BatchSimulationRequest) -> tuple[list[tuple[str, flo
         grid_ids = payload.grid_ids or []
         # 기존 endpoint의 단순 평균 contract와 지도 파일 비의존성을 보존한다.
         return [(grid_id, None) for grid_id in grid_ids], "explicit_grid_ids"
+
+    if has_aggregate_scope:
+        if payload.compact:
+            raise HTTPException(
+                status_code=422,
+                detail="compact response is not supported for aggregate scope",
+            )
+        if payload.aggregate_resolution is None or payload.aggregate_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail="aggregate_resolution and aggregate_id are both required",
+            )
+        try:
+            grid_index = load_grid_spatial_index(str(DASHBOARD_100M_MAP_PATH))
+            aggregate_index = load_aggregate_grid_index(
+                str(DASHBOARD_GRID_PATHS[payload.aggregate_resolution])
+            )
+            # 500m explicit members match the actual aggregate area. The current
+            # 250m field is a documented bbox restoration with duplicate members,
+            # so 250m uses the real Polygon/MultiPolygon centroid relation instead.
+            cells = aggregate_index.select_constituents(
+                payload.aggregate_id,
+                grid_index,
+                use_explicit_members=payload.aggregate_resolution == "500m",
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="aggregate grid not found") from None
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=503, detail="Aggregate or 100m map data is unavailable"
+            ) from None
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail="Invalid aggregate map data") from exc
+        return [(cell.grid_id, cell.area_m2) for cell in cells], "aggregate"
 
     if has_administrative_scope:
         if payload.scope_mode == "seoul":
@@ -778,6 +826,13 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
         "scope_m": payload.scope_m if target_mode == "spatial_scope" else None,
         "results": response_results,
     }
+    if target_mode == "aggregate":
+        response.update(
+            {
+                "aggregate_resolution": payload.aggregate_resolution,
+                "aggregate_id": payload.aggregate_id,
+            }
+        )
     if target_mode in {"district", "seoul"}:
         response.update(
             {
