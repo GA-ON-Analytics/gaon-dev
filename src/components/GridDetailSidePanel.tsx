@@ -5,6 +5,7 @@ import {
   simulateBatchGridPolicy,
   simulateDistrictGridPolicy,
   simulateGridPolicy,
+  simulateSeoulGridPolicy,
   simulateScopedGridPolicy
 } from '../services/api';
 import {
@@ -368,6 +369,9 @@ function GridDetailSidePanel({
       <div className="sidePanelBody">
         <section className="rightPanelDashboard">
           <div className="gridReport">
+            {selectedDistrict === '전체' && selectedGridResolution === '100m' && (
+              <SeoulSimulationCard onBatchSimulationResult={onBatchSimulationResult} />
+            )}
             {properties ? (
             <>
             <div className="card">
@@ -965,6 +969,29 @@ function formatPolicyFeatureValue(feature: PolicyFeature, value: number): string
   return isPolicyRatio(feature) ? `${(value * 100).toFixed(1)}%` : value.toFixed(3);
 }
 
+function SeoulSimulationCard({
+  onBatchSimulationResult
+}: {
+  onBatchSimulationResult: (result: BatchSimulationResponse | null) => void;
+}) {
+  return (
+    <div className="card gdpSim">
+      <PolicyPresetSection
+        gridId=""
+        guCode={null}
+        selectedDistrict="전체"
+        targetIds={[]}
+        selectedGridResolution="100m"
+        properties={null}
+        featureRanges={null}
+        policyScope="seoul"
+        onScopeChange={() => undefined}
+        onBatchSimulationResult={onBatchSimulationResult}
+      />
+    </div>
+  );
+}
+
 function PolicyPresetSection({
   gridId,
   guCode,
@@ -982,7 +1009,7 @@ function PolicyPresetSection({
   selectedDistrict: string;
   targetIds: string[];
   selectedGridResolution: GridResolution;
-  properties: GridAnalysisProperties;
+  properties: GridAnalysisProperties | null;
   featureRanges: Record<string, FeatureRange> | null;
   policyScope: SimulationPolicyScope;
   onScopeChange: (scope: SimulationPolicyScope) => void;
@@ -991,7 +1018,9 @@ function PolicyPresetSection({
   const isBatchResolution =
     selectedGridResolution === '250m' || selectedGridResolution === '500m';
   const isDistrictScope = policyScope === 'district';
-  const skipsSingleGridApplicability = isBatchResolution || isDistrictScope;
+  const isSeoulScope = policyScope === 'seoul';
+  const skipsSingleGridApplicability =
+    isBatchResolution || isDistrictScope || isSeoulScope;
   const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyPreset['id'] | null>(null);
   const [policyBatchResult, setPolicyBatchResult] = useState<BatchSimulationResponse | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
@@ -1013,7 +1042,7 @@ function PolicyPresetSection({
     gridId,
     guCode,
     onBatchSimulationResult,
-    properties.display_grid_id,
+    properties?.display_grid_id,
     selectedDistrict,
     selectedGridResolution
   ]);
@@ -1026,7 +1055,9 @@ function PolicyPresetSection({
   const selectedApplicability = selectedPolicy
     ? skipsSingleGridApplicability
       ? { applicable: true }
-      : policyApplicability(selectedPolicy, properties, featureRanges)
+      : properties
+      ? policyApplicability(selectedPolicy, properties, featureRanges)
+      : { applicable: false, reason: '격자를 선택해 주세요.' }
     : null;
 
   function selectPolicy(preset: PolicyPreset) {
@@ -1053,7 +1084,9 @@ function PolicyPresetSection({
     if (!selectedPolicy) return;
     const applicability = skipsSingleGridApplicability
       ? { applicable: true }
-      : policyApplicability(selectedPolicy, properties, featureRanges);
+      : properties
+      ? policyApplicability(selectedPolicy, properties, featureRanges)
+      : { applicable: false, reason: '격자를 선택해 주세요.' };
     if (!applicability.applicable) {
       setPolicyError(applicability.reason ?? '현재 격자에는 이 정책을 적용할 수 없습니다.');
       return;
@@ -1100,8 +1133,13 @@ function PolicyPresetSection({
         return;
       }
 
-      const request = policySimulationRequest(gridId, selectedPolicy);
-      const response = isDistrictScope
+      const request = policySimulationRequest(gridId || 'seoul', selectedPolicy);
+      const response = isSeoulScope
+        ? await simulateSeoulGridPolicy(
+            request.changes ?? {},
+            request.couple_land_cover ?? false
+          )
+        : isDistrictScope
         ? guCode
           ? await simulateDistrictGridPolicy(
               guCode,
@@ -1180,12 +1218,26 @@ function PolicyPresetSection({
       {selectedGridResolution === '100m' && (
         <fieldset className="policyScopeSelector">
           <legend>정책 적용 범위</legend>
-          {([
-            { scope: 100, label: '100m', description: '현재 격자만' },
-            { scope: 300, label: '300m', description: '주변 약 9개 격자' },
-            { scope: 500, label: '500m', description: '주변 약 25개 격자' },
-            { scope: 'district', label: '구 전체', description: '모든 100m 격자' }
-          ] as const).map((option) => (
+          {isSeoulScope ? (
+            <label style={{ gridColumn: '1 / -1' }}>
+              <input
+                type="radio"
+                name="policy-scope-seoul"
+                value="seoul"
+                checked
+                readOnly
+              />
+              <span>
+                <b>서울시 전체</b>
+                <small>서울의 모든 실제 100m 격자</small>
+              </span>
+            </label>
+          ) : ([
+              { scope: 100, label: '100m', description: '현재 격자만' },
+              { scope: 300, label: '300m', description: '주변 약 9개 격자' },
+              { scope: 500, label: '500m', description: '주변 약 25개 격자' },
+              { scope: 'district', label: '구 전체', description: '모든 100m 격자' }
+            ] as const).map((option) => (
             <label key={option.scope}>
               <input
                 type="radio"
@@ -1202,7 +1254,9 @@ function PolicyPresetSection({
             </label>
           ))}
           <p>
-            {isDistrictScope
+            {isSeoulScope
+              ? '서울의 모든 실제 100m 격자에 동일 정책을 적용합니다.'
+              : isDistrictScope
               ? `선택한 ${selectedDistrict}의 모든 100m 격자에 동일 정책을 적용합니다.`
               : '서울 경계에서는 실제 존재하는 격자 수가 달라질 수 있습니다.'}
           </p>
@@ -1211,9 +1265,11 @@ function PolicyPresetSection({
 
       <div className="policyPresetGrid">
         {policyPresets.map((preset) => {
-          const applicability = isBatchResolution || isDistrictScope
+          const applicability = isBatchResolution || isDistrictScope || isSeoulScope
             ? { applicable: true }
-            : policyApplicability(preset, properties, featureRanges);
+            : properties
+            ? policyApplicability(preset, properties, featureRanges)
+            : { applicable: false, reason: '격자를 선택해 주세요.' };
           const selected = preset.id === selectedPolicyId;
           return (
             <button
@@ -1280,7 +1336,9 @@ function PolicyPresetSection({
             }
           >
             {policyLoading
-              ? isDistrictScope
+              ? isSeoulScope
+                ? '서울시 전체 정책 시뮬레이션 중…'
+                : isDistrictScope
                 ? '구 전체 정책 시뮬레이션 중…'
                 : '계산 중…'
               : '정책 시뮬레이션 실행'}
@@ -1295,7 +1353,9 @@ function PolicyPresetSection({
             <div>
               <dt>적용 범위</dt>
               <dd>
-                {policyBatchResult.target_mode === 'district'
+                {policyBatchResult.target_mode === 'seoul'
+                  ? '서울시 전체'
+                  : policyBatchResult.target_mode === 'district'
                   ? `${selectedDistrict} 전체`
                   : policyBatchResult.scope_m
                   ? `${policyBatchResult.scope_m}m × ${policyBatchResult.scope_m}m`
@@ -1306,22 +1366,26 @@ function PolicyPresetSection({
               <dt>대상 100m 격자</dt>
               <dd>{policyBatchResult.grid_count.toLocaleString()}개</dd>
             </div>
-            <div>
-              <dt>정책 적용 전 평균 예측 이상치</dt>
-              <dd>
-                {policyBatchResult.mean_before_anomaly == null
-                  ? '—'
-                  : formatAnomaly(policyBatchResult.mean_before_anomaly)}
-              </dd>
-            </div>
-            <div>
-              <dt>정책 적용 후 평균 예측 이상치</dt>
-              <dd>
-                {policyBatchResult.mean_after_anomaly == null
-                  ? '—'
-                  : formatAnomaly(policyBatchResult.mean_after_anomaly)}
-              </dd>
-            </div>
+            {policyBatchResult.target_mode !== 'seoul' && (
+              <>
+                <div>
+                  <dt>정책 적용 전 평균 예측 이상치</dt>
+                  <dd>
+                    {policyBatchResult.mean_before_anomaly == null
+                      ? '—'
+                      : formatAnomaly(policyBatchResult.mean_before_anomaly)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>정책 적용 후 평균 예측 이상치</dt>
+                  <dd>
+                    {policyBatchResult.mean_after_anomaly == null
+                      ? '—'
+                      : formatAnomaly(policyBatchResult.mean_after_anomaly)}
+                  </dd>
+                </div>
+              </>
+            )}
             <div className="policyDeltaRow">
               <dt>평균 예상 변화</dt>
               <dd>{formatDelta(policyBatchResult.mean_delta_c)}</dd>
@@ -1330,7 +1394,8 @@ function PolicyPresetSection({
               <dt>개선된 격자</dt>
               <dd>{policyBatchResult.improved_grid_count.toLocaleString()}개</dd>
             </div>
-            {policyBatchResult.target_mode === 'district' && (
+            {(policyBatchResult.target_mode === 'district' ||
+              policyBatchResult.target_mode === 'seoul') && (
               <>
                 <div>
                   <dt>성공 / 실패</dt>
@@ -1362,7 +1427,7 @@ function PolicyPresetSection({
               ? '각 100m 격자를 개별 예측한 뒤 실제 격자 면적으로 가중한 열 이상치 결과입니다.'
               : '각 구성 100m 격자를 개별 예측한 뒤 단순 평균한 열 이상치 결과입니다.'}
             {' '}±{policyBatchResult.no_change_threshold_c.toFixed(3)}℃ 이내는 변화 거의 없음으로 분류합니다.
-            {' '}모델 예측 변화량을 반영한 정책 시나리오입니다.
+            {' '}현재 관측 LST를 기준으로 모델이 예측한 anomaly 변화량을 반영한 정책 시나리오입니다.
           </p>
           {appliedFeatures.length > 0 && (
             <div className="policyAppliedFeatures">
@@ -1498,6 +1563,10 @@ function SimulationCard({
     } finally {
       setLoading(false);
     }
+  }
+
+  if (selectedDistrict === '전체' && selectedGridResolution === '100m') {
+    return null;
   }
 
   if (!canSimulate) {

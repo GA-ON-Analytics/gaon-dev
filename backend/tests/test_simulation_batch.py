@@ -337,6 +337,75 @@ class SimulationBatchApiTests(unittest.TestCase):
         self.assertEqual(payload["aggregation"], "area_weighted")
         self.assertIsNotNone(payload["total_area_m2"])
 
+    def test_seoul_selector_uses_all_map_cells_and_compact_partial_results(self) -> None:
+        cells = self.index.select_seoul()
+        failed_grid_id = cells[-1].grid_id
+        changes = {"green_ratio": 0.1, "impervious_ratio": -0.1, "ndvi": 0.05}
+        fake = FakeBatchPredictCore(failed_grid_ids={failed_grid_id})
+        response = self.post_batch(
+            {
+                "scope_mode": "seoul",
+                "changes": changes,
+                "couple_land_cover": False,
+                "compact": True,
+            },
+            fake,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        expected_ids = [cell.grid_id for cell in cells]
+        self.assertEqual(payload["target_mode"], "seoul")
+        self.assertEqual(payload["scope_mode"], "seoul")
+        self.assertTrue(payload["compact"])
+        self.assertNotIn("gu_code", payload)
+        self.assertEqual(payload["grid_count"], 64_574)
+        self.assertEqual(payload["grid_count"], len(cells))
+        self.assertEqual(payload["success_count"], len(cells) - 1)
+        self.assertEqual(payload["failed_count"], 1)
+        self.assertEqual([result["grid_id"] for result in payload["results"]], expected_ids)
+        self.assertEqual(
+            payload["improved_grid_count"]
+            + payload["unchanged_grid_count"]
+            + payload["worsened_grid_count"],
+            payload["success_count"],
+        )
+        self.assertAlmostEqual(
+            payload["total_area_m2"],
+            sum(cell.area_m2 for cell in cells),
+            places=2,
+        )
+        success = payload["results"][0]
+        failed = payload["results"][-1]
+        self.assertEqual(set(success), {"grid_id", "status", "delta_c", "area_m2"})
+        self.assertEqual(set(failed), {"grid_id", "status", "error"})
+        expected_calls = [
+            (expected_ids[start : start + main.SEOUL_BATCH_CHUNK_SIZE], changes, False)
+            for start in range(0, len(expected_ids), main.SEOUL_BATCH_CHUNK_SIZE)
+        ]
+        self.assertEqual(fake.batch_calls, expected_calls)
+
+    def test_seoul_requires_compact_and_rejects_selector_conflicts(self) -> None:
+        invalid_requests = (
+            {"scope_mode": "seoul"},
+            {"scope_mode": "seoul", "compact": True, "gu_code": "11110"},
+            {
+                "scope_mode": "seoul",
+                "compact": True,
+                "grid_ids": [REGULAR_CENTER_GRID_ID],
+            },
+            {
+                "scope_mode": "seoul",
+                "compact": True,
+                "grid_id": REGULAR_CENTER_GRID_ID,
+                "scope_m": 100,
+            },
+        )
+        for request in invalid_requests:
+            with self.subTest(request=request):
+                response = self.post_batch(request, FakePredictCore())
+                self.assertEqual(response.status_code, 422)
+
     def test_compact_is_rejected_for_existing_selectors(self) -> None:
         requests = (
             {"grid_ids": [REGULAR_CENTER_GRID_ID], "compact": True},
@@ -474,6 +543,41 @@ class VectorizedPredictionTests(unittest.TestCase):
             main._batch_summary(targets, vectorized),
             main._batch_summary(targets, legacy),
         )
+
+    def test_compact_batch_keeps_prediction_values_and_partial_failures(self) -> None:
+        grid_ids = [*self.grid_ids, "99999_99999"]
+        changes = {"green_ratio": 0.1, "impervious_ratio": -0.1, "ndvi": 0.05}
+        for couple_land_cover in (False, True):
+            with self.subTest(couple_land_cover=couple_land_cover):
+                full = predict_core.predict_batch(
+                    grid_ids,
+                    changes,
+                    couple_land_cover=couple_land_cover,
+                )
+                compact = predict_core.predict_batch(
+                    grid_ids,
+                    changes,
+                    couple_land_cover=couple_land_cover,
+                    compact=True,
+                )
+
+                for full_result, compact_result in zip(full, compact):
+                    if "error" in full_result:
+                        self.assertEqual(compact_result, full_result)
+                        continue
+                    self.assertEqual(
+                        compact_result,
+                        {
+                            key: full_result[key]
+                            for key in (
+                                "grid_id",
+                                "before_anomaly",
+                                "after_anomaly",
+                                "delta_c",
+                                "warnings",
+                            )
+                        },
+                    )
 
     def test_real_single_and_batch_api_contracts(self) -> None:
         changes = {"green_ratio": 0.05}

@@ -117,10 +117,10 @@ class BatchSimulationRequest(BaseModel):
     # 100m 중심 격자 주변 정책 범위 요청. scope_m은 Pydantic이 422로 검증한다.
     grid_id: str | None = None
     scope_m: Literal[100, 300, 500] | None = None
-    # 자치구 전체는 숫자 scope_m contract와 분리된 selector로 받는다.
+    # 자치구/서울 전체는 숫자 scope_m contract와 분리된 selector로 받는다.
     gu_code: str | None = None
-    scope_mode: Literal["district"] | None = None
-    # 구 전체 결과에서만 개별 ML 진단 필드를 줄인다.
+    scope_mode: Literal["district", "seoul"] | None = None
+    # 행정구역 전체 결과에서는 개별 ML 진단 필드를 줄인다.
     compact: bool = False
     changes: dict[str, float] = Field(default_factory=dict)
     couple_land_cover: bool = True
@@ -233,19 +233,20 @@ def _load_predict_core():
 
 
 BATCH_NO_CHANGE_THRESHOLD_C = 0.132
+SEOUL_BATCH_CHUNK_SIZE = 10_000
 
 
 def _batch_targets(payload: BatchSimulationRequest) -> tuple[list[tuple[str, float | None]], str]:
     has_explicit_ids = payload.grid_ids is not None
     has_spatial_scope = payload.grid_id is not None or payload.scope_m is not None
-    has_district_scope = payload.gu_code is not None or payload.scope_mode is not None
-    selector_count = sum((has_explicit_ids, has_spatial_scope, has_district_scope))
+    has_administrative_scope = payload.gu_code is not None or payload.scope_mode is not None
+    selector_count = sum((has_explicit_ids, has_spatial_scope, has_administrative_scope))
     if selector_count != 1:
         raise HTTPException(
             status_code=422,
             detail=(
                 "Use exactly one selector: grid_ids, grid_id with scope_m, "
-                "or gu_code with district scope_mode"
+                "gu_code with district scope_mode, or seoul scope_mode"
             ),
         )
 
@@ -253,13 +254,41 @@ def _batch_targets(payload: BatchSimulationRequest) -> tuple[list[tuple[str, flo
         if payload.compact:
             raise HTTPException(
                 status_code=422,
-                detail="compact response is supported only for district scope",
+                detail="compact response is supported only for district or seoul scope",
             )
         grid_ids = payload.grid_ids or []
         # 기존 endpoint의 단순 평균 contract와 지도 파일 비의존성을 보존한다.
         return [(grid_id, None) for grid_id in grid_ids], "explicit_grid_ids"
 
-    if has_district_scope:
+    if has_administrative_scope:
+        if payload.scope_mode == "seoul":
+            if payload.gu_code is not None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="gu_code must not be provided for seoul scope",
+                )
+            if not payload.compact:
+                raise HTTPException(
+                    status_code=422,
+                    detail="compact response is required for seoul scope",
+                )
+
+            try:
+                index = load_grid_spatial_index(str(DASHBOARD_100M_MAP_PATH))
+                cells = index.select_seoul()
+            except FileNotFoundError:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Seoul 100m map data is unavailable",
+                ) from None
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Invalid Seoul 100m map data",
+                ) from exc
+
+            return [(cell.grid_id, cell.area_m2) for cell in cells], "seoul"
+
         if payload.gu_code is None or payload.scope_mode != "district":
             raise HTTPException(
                 status_code=422,
@@ -283,7 +312,7 @@ def _batch_targets(payload: BatchSimulationRequest) -> tuple[list[tuple[str, flo
     if payload.compact:
         raise HTTPException(
             status_code=422,
-            detail="compact response is supported only for district scope",
+            detail="compact response is supported only for district or seoul scope",
         )
 
     if payload.grid_id is None or payload.scope_m is None:
@@ -640,6 +669,57 @@ def _predict_batch_individually(
     return results
 
 
+def _predict_batch_vectorized(
+    predict_core: Any,
+    grid_ids: list[str],
+    changes: dict[str, float],
+    couple_land_cover: bool,
+    *,
+    chunk_size: int | None = None,
+    compact: bool = False,
+) -> list[dict[str, Any]]:
+    predict_many = getattr(predict_core, "predict_batch", None)
+    if not callable(predict_many):
+        return _predict_batch_individually(
+            predict_core,
+            grid_ids,
+            changes,
+            couple_land_cover,
+        )
+
+    size = chunk_size or len(grid_ids) or 1
+    results: list[dict[str, Any]] = []
+    for start in range(0, len(grid_ids), size):
+        chunk_ids = grid_ids[start : start + size]
+        try:
+            batch_kwargs: dict[str, Any] = {
+                "couple_land_cover": couple_land_cover,
+            }
+            if compact and getattr(predict_core, "SUPPORTS_COMPACT_BATCH", False):
+                batch_kwargs["compact"] = True
+            chunk_results = predict_many(
+                chunk_ids,
+                changes,
+                **batch_kwargs,
+            )
+            if len(chunk_results) != len(chunk_ids):
+                raise ValueError("predict_batch result count does not match requested grids")
+        except Exception:
+            # 한 chunk의 matrix 실패가 다른 chunk의 성공을 버리지 않게 해당 구간만
+            # 기존 single predict contract로 복구한다.
+            LOGGER.exception(
+                "Vectorized batch simulation failed; falling back to single predict"
+            )
+            chunk_results = _predict_batch_individually(
+                predict_core,
+                chunk_ids,
+                changes,
+                couple_land_cover,
+            )
+        results.extend(chunk_results)
+    return results
+
+
 def _compact_batch_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     compact_results = []
     for result in results:
@@ -671,33 +751,15 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
     targets, target_mode = _batch_targets(payload)
     predict_core = _load_predict_core()
     grid_ids = [grid_id for grid_id, _ in targets]
-    predict_many = getattr(predict_core, "predict_batch", None)
-    if callable(predict_many):
-        try:
-            raw_results = predict_many(
-                grid_ids,
-                payload.changes,
-                couple_land_cover=payload.couple_land_cover,
-            )
-            if len(raw_results) != len(grid_ids):
-                raise ValueError("predict_batch result count does not match requested grids")
-        except Exception:
-            # 예상하지 못한 matrix 실패에서도 기존 partial-failure contract를 보존한다.
-            LOGGER.exception("Vectorized batch simulation failed; falling back to single predict")
-            raw_results = _predict_batch_individually(
-                predict_core,
-                grid_ids,
-                payload.changes,
-                payload.couple_land_cover,
-            )
-    else:
-        # 테스트 fake와 구형 predict core도 기존 contract로 계속 지원한다.
-        raw_results = _predict_batch_individually(
-            predict_core,
-            grid_ids,
-            payload.changes,
-            payload.couple_land_cover,
-        )
+    raw_results = _predict_batch_vectorized(
+        predict_core,
+        grid_ids,
+        payload.changes,
+        payload.couple_land_cover,
+        # 서울 전체만 메모리 상한을 둔다. 기존 자치구/100·300·500 호출 형태는 유지한다.
+        chunk_size=SEOUL_BATCH_CHUNK_SIZE if target_mode == "seoul" else None,
+        compact=payload.compact,
+    )
     results = []
     for (grid_id, area_m2), result in zip(targets, raw_results):
         normalized = dict(result)
@@ -716,12 +778,13 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
         "scope_m": payload.scope_m if target_mode == "spatial_scope" else None,
         "results": response_results,
     }
-    if target_mode == "district":
+    if target_mode in {"district", "seoul"}:
         response.update(
             {
-                "gu_code": payload.gu_code,
                 "scope_mode": payload.scope_mode,
                 "compact": payload.compact,
             }
         )
+        if target_mode == "district":
+            response["gu_code"] = payload.gu_code
     return response

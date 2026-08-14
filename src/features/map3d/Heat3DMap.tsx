@@ -58,6 +58,10 @@ const EMPTY_GRID_DATA: FeatureCollection = {
 };
 const GRID_BOUNDS_CACHE = new WeakMap<FeatureCollection, LngLatBoundsLike | null>();
 const SEOUL_EXTRUSION_DATA_CACHE = new WeakMap<FeatureCollection, FeatureCollection>();
+const SEOUL_POLICY_DATA_CACHE = new WeakMap<
+  FeatureCollection,
+  WeakMap<BatchSimulationResponse, FeatureCollection>
+>();
 
 const OSM_RASTER_STYLE: StyleSpecification = {
   version: 8,
@@ -389,8 +393,11 @@ function getSuccessfulPolicyDeltas(
 function getPolicyGridIds(
   batchSimulationResult: BatchSimulationResponse | null
 ): string[] {
-  // 구 전체에서는 모든 기둥에 초록 cap을 얹지 않고 LST Before/After 색을 그대로 보여준다.
-  if (batchSimulationResult?.target_mode === 'district') return [];
+  // 행정구역 전체에서는 모든 기둥에 초록 cap을 얹지 않고 LST 색을 그대로 보여준다.
+  if (
+    batchSimulationResult?.target_mode === 'district' ||
+    batchSimulationResult?.target_mode === 'seoul'
+  ) return [];
   return [
     ...new Set(
       (batchSimulationResult?.results ?? [])
@@ -406,30 +413,98 @@ function prepareExtrusionData(
   isSeoulOverview: boolean
 ): FeatureCollection {
   if (isSeoulOverview) {
-    const cached = SEOUL_EXTRUSION_DATA_CACHE.get(gridData);
-    if (cached) return cached;
+    let baselineData = SEOUL_EXTRUSION_DATA_CACHE.get(gridData);
+    if (!baselineData) {
+      baselineData = {
+        type: 'FeatureCollection',
+        features: gridData.features.map((feature) => {
+          const properties = feature.properties ?? {};
+          const lst = getFiniteLst(properties[LST_PROPERTY]);
+          return {
+            type: 'Feature',
+            geometry: feature.geometry,
+            properties: {
+              grid_id: properties.grid_id ?? properties.display_grid_id ?? null,
+              gu_code: properties.gu_code ?? null,
+              gu_name: properties.gu_name ?? null,
+              [LST_PROPERTY]: lst,
+              [NUMERIC_LST_PROPERTY]: lst,
+              [VISUAL_HEIGHT_PROPERTY]: lst === null ? 0 : getVisualHeight(lst)
+            }
+          };
+        })
+      };
+      SEOUL_EXTRUSION_DATA_CACHE.set(gridData, baselineData);
+    }
 
-    const projected: FeatureCollection = {
+    if (batchSimulationResult?.target_mode !== 'seoul') return baselineData;
+
+    let resultCache = SEOUL_POLICY_DATA_CACHE.get(gridData);
+    const cachedPolicyData = resultCache?.get(batchSimulationResult);
+    if (cachedPolicyData) return cachedPolicyData;
+
+    const preparationStarted = performance.now();
+    const resultMapStarted = performance.now();
+    const successfulDeltas = getSuccessfulPolicyDeltas(batchSimulationResult);
+    const resultIds = new Set(
+      batchSimulationResult.results.map((result) => result.grid_id)
+    );
+    const failedIds = new Set(
+      batchSimulationResult.results
+        .filter((result) => result.status === 'failed')
+        .map((result) => result.grid_id)
+    );
+    const resultMapMs = performance.now() - resultMapStarted;
+    let matchedSuccess = 0;
+    let matchedFailed = 0;
+    const matchedResultIds = new Set<string>();
+    const featureMappingStarted = performance.now();
+    const policyData: FeatureCollection = {
       type: 'FeatureCollection',
-      features: gridData.features.map((feature) => {
-        const properties = feature.properties ?? {};
-        const lst = getFiniteLst(properties[LST_PROPERTY]);
+      features: baselineData.features.map((feature) => {
+        const gridId = getGridId(feature.properties);
+        if (gridId && resultIds.has(gridId)) {
+          matchedResultIds.add(gridId);
+          if (failedIds.has(gridId)) matchedFailed += 1;
+        }
+        const delta = gridId ? successfulDeltas.get(gridId) : undefined;
+        const lst = getFiniteLst(feature.properties?.[NUMERIC_LST_PROPERTY]);
+        if (delta === undefined || lst === null) return feature;
+
+        matchedSuccess += 1;
+        const afterVisualLst = lst + delta;
         return {
-          type: 'Feature',
-          geometry: feature.geometry,
+          ...feature,
           properties: {
-            grid_id: properties.grid_id ?? properties.display_grid_id ?? null,
-            gu_code: properties.gu_code ?? null,
-            gu_name: properties.gu_name ?? null,
-            [LST_PROPERTY]: lst,
-            [NUMERIC_LST_PROPERTY]: lst,
-            [VISUAL_HEIGHT_PROPERTY]: lst === null ? 0 : getVisualHeight(lst)
+            ...(feature.properties ?? {}),
+            [AFTER_VISUAL_LST_PROPERTY]: afterVisualLst,
+            [AFTER_VISUAL_HEIGHT_PROPERTY]: getVisualHeight(afterVisualLst)
           }
         };
       })
     };
-    SEOUL_EXTRUSION_DATA_CACHE.set(gridData, projected);
-    return projected;
+    const featureMappingMs = performance.now() - featureMappingStarted;
+    const unmatchedResult = resultIds.size - matchedResultIds.size;
+    const mapFeatureWithoutResult = baselineData.features.length - matchedResultIds.size;
+
+    if (import.meta.env.DEV) {
+      console.info('[Map3D] Seoul policy data prepared', {
+        resultMapMs: Number(resultMapMs.toFixed(2)),
+        featureMappingMs: Number(featureMappingMs.toFixed(2)),
+        beforeSetDataMs: Number((performance.now() - preparationStarted).toFixed(2)),
+        matchedSuccess,
+        matchedFailed,
+        unmatchedResult,
+        mapFeatureWithoutResult
+      });
+    }
+
+    if (!resultCache) {
+      resultCache = new WeakMap<BatchSimulationResponse, FeatureCollection>();
+      SEOUL_POLICY_DATA_CACHE.set(gridData, resultCache);
+    }
+    resultCache.set(batchSimulationResult, policyData);
+    return policyData;
   }
 
   const successfulDeltas = getSuccessfulPolicyDeltas(batchSimulationResult);
@@ -748,9 +823,9 @@ export default function Heat3DMap({
   const isSeoulOverview = selectedDistrict === ALL_DISTRICTS;
   gridDataRef.current = gridData;
   isSeoulOverviewRef.current = isSeoulOverview;
-  batchSimulationResultRef.current = isSeoulOverview ? null : batchSimulationResult;
-  viewModeRef.current = isSeoulOverview ? 'before' : viewMode;
-  policyGridIdsRef.current = isSeoulOverview ? [] : getPolicyGridIds(batchSimulationResult);
+  batchSimulationResultRef.current = batchSimulationResult;
+  viewModeRef.current = viewMode;
+  policyGridIdsRef.current = getPolicyGridIds(batchSimulationResult);
   selectedGridIdRef.current = isSeoulOverview ? null : selectedGridId;
   onGridFeatureClickRef.current = onGridFeatureClick;
   onDistrictDrillDownRef.current = onDistrictDrillDown;
@@ -862,14 +937,13 @@ export default function Heat3DMap({
     const map = mapRef.current;
     if (!map || !isMapLoadedRef.current) return;
 
-    if (isSeoulOverviewRef.current) {
-      updateGridPolicyScope(map, []);
-      updateGridViewMode(map, 'before');
-      return;
-    }
-
     // 새 ML/API 호출 없이 기존 source data의 시나리오 속성만 교체한다.
-    setGridSourceData(map, gridDataRef.current, batchSimulationResult, false);
+    setGridSourceData(
+      map,
+      gridDataRef.current,
+      batchSimulationResult,
+      isSeoulOverviewRef.current
+    );
     updateGridPolicyScope(map, getPolicyGridIds(batchSimulationResult));
     updateGridViewMode(map, viewModeRef.current);
   }, [batchSimulationResult]);
