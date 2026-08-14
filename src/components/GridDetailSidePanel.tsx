@@ -943,11 +943,6 @@ function formatDelta(delta: number): string {
   return `${sign}${Math.abs(delta).toFixed(3)}℃`;
 }
 
-function formatAnomaly(value: number): string {
-  const sign = value > 0 ? '+' : value < 0 ? '−' : '';
-  return `${sign}${Math.abs(value).toFixed(3)}℃`;
-}
-
 function isPolicyRatio(feature: PolicyFeature): boolean {
   return (
     feature === 'green_ratio' ||
@@ -1212,7 +1207,7 @@ function PolicyPresetSection({
         />
       </div>
       <p className="policyPresetNotice">
-        정책 변수 변화량은 100m 격자에서 정책을 동일한 조건으로 비교하기 위한 표준 시나리오입니다.
+        선택한 범위의 각 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.
       </p>
 
       {selectedGridResolution === '100m' && (
@@ -1233,10 +1228,14 @@ function PolicyPresetSection({
               </span>
             </label>
           ) : ([
-              { scope: 100, label: '100m', description: '현재 격자만' },
-              { scope: 300, label: '300m', description: '주변 약 9개 격자' },
-              { scope: 500, label: '500m', description: '주변 약 25개 격자' },
-              { scope: 'district', label: '구 전체', description: '모든 100m 격자' }
+              { scope: 100, label: '100m', description: '현재 격자' },
+              { scope: 300, label: '300m', description: '주변 약 9개 100m 격자' },
+              { scope: 500, label: '500m', description: '주변 약 25개 100m 격자' },
+              {
+                scope: 'district',
+                label: '구 전체',
+                description: `${selectedDistrict} 전체 100m 격자`
+              }
             ] as const).map((option) => (
             <label key={option.scope}>
               <input
@@ -1291,7 +1290,12 @@ function PolicyPresetSection({
           <div className="policyPresetHeading">
             <div>
               <strong>{selectedPolicy.name}</strong>
-              <span>{selectedPolicy.scenarioLabel}</span>
+              <span>
+                {selectedPolicy.scenarioLabel.replace(
+                  '100m 격자 기준 표준 시나리오',
+                  '각 100m 격자에 동일 조건 적용'
+                )}
+              </span>
             </div>
             <a href={selectedPolicy.sourceUrl} target="_blank" rel="noreferrer">
               정책 사례 보기
@@ -1340,7 +1344,7 @@ function PolicyPresetSection({
                 ? '서울시 전체 정책 시뮬레이션 중…'
                 : isDistrictScope
                 ? '구 전체 정책 시뮬레이션 중…'
-                : '계산 중…'
+                : '정책 시뮬레이션 중…'
               : '정책 시뮬레이션 실행'}
           </button>
         </div>
@@ -1350,8 +1354,16 @@ function PolicyPresetSection({
         <div className="policyResult" aria-live="polite">
           <div className="policyResultTitle">정책 시뮬레이션 결과</div>
           <dl className="policyAnomalyRows">
+            <div className="policyDeltaRow">
+              <dt>평균 예상 변화</dt>
+              <dd>{formatDelta(policyBatchResult.mean_delta_c)}</dd>
+            </div>
             <div>
-              <dt>적용 범위</dt>
+              <dt>개선 격자</dt>
+              <dd>{policyBatchResult.improved_grid_count.toLocaleString()}개</dd>
+            </div>
+            <div>
+              <dt>정책 적용 범위</dt>
               <dd>
                 {policyBatchResult.target_mode === 'seoul'
                   ? '서울시 전체'
@@ -1363,46 +1375,29 @@ function PolicyPresetSection({
               </dd>
             </div>
             <div>
-              <dt>대상 100m 격자</dt>
+              <dt>대상 격자(100m)</dt>
               <dd>{policyBatchResult.grid_count.toLocaleString()}개</dd>
             </div>
-            {policyBatchResult.target_mode !== 'seoul' && (
-              <>
-                <div>
-                  <dt>정책 적용 전 평균 예측 이상치</dt>
-                  <dd>
-                    {policyBatchResult.mean_before_anomaly == null
-                      ? '—'
-                      : formatAnomaly(policyBatchResult.mean_before_anomaly)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>정책 적용 후 평균 예측 이상치</dt>
-                  <dd>
-                    {policyBatchResult.mean_after_anomaly == null
-                      ? '—'
-                      : formatAnomaly(policyBatchResult.mean_after_anomaly)}
-                  </dd>
-                </div>
-              </>
-            )}
-            <div className="policyDeltaRow">
-              <dt>평균 예상 변화</dt>
-              <dd>{formatDelta(policyBatchResult.mean_delta_c)}</dd>
+            <div>
+              <dt>변화 미미</dt>
+              <dd>{policyBatchResult.unchanged_grid_count.toLocaleString()}개</dd>
             </div>
             <div>
-              <dt>개선된 격자</dt>
-              <dd>{policyBatchResult.improved_grid_count.toLocaleString()}개</dd>
+              <dt>악화 격자</dt>
+              <dd>{policyBatchResult.worsened_grid_count.toLocaleString()}개</dd>
             </div>
+            {policyBatchResult.failed_count > 0 && (
+              <div>
+                <dt>실패</dt>
+                <dd>{policyBatchResult.failed_count.toLocaleString()}개</dd>
+              </div>
+            )}
             {(policyBatchResult.target_mode === 'district' ||
               policyBatchResult.target_mode === 'seoul') && (
               <>
                 <div>
-                  <dt>성공 / 실패</dt>
-                  <dd>
-                    {policyBatchResult.success_count.toLocaleString()}개 /{' '}
-                    {policyBatchResult.failed_count.toLocaleString()}개
-                  </dd>
+                  <dt>성공 격자</dt>
+                  <dd>{policyBatchResult.success_count.toLocaleString()}개</dd>
                 </div>
                 <div>
                   <dt>실제 적용 면적</dt>
@@ -1412,22 +1407,15 @@ function PolicyPresetSection({
                       : `${Math.round(policyBatchResult.successful_area_m2).toLocaleString()}㎡`}
                   </dd>
                 </div>
-                <div>
-                  <dt>변화 미미 / 악화</dt>
-                  <dd>
-                    {policyBatchResult.unchanged_grid_count.toLocaleString()}개 /{' '}
-                    {policyBatchResult.worsened_grid_count.toLocaleString()}개
-                  </dd>
-                </div>
               </>
             )}
           </dl>
           <p className="policyAnomalyNote">
             {policyBatchResult.aggregation === 'area_weighted'
-              ? '각 100m 격자를 개별 예측한 뒤 실제 격자 면적으로 가중한 열 이상치 결과입니다.'
-              : '각 구성 100m 격자를 개별 예측한 뒤 단순 평균한 열 이상치 결과입니다.'}
-            {' '}±{policyBatchResult.no_change_threshold_c.toFixed(3)}℃ 이내는 변화 거의 없음으로 분류합니다.
-            {' '}현재 관측 LST를 기준으로 모델이 예측한 anomaly 변화량을 반영한 정책 시나리오입니다.
+              ? '평균 예상 변화는 각 100m 격자를 개별 예측한 뒤 실제 격자 면적으로 가중한 모델 결과입니다.'
+              : '평균 예상 변화는 각 구성 100m 격자를 개별 예측한 뒤 단순 평균한 모델 결과입니다.'}
+            {' '}정책 적용 후는 현재 관측 LST에 모델 예측 변화량을 반영한 시나리오이며 실제 미래 관측값이 아닙니다.
+            {' '}±{policyBatchResult.no_change_threshold_c.toFixed(3)}℃ 이내는 변화 미미로 분류합니다.
           </p>
           {appliedFeatures.length > 0 && (
             <div className="policyAppliedFeatures">

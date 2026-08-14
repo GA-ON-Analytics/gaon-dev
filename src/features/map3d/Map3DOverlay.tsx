@@ -41,6 +41,9 @@ export default function Map3DOverlay({
   const [is3DOpen, setIs3DOpen] = useState(false);
   const [viewMode, setViewMode] = useState<Map3DViewMode>('before');
   const canOpen3D = resolution === '100m' && Boolean(gridData?.features.length);
+  const contextLabel = `${
+    selectedDistrict === '전체' ? '서울시 전체' : selectedDistrict
+  } · 100m 열 분포`;
 
   useEffect(() => {
     // 새 시뮬레이션 결과는 즉시 After로 보이고, 결과 reset 시 Before로 복귀한다.
@@ -68,30 +71,41 @@ export default function Map3DOverlay({
             onDistrictDrillDown={onDistrictDrillDown}
             onClearSelectedGrid={onClearSelectedGrid}
           />
-          {batchSimulationResult && (
-            <div
-              className="map3dPolicyViewControl"
-              role="group"
-              aria-label="정책 시뮬레이션 전후 비교"
-            >
-              <button
-                type="button"
-                className={viewMode === 'before' ? 'isActive' : ''}
-                aria-pressed={viewMode === 'before'}
-                onClick={() => setViewMode('before')}
-              >
-                현재
-              </button>
-              <button
-                type="button"
-                className={viewMode === 'after' ? 'isActive' : ''}
-                aria-pressed={viewMode === 'after'}
-                onClick={() => setViewMode('after')}
-              >
-                정책 적용 후
-              </button>
+          <div className="map3dViewHeader">
+            <div className="map3dContextLabel" aria-label={`현재 3D 분석 범위: ${contextLabel}`}>
+              {contextLabel}
             </div>
-          )}
+            {batchSimulationResult && (
+              <>
+                <div
+                  className="map3dPolicyViewControl"
+                  role="group"
+                  aria-label="정책 시뮬레이션 전후 비교"
+                >
+                  <button
+                    type="button"
+                    className={viewMode === 'before' ? 'isActive' : ''}
+                    aria-pressed={viewMode === 'before'}
+                    onClick={() => setViewMode('before')}
+                  >
+                    현재
+                  </button>
+                  <button
+                    type="button"
+                    className={viewMode === 'after' ? 'isActive' : ''}
+                    aria-pressed={viewMode === 'after'}
+                    onClick={() => setViewMode('after')}
+                  >
+                    정책 적용 후
+                  </button>
+                </div>
+                <p className="map3dPolicyScenarioNote">
+                  정책 적용 후는 현재 관측 LST에 모델 예측 변화량을 반영한 시나리오이며
+                  실제 미래 관측값이 아닙니다.
+                </p>
+              </>
+            )}
+          </div>
         </div>
       )}
       {canOpen3D && (
