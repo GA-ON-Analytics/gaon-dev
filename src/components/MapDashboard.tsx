@@ -828,14 +828,25 @@ function ShelterMarker({ shelter }: { shelter: ShelterPin | null }) {
       );
     };
 
-    // 격자 팝업은 지도 이동이 끝난 뒤에 붙는다. 처음 한 번만 재면 팝업이 아직
-    // 없어서 '안 겹친다'로 잘못 판단한다. popupopen 까지 듣고, 이동 애니메이션이
-    // 끝난 뒤로도 한 번 더 잰다.
-    const timers = [window.setTimeout(update, 0), window.setTimeout(update, 400)];
-    map.on('move zoom resize popupopen popupclose', update);
+    // 언제 다시 재는가 — 여기가 핵심이다.
+    //
+    // `move`·`zoom` 은 애니메이션 도중에 계속 발생한다. 그때는 라벨과 팝업이
+    // 아직 옮겨지는 중이라 위치가 틀리고(줌 중에는 pane 에 scale 까지 걸린다),
+    // 그 값으로 판단하면 확대·축소할 때마다 겹쳤다 안 겹쳤다 한다.
+    // 끝난 뒤(`moveend`·`zoomend`)에만 재고, 그마저도 자리가 완전히 잡히도록
+    // 한 박자 늦춰 한 번 더 잰다. 격자 팝업은 이동이 끝난 뒤에 붙으므로
+    // `popupopen` 도 듣는다.
+    let timers: number[] = [];
+    const schedule = () => {
+      timers.forEach(window.clearTimeout);
+      timers = [window.setTimeout(update, 0), window.setTimeout(update, 220)];
+    };
+
+    schedule();
+    map.on('moveend zoomend resize popupopen popupclose', schedule);
     return () => {
       timers.forEach(window.clearTimeout);
-      map.off('move zoom resize popupopen popupclose', update);
+      map.off('moveend zoomend resize popupopen popupclose', schedule);
     };
   }, [map, shelter, shelterKey]);
 
