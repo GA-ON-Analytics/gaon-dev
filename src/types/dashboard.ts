@@ -72,6 +72,39 @@ export interface PolicyPreset {
   minimumRequirements: readonly PolicyMinimumRequirement[];
 }
 
+/** 사례 팝업의 '규모'·'효과' 한 줄. value 는 원문에 적힌 수치 그대로 옮긴다. */
+export interface PolicyCaseFact {
+  label: string;
+  value: string;
+}
+
+/**
+ * 정책 프리셋에 붙는 실제 시행 사례 요약. 원문은 `sourceUrl`(백엔드가 가진 값)이다.
+ *
+ * 출처가 전부 news.seoul.go.kr 인데 이 서버가 `frame-ancestors 'self'` 를 내려보내
+ * iframe 으로는 띄울 수 없다. 그래서 원문을 읽고 우리가 요약해 보여준다.
+ * 여기 들어가는 값은 전부 원문에 적힌 것이어야 한다 — 추정치를 쓰지 말 것(#50).
+ *
+ * 정책 '정의'(변화량·최소요건)와 달리 이건 화면에만 쓰는 설명 문구라
+ * 백엔드가 아니라 `src/config/policyCases.ts`에 둔다.
+ */
+export interface PolicyCase {
+  /** 원문에 나온 사업명 */
+  project: string;
+  agency: string;
+  period: string;
+  /** 무엇을 했는지 2~3줄 */
+  summary: readonly string[];
+  facts: readonly PolicyCaseFact[];
+  /** 수치의 성격을 밝혀야 할 때만 (예: 해외 연구 인용치) */
+  caveat?: string;
+  source: {
+    name: string;
+    /** 원문 수정일 */
+    date: string;
+  };
+}
+
 /** `/api/policies` 응답. 정책 정의의 원본은 `backend/policy_presets.py`다. */
 export interface PolicyPresetsResponse {
   count: number;
