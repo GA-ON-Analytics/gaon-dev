@@ -4456,7 +4456,7 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 22px 24px 16px;
+  padding: 20px 24px 14px;
 }
 
 .onboardingHeader > div {
@@ -4509,15 +4509,16 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   min-width: 0;
 }
 
-/* 요점은 초록 카드, 곁들이는 설명은 회색 카드. 이 프로젝트의 카드 톤
-   (.gdpChatIntro)과 같은 반경·테두리를 쓴다. 전부 같은 크기의 문단으로 쌓으면
-   어디부터 읽어야 할지 모를 덩어리가 된다. */
+/* 카드 하나에 요점과 설명을 함께 담는다. 줄마다 카드를 나눴더니 카드 사이
+   여백이 쌓여 글이 흩어져 보였다. 안에서는 얇은 선으로만 나눈다. */
+.onboardingText {
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--gdp-sub);
+}
+
 .onboardingLead {
   margin: 0;
-  padding: 14px 16px;
-  border: 1px solid rgba(31, 81, 33, 0.12);
-  border-radius: 15px;
-  background: var(--gdp-green-soft);
   color: var(--gdp-ink);
   font-size: 14.5px;
   font-weight: 600;
@@ -4526,28 +4527,28 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 }
 
 .onboardingText ul {
-  display: flex;
-  margin: 10px 0 0;
-  flex-direction: column;
-  gap: 8px;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .onboardingText li {
   position: relative;
-  padding: 11px 14px 11px 30px;
-  border-radius: 13px;
-  background: var(--gdp-sub);
+  padding: 10px 0 10px 14px;
+  border-top: 1px solid rgba(25, 31, 40, 0.07);
   color: var(--gdp-ink2);
   font-size: 12.5px;
   line-height: 1.6;
 }
 
+.onboardingText li:last-child {
+  padding-bottom: 0;
+}
+
 .onboardingText li::before {
   position: absolute;
   top: 17px;
-  left: 14px;
+  left: 1px;
   width: 5px;
   height: 5px;
   border-radius: 50%;
@@ -4556,9 +4557,6 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   opacity: 0.5;
 }
 
-/* 사진 자리는 비율로 잡아둔다. 사진이 아직 없어도 팝업 높이가 단계마다
-   출렁이지 않는다. 화면이 낮으면(노트북) 사진부터 줄여 팝업이 화면을 넘지
-   않게 한다 — 그때는 contain 이라 사진이 잘리지 않고 좌우에 여백이 생긴다. */
 .onboardingShot {
   display: flex;
   overflow: hidden;
@@ -4599,12 +4597,9 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   }
 
   .onboardingText {
-    display: flex;
-    width: 320px;
+    width: 330px;
     flex: none;
-    flex-direction: column;
-    justify-content: center;
-    padding-right: 4px;
+    align-self: center;   /* stretch 로 두면 카드가 세로로 늘어나 속이 빈다 */
   }
 }
 
@@ -4636,7 +4631,7 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 24px 8px;
+  padding: 12px 24px 6px;
 }
 
 .onboardingDots {
@@ -4690,7 +4685,7 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 
 .onboardingRecall {
   margin: 0;
-  padding: 0 24px 18px;
+  padding: 0 24px 15px;
   color: var(--gdp-ink3);
   font-size: 10.5px;
   line-height: 1.5;
