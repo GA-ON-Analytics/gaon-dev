@@ -191,11 +191,13 @@ export interface BatchSimulationResponse {
   aggregation: 'area_weighted' | 'unweighted' | null;
   total_area_m2: number | null;
   successful_area_m2: number | null;
-  target_mode: 'explicit_grid_ids' | 'spatial_scope' | 'district' | 'seoul';
+  target_mode: 'explicit_grid_ids' | 'spatial_scope' | 'district' | 'seoul' | 'aggregate';
   center_grid_id: string | null;
   scope_m: SimulationBatchScope | null;
   gu_code?: string;
   scope_mode?: 'district' | 'seoul';
+  aggregate_resolution?: '250m' | '500m';
+  aggregate_id?: string;
   compact?: boolean;
   results: BatchSimulationGridResult[];
 }

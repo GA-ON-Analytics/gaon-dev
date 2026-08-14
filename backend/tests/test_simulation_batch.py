@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 
 from backend import main
 from backend.ml import predict_core
-from backend.simulation_scope import _geometry_centroid, load_grid_spatial_index
+from backend.simulation_scope import (
+    _geometry_centroid,
+    load_aggregate_grid_index,
+    load_grid_spatial_index,
+)
 
 
 REGULAR_CENTER_GRID_ID = "11110_00142"
@@ -76,6 +80,10 @@ class SimulationBatchApiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.client = TestClient(main.app)
         cls.index = load_grid_spatial_index(str(main.DASHBOARD_100M_MAP_PATH))
+        cls.aggregate_indexes = {
+            resolution: load_aggregate_grid_index(str(main.DASHBOARD_GRID_PATHS[resolution]))
+            for resolution in ("250m", "500m")
+        }
 
     def post_batch(self, payload: dict, fake: FakePredictCore):
         with (
@@ -239,6 +247,63 @@ class SimulationBatchApiTests(unittest.TestCase):
         self.assertEqual(payload["aggregation"], "unweighted")
         self.assertNotIn("compact", payload)
 
+    def test_aggregate_selector_uses_constituent_100m_cells_and_area_weights(self) -> None:
+        cases = (
+            ("250m", "11680_00009", False),
+            ("500m", "11680_00011", True),
+        )
+        for resolution, aggregate_id, uses_explicit_members in cases:
+            with self.subTest(resolution=resolution, aggregate_id=aggregate_id):
+                expected_cells = self.aggregate_indexes[resolution].select_constituents(
+                    aggregate_id,
+                    self.index,
+                    use_explicit_members=uses_explicit_members,
+                )
+                fake = FakeBatchPredictCore()
+                response = self.post_batch(
+                    {
+                        "aggregate_resolution": resolution,
+                        "aggregate_id": aggregate_id,
+                        "changes": {"green_ratio": 0.05},
+                        "couple_land_cover": False,
+                    },
+                    fake,
+                )
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                expected_ids = [cell.grid_id for cell in expected_cells]
+                self.assertEqual(payload["target_mode"], "aggregate")
+                self.assertEqual(payload["aggregate_resolution"], resolution)
+                self.assertEqual(payload["aggregate_id"], aggregate_id)
+                self.assertEqual(payload["grid_count"], len(expected_cells))
+                self.assertEqual(payload["aggregation"], "area_weighted")
+                self.assertAlmostEqual(
+                    payload["successful_area_m2"],
+                    sum(cell.area_m2 for cell in expected_cells),
+                    places=2,
+                )
+                self.assertEqual(fake.batch_calls, [(expected_ids, {"green_ratio": 0.05}, False)])
+
+    def test_aggregate_geometry_sliver_uses_one_nearest_100m_fallback(self) -> None:
+        aggregate_id = "11680_00010"
+        expected_cells = self.aggregate_indexes["250m"].select_constituents(
+            aggregate_id,
+            self.index,
+            use_explicit_members=False,
+        )
+        self.assertEqual(len(expected_cells), 1)
+
+        response = self.post_batch(
+            {
+                "aggregate_resolution": "250m",
+                "aggregate_id": aggregate_id,
+                "changes": {"green_ratio": 0.05},
+            },
+            FakeBatchPredictCore(),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["grid_count"], 1)
+
     def test_district_selector_uses_map_gu_code_and_vectorized_batch(self) -> None:
         gu_code = "11110"
         district_cells = self.index.select_district(gu_code)
@@ -400,6 +465,14 @@ class SimulationBatchApiTests(unittest.TestCase):
                 "grid_id": REGULAR_CENTER_GRID_ID,
                 "scope_m": 100,
             },
+            {
+                "scope_mode": "seoul",
+                "compact": True,
+                "aggregate_resolution": "250m",
+                "aggregate_id": "11680_00009",
+            },
+            {"aggregate_resolution": "250m"},
+            {"aggregate_id": "11680_00009"},
         )
         for request in invalid_requests:
             with self.subTest(request=request):
@@ -412,6 +485,11 @@ class SimulationBatchApiTests(unittest.TestCase):
             {
                 "grid_id": REGULAR_CENTER_GRID_ID,
                 "scope_m": 100,
+                "compact": True,
+            },
+            {
+                "aggregate_resolution": "250m",
+                "aggregate_id": "11680_00009",
                 "compact": True,
             },
         )

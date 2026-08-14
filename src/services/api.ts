@@ -166,7 +166,7 @@ export function getPolicyPresets(): Promise<PolicyPresetsResponse> {
   return fetchJson<PolicyPresetsResponse>('/api/policies');
 }
 
-// 여러 100m 격자에 같은 정책을 적용해 평균 예측 변화를 구한다 (250/500m 집계 격자용).
+// 명시한 여러 100m 격자에 같은 정책을 적용하는 기존 batch contract.
 export function simulateBatchGridPolicy(
   gridIds: string[],
   changes: Record<string, number>,
@@ -177,6 +177,30 @@ export function simulateBatchGridPolicy(
     { grid_ids: string[]; changes: Record<string, number>; couple_land_cover: boolean }
   >('/api/simulate/batch', {
     grid_ids: gridIds,
+    changes,
+    couple_land_cover: coupleLandCover
+  });
+}
+
+// 250/500m aggregate geometry를 구성하는 실제 100m 지도 격자를 backend가 선택한다.
+// aggregate row 자체는 ML 입력으로 보내지 않는다.
+export function simulateAggregateGridPolicy(
+  resolution: '250m' | '500m',
+  aggregateId: string,
+  changes: Record<string, number>,
+  coupleLandCover = true
+): Promise<BatchSimulationResponse> {
+  return postJson<
+    BatchSimulationResponse,
+    {
+      aggregate_resolution: '250m' | '500m';
+      aggregate_id: string;
+      changes: Record<string, number>;
+      couple_land_cover: boolean;
+    }
+  >('/api/simulate/batch', {
+    aggregate_resolution: resolution,
+    aggregate_id: aggregateId,
     changes,
     couple_land_cover: coupleLandCover
   });

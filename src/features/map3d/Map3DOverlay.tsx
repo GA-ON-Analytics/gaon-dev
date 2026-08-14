@@ -44,9 +44,8 @@ export default function Map3DOverlay({
     resolution === '100m' || resolution === '250m' || resolution === '500m';
   const has3DGridData = Boolean(gridData?.features.length);
   const canOpen3D = supports3DResolution && has3DGridData;
-  // 정책 결과와 Before/After는 실제 100m ML context에서만 유효하다.
-  const activeBatchSimulationResult =
-    resolution === '100m' ? batchSimulationResult : null;
+  // 부모가 resolution·district·selected ID까지 검증한 현재 context 결과만 전달한다.
+  const activeBatchSimulationResult = batchSimulationResult;
   const contextLabel = `${
     selectedDistrict === '전체' ? '서울시 전체' : selectedDistrict
   } · ${resolution} 열 분포`;
