@@ -36,6 +36,7 @@ import type {
   LayerKey
 } from '../types/dashboard';
 import GridDetailSidePanel from './GridDetailSidePanel';
+import OnboardingGuide, { shouldShowOnboarding } from './OnboardingGuide';
 import AiChatLauncher from './AiChatLauncher';
 import MapLegend from './MapLegend';
 import CanvasGridLayer, { featureContainsPoint } from './CanvasGridLayer';
@@ -981,6 +982,12 @@ export function MapDashboard() {
     useState<L.LatLng | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(initialDetailPanelOpen);
   const [activeTool, setActiveTool] = useState('지도선택');
+  // 첫 접속이면 사용 가이드를 띄운다. 판단은 마운트 때 한 번만 —
+  // 렌더 중에 localStorage를 읽으면 닫은 뒤에도 다시 뜬다.
+  const [guideOpen, setGuideOpen] = useState(false);
+  useEffect(() => {
+    if (shouldShowOnboarding()) setGuideOpen(true);
+  }, []);
   const activeToolRef = useRef(activeTool);
   activeToolRef.current = activeTool;   // 항상 최신 모드를 담아둠 (클릭 핸들러가 참조)
   const selectedGridIdRef = useRef<string | null>(null);   // 현재 팝업이 열린 격자 id
@@ -2007,6 +2014,7 @@ export function MapDashboard() {
       )}
       <div className="leftOverlayRail">
         <SearchPanel
+          onOpenGuide={() => setGuideOpen(true)}
           districts={districts}
           dongSearchEntries={dongSearchEntries}
           dongSearchLoading={dongSearchLoading}
@@ -2055,6 +2063,7 @@ export function MapDashboard() {
         selectedDisplayGridId={chatDisplayGridId}
         selectedGuName={chatGuName}
       />
+      {guideOpen && <OnboardingGuide onClose={() => setGuideOpen(false)} />}
     </div>
   );
 }
@@ -2075,6 +2084,7 @@ interface SearchPanelProps {
   onGridResolutionChange: (resolution: GridResolution) => void;
   onLayerChange: (layer: LayerKey) => void;
   onGridSearch: (code: string) => void;
+  onOpenGuide: () => void;
 }
 
 function SearchPanel({
@@ -2092,7 +2102,8 @@ function SearchPanel({
   onDongSelect,
   onGridResolutionChange,
   onLayerChange,
-  onGridSearch
+  onGridSearch,
+  onOpenGuide
 }: SearchPanelProps) {
   const [locationQuery, setLocationQuery] = useState('');
   const [gridCodeInput, setGridCodeInput] = useState('');
@@ -2226,6 +2237,17 @@ function SearchPanel({
           <p>Urban Heat Island</p>
           <h1>도시 열섬 해결 대시보드</h1>
         </div>
+        {/* 가이드를 닫은 뒤에도 다시 찾을 수 있어야 한다. 챗봇 창을 옮기고 못 찾는
+            문제를 더블클릭 초기화로 푼 것과 같은 이유다. */}
+        <button
+          className="heatPanelGuide"
+          type="button"
+          onClick={onOpenGuide}
+          title="사용 가이드 다시 보기"
+          aria-label="사용 가이드 다시 보기"
+        >
+          ?
+        </button>
       </div>
 
       <div className="heatControlBlock">
