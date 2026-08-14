@@ -8,6 +8,9 @@ import { createPortal } from 'react-dom';
  */
 export const ONBOARDING_STORAGE_KEY = 'gaon_onboarding_seen';
 
+/** 가이드가 닫혔다는 신호. 챗봇 말풍선이 이 뒤에 뜬다. */
+export const GUIDE_CLOSED_EVENT = 'gaon:guide-closed';
+
 /** 첫 접속인지. localStorage를 못 쓰는 환경(사생활 보호 모드 등)에서는 띄우지 않는다. */
 export function shouldShowOnboarding(): boolean {
   try {
@@ -76,6 +79,16 @@ const STEPS: readonly Step[] = [
     ],
     image: '/guide/step-4-simulation.webp',
     imageAlt: '정책 시나리오와 직접 시뮬레이션 화면'
+  },
+  {
+    title: '말로 물어봐도 됩니다',
+    body: [
+      '오른쪽 아래 마스코트를 누르면 AI 챗봇이 열립니다.',
+      '"녹지율을 5%p 높여줘"처럼 말하면 시뮬레이션을 대신 돌려주고, "어떤 정책이 가장 효과적이야?"처럼 물으면 정책을 비교해 줍니다.',
+      '"NDVI가 무슨 뜻이야?" 같은 용어 질문은 격자를 고르지 않아도 답합니다.'
+    ],
+    image: '/guide/step-5-chat.webp',
+    imageAlt: 'AI 챗봇 창이 열린 화면'
   }
 ];
 
@@ -97,10 +110,7 @@ function OnboardingGuide({ onClose }: Props) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        rememberSeen();
-        onClose();
-      }
+      if (event.key === 'Escape') close();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -108,6 +118,9 @@ function OnboardingGuide({ onClose }: Props) {
 
   function close() {
     rememberSeen();
+    // 챗봇 말풍선이 이어서 뜬다(AiChatLauncher). 가이드가 떠 있는 동안 같이
+    // 뜨면 둘 다 읽히지 않아서, 닫히는 시점을 알려준다.
+    window.dispatchEvent(new Event(GUIDE_CLOSED_EVENT));
     onClose();
   }
 
@@ -156,10 +169,17 @@ function OnboardingGuide({ onClose }: Props) {
             )}
           </div>
 
+          {/* 첫 줄은 그 단계의 요점, 나머지는 곁들이는 설명. 다 같은 크기로 쌓으면
+              어디부터 읽어야 할지 모르겠는 문단 덩어리가 된다. */}
           <div className="onboardingText">
-            {current.body.map((line) => (
-              <p key={line}>{line}</p>
-            ))}
+            <p className="onboardingLead">{current.body[0]}</p>
+            {current.body.length > 1 && (
+              <ul>
+                {current.body.slice(1).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
 

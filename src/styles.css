@@ -53,6 +53,7 @@
 .gridDetailSidePanel,
 .aiChatDock,
 .aiChatFab,
+.aiChatHint,
 .leaflet-control-container {
   zoom: var(--ui-scale);
 }
@@ -3707,6 +3708,12 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   right: calc(var(--detail-panel-width) + var(--chat-edge-gap));
 }
 
+.gisShell.panelOpen .aiChatHint {
+  right: calc(
+    var(--detail-panel-width) + var(--chat-edge-gap) + var(--chat-fab-size) + 12px
+  );
+}
+
 .aiChatDock,
 .aiChatFab {
   transition-property: right, transform, box-shadow;
@@ -3719,6 +3726,9 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   .gisShell.panelOpen .aiChatDock,
   .gisShell.panelOpen .aiChatFab {
     right: 16px;
+  }
+  .gisShell.panelOpen .aiChatHint {
+    right: calc(16px + var(--chat-fab-size) + 12px);
   }
   .gisShell.panelOpen .aiChatDock {
     right: 0;
@@ -4499,11 +4509,44 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   min-width: 0;
 }
 
-.onboardingBody p {
-  margin: 0 0 9px;
+/* 첫 줄(요점)은 크고 진하게, 나머지는 초록 점을 단 목록으로. 전부 같은 크기로
+   쌓으면 어디부터 읽어야 할지 모를 문단 덩어리가 된다. */
+.onboardingLead {
+  margin: 0;
+  color: var(--gdp-ink);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+}
+
+.onboardingText ul {
+  display: flex;
+  margin: 14px 0 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.onboardingText li {
+  position: relative;
+  padding-left: 15px;
   color: var(--gdp-ink2);
-  font-size: 13.5px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.onboardingText li::before {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gdp-green);
+  content: '';
+  opacity: 0.55;
 }
 
 /* 사진 자리는 비율로 잡아둔다. 사진이 아직 없어도 팝업 높이가 단계마다
@@ -4550,10 +4593,11 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 
   .onboardingText {
     display: flex;
-    width: 308px;
+    width: 320px;
     flex: none;
     flex-direction: column;
     justify-content: center;
+    padding-right: 4px;
   }
 }
 
@@ -4647,4 +4691,91 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 
 .onboardingRecall b {
   color: var(--gdp-ink2);
+}
+
+
+/* ── 챗봇 첫 안내 말풍선 ────────────────────────────────────────────────
+   버튼은 마스코트 얼굴 + 말풍선 배지인데, 처음 온 사람은 마우스를 올려볼 이유가
+   없어 이름표(hover 툴팁)를 영영 못 본다. 첫 접속에 한 번만 옆에 띄운다.
+   위치는 FAB 과 같은 기준(오른쪽 아래)에서 버튼 폭만큼 왼쪽으로 민 자리다. */
+.aiChatHint {
+  position: fixed;
+  z-index: 1101;
+  right: calc(var(--chat-edge-gap) + var(--chat-fab-size) + 12px);
+  bottom: var(--chat-bottom-gap);
+  display: grid;
+  max-width: min(272px, calc(100vw - 130px));
+  gap: 3px;
+  padding: 12px 32px 13px 14px;
+  border-radius: 14px;
+  background: #191f28;
+  box-shadow: 0 10px 28px rgba(15, 22, 33, 0.28);
+  color: #ffffff;
+  animation: aiChatHintIn 0.28s ease both;
+}
+
+.aiChatHint strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.aiChatHint span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+/* 어느 버튼을 말하는지 알 수 있게 꼬리를 단다. */
+.aiChatHint::after {
+  position: absolute;
+  right: -6px;
+  bottom: 18px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  border-radius: 2px;
+  background: #191f28;
+  content: '';
+}
+
+.aiChatHintClose {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.aiChatHintClose:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+/* 말풍선이 떠 있는 동안에는 버튼도 한 번 눈에 띄게 한다. */
+.aiChatFab.hasHint {
+  box-shadow: 0 0 0 6px rgba(31, 81, 33, 0.18), 0 10px 24px rgba(20, 30, 45, 0.24);
+}
+
+@keyframes aiChatHintIn {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aiChatHint {
+    animation: none;
+  }
 }
