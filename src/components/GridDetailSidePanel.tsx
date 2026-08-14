@@ -11,6 +11,7 @@ import {
   POLICY_FEATURE_LABELS,
   policyApplicability,
   policySimulationRequest,
+  POLICY_ICONS,
   usePolicyPresets
 } from '../config/policyPresets';
 import type {
@@ -458,8 +459,11 @@ function GridDetailSidePanel({
                   스크롤해야 보였다. 요약 카드에서 바로 내려갈 수 있게 한다. */}
               {canSimulate && (
                 <button className="gdpSimJump" type="button" onClick={scrollToSimulation}>
-                  이 격자 개선해보기 ↓
-                  <small>정책 6종 비교 · 직접 시뮬레이션</small>
+                  <span>
+                    이 격자 개선해보기
+                    <small>정책 6종 비교 · 직접 시뮬레이션</small>
+                  </span>
+                  <b aria-hidden="true">↓</b>
                 </button>
               )}
             </div>
@@ -1191,6 +1195,9 @@ function PolicyPresetSection({
               onClick={() => selectPolicy(preset)}
               key={preset.id}
             >
+              <em className="policyPresetIcon" aria-hidden="true">
+                {POLICY_ICONS[preset.id] ?? '🌿'}
+              </em>
               <span>{preset.name}</span>
               {!applicability.applicable && <small>적용 불가</small>}
             </button>

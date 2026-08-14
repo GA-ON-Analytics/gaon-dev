@@ -5,6 +5,7 @@ import type {
   GridAnalysisProperties,
   PolicyApplicability,
   PolicyFeature,
+  PolicyId,
   PolicyPreset,
   SimulationRequest
 } from '../types/dashboard';
@@ -16,6 +17,20 @@ export const POLICY_FEATURE_LABELS: Record<PolicyFeature, string> = {
   ndvi: '식생지수',
   albedo: '표면 반사율',
   building_ratio: '건물면적 비율'
+};
+
+/**
+ * 정책 목록 버튼의 아이콘. 여섯 개가 다 같은 흰 칸이라 이름을 하나씩 읽어야 했다.
+ * 화면 표시용이라 백엔드 정의에 넣지 않는다 — 챗봇은 쓰지 않는다.
+ * 백엔드에 새 정책이 생기면 여기 없을 수 있어 기본 아이콘으로 떨어진다.
+ */
+export const POLICY_ICONS: Partial<Record<PolicyId, string>> = {
+  paved_to_green: '🌱',
+  road_to_green: '🌳',
+  vegetation_improvement: '🍃',
+  small_park: '🏞️',
+  green_roof: '🏢',
+  cool_roof: '☀️'
 };
 
 const STANDARD_SCENARIO = '100m 격자 기준 표준 시나리오 · 격자 내 10% 수준 개입';
