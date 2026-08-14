@@ -180,6 +180,18 @@ async function main() {
   await sleep(2500);
   await capture('step-4-simulation');
 
+  // 챗봇 창을 연다. 답변까지 받으려면 LLM 이 필요하므로, 처음 열었을 때의
+  // 사용 가이드와 예시 질문이 보이는 상태를 찍는다.
+  await evaluate(`
+    (async () => {
+      document.querySelector('.aiChatHintClose')?.click();
+      document.querySelector('.aiChatFab')?.click();
+      await window.__guide.sleep(1500);
+      return 'ok';
+    })()`);
+  await sleep(2500);
+  await capture('step-5-chat');
+
   socket.close();
   chrome.kill();
 
