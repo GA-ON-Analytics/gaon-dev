@@ -156,9 +156,11 @@ function OnboardingGuide({ onClose }: Props) {
             )}
           </div>
 
-          {current.body.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
+          <div className="onboardingText">
+            {current.body.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
         </div>
 
         <footer className="onboardingFooter">

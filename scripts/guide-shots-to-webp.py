@@ -29,10 +29,11 @@ JOBS: list[tuple[str, tuple[float, float, float] | None]] = [
     ("step-4-simulation", (0.47, 0.0, 0.53)),       # 오른쪽 정책 패널
 ]
 
-# 팝업에서 664px 남짓으로 보인다. 2배 이상 담아두면 고해상도 화면에서도 또렷하다.
-TARGET_WIDTH = 1600
-TARGET_HEIGHT = 1000
-QUALITY = 85
+# 넓은 화면에서 팝업의 사진이 1,014px 로 보인다. 고해상도 화면은 그 2배를
+# 원하므로 2,000px 로 담아둔다.
+TARGET_WIDTH = 2000
+TARGET_HEIGHT = 1250
+QUALITY = 82
 
 
 def main() -> None:
