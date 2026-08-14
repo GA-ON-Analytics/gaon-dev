@@ -22,7 +22,11 @@ from backend.policy_presets import (
     POLICY_FEATURE_LABELS,
     policy_presets_payload,
 )
-from backend.simulation_scope import load_aggregate_grid_index, load_grid_spatial_index
+from backend.simulation_scope import (
+    load_aggregate_constituent_mapping,
+    load_aggregate_grid_index,
+    load_grid_spatial_index,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -123,6 +127,8 @@ class BatchSimulationRequest(BaseModel):
     # 250/500m aggregate 자체가 아니라, 해당 영역의 실제 100m 구성 셀을 선택한다.
     aggregate_resolution: Literal["250m", "500m"] | None = None
     aggregate_id: str | None = None
+    # 행정구역 전체 ML 대상은 항상 실제 100m이고, 이 값은 응답 집계 해상도만 정한다.
+    display_resolution: Literal["100m", "250m", "500m"] | None = None
     # 행정구역 전체 결과에서는 개별 ML 진단 필드를 줄인다.
     compact: bool = False
     changes: dict[str, float] = Field(default_factory=dict)
@@ -262,6 +268,16 @@ def _batch_targets(payload: BatchSimulationRequest) -> tuple[list[tuple[str, flo
                 "gu_code with district scope_mode, seoul scope_mode, or "
                 "aggregate_resolution with aggregate_id"
             ),
+        )
+
+    supports_display_resolution = has_administrative_scope and (
+        (payload.scope_mode == "seoul" and payload.gu_code is None)
+        or (payload.scope_mode == "district" and payload.gu_code is not None)
+    )
+    if payload.display_resolution is not None and not supports_display_resolution:
+        raise HTTPException(
+            status_code=422,
+            detail="display_resolution is supported only for district or seoul scope",
         )
 
     if has_explicit_ids:
@@ -791,6 +807,105 @@ def _compact_batch_results(results: list[dict[str, Any]]) -> list[dict[str, Any]
     return compact_results
 
 
+def _aggregate_display_results(
+    display_resolution: Literal["250m", "500m"],
+    results: list[dict[str, Any]],
+    *,
+    gu_code: str | None = None,
+) -> list[dict[str, Any]]:
+    """한 번 예측한 실제 100m 결과를 현재 표시 aggregate로 면적가중한다.
+
+    district 표시에서 경계를 넘는 구성원은 정책 대상이 아니므로 delta=0으로
+    전체 분모에 포함한다. 정책 대상 ML 실패 면적은 기존 successful-area 의미에
+    맞춰 분모에서 제외한다.
+    """
+    aggregate_path = str(DASHBOARD_GRID_PATHS[display_resolution])
+    grid_path = str(DASHBOARD_100M_MAP_PATH)
+    aggregate_index = load_aggregate_grid_index(aggregate_path)
+    constituent_mapping = load_aggregate_constituent_mapping(
+        aggregate_path,
+        grid_path,
+        display_resolution == "500m",
+    )
+    result_by_grid_id = {
+        str(result.get("grid_id")): result
+        for result in results
+        if result.get("grid_id") is not None
+    }
+    display_results: list[dict[str, Any]] = []
+
+    display_aggregates = (
+        aggregate_index.cells
+        if gu_code is None
+        else tuple(
+            aggregate
+            for aggregate in aggregate_index.cells
+            if aggregate.gu_code == gu_code
+        )
+    )
+    for aggregate in display_aggregates:
+        members = constituent_mapping[aggregate.display_grid_id]
+        policy_members = (
+            members
+            if gu_code is None
+            else tuple(cell for cell in members if cell.gu_code == gu_code)
+        )
+        outside_members = (
+            ()
+            if gu_code is None
+            else tuple(cell for cell in members if cell.gu_code != gu_code)
+        )
+        successful = []
+        for cell in policy_members:
+            result = result_by_grid_id.get(cell.grid_id)
+            if result is not None and _is_successful_prediction(result):
+                successful.append((float(result["delta_c"]), cell.area_m2))
+
+        successful_area_m2 = sum(area for _, area in successful)
+        outside_area_m2 = sum(cell.area_m2 for cell in outside_members)
+        aggregation_area_m2 = successful_area_m2 + outside_area_m2
+        # 정책 대상이 하나도 없는 경계 조각은 외부 구성원의 delta=0만으로 계산된다.
+        has_valid_result = bool(successful) or not policy_members
+        delta_c = (
+            round(
+                sum(delta * area for delta, area in successful)
+                / aggregation_area_m2,
+                3,
+            )
+            if has_valid_result and aggregation_area_m2 > 0
+            else None
+        )
+        common = {
+            "grid_id": aggregate.display_grid_id,
+            "area_m2": round(aggregate.area_m2, 2),
+            "constituent_count": len(members),
+            "policy_target_count": len(policy_members),
+            "outside_constituent_count": len(outside_members),
+            "success_count": len(successful),
+            "failed_count": len(policy_members) - len(successful),
+            "successful_area_m2": round(successful_area_m2, 2),
+            "aggregation_area_m2": round(aggregation_area_m2, 2),
+        }
+        if delta_c is None:
+            display_results.append(
+                {
+                    **common,
+                    "status": "failed",
+                    "error": "all constituent predictions failed",
+                }
+            )
+        else:
+            display_results.append(
+                {
+                    **common,
+                    "status": "success",
+                    "delta_c": delta_c,
+                }
+            )
+
+    return display_results
+
+
 @app.post("/api/simulate/batch")
 def simulate_batch(payload: BatchSimulationRequest) -> Any:
     if not _simulation_ready():
@@ -818,7 +933,23 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
     summary = _batch_summary(targets, results)
     for result in results:
         result["status"] = "success" if _is_successful_prediction(result) else "failed"
-    response_results = _compact_batch_results(results) if payload.compact else results
+    if (
+        target_mode in {"district", "seoul"}
+        and payload.display_resolution in {"250m", "500m"}
+    ):
+        try:
+            response_results = _aggregate_display_results(
+                payload.display_resolution,
+                results,
+                gu_code=payload.gu_code if target_mode == "district" else None,
+            )
+        except (FileNotFoundError, KeyError, ValueError) as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid aggregate or 100m map data",
+            ) from exc
+    else:
+        response_results = _compact_batch_results(results) if payload.compact else results
     response = {
         **summary,
         "target_mode": target_mode,
@@ -842,4 +973,13 @@ def simulate_batch(payload: BatchSimulationRequest) -> Any:
         )
         if target_mode == "district":
             response["gu_code"] = payload.gu_code
+        if payload.display_resolution is not None:
+            response.update(
+                {
+                    "source_resolution": "100m",
+                    "display_resolution": payload.display_resolution,
+                    "source_grid_count": len(targets),
+                    "display_grid_count": len(response_results),
+                }
+            )
     return response

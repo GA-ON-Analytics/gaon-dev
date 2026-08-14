@@ -233,8 +233,11 @@ export function simulateScopedGridPolicy(
 export function simulateDistrictGridPolicy(
   guCode: string,
   changes: Record<string, number>,
-  coupleLandCover = true
+  coupleLandCover = true,
+  displayResolution: Exclude<GridResolution, 'gu'> = '100m'
 ): Promise<BatchSimulationResponse> {
+  const displayRequest =
+    displayResolution === '100m' ? {} : { display_resolution: displayResolution };
   return postJson<
     BatchSimulationResponse,
     {
@@ -243,21 +246,26 @@ export function simulateDistrictGridPolicy(
       compact: true;
       changes: Record<string, number>;
       couple_land_cover: boolean;
+      display_resolution?: '250m' | '500m';
     }
   >('/api/simulate/batch', {
     gu_code: guCode,
     scope_mode: 'district',
     compact: true,
     changes,
-    couple_land_cover: coupleLandCover
+    couple_land_cover: coupleLandCover,
+    ...displayRequest
   });
 }
 
-// 서울 지도에 실제로 존재하는 100m 격자 전체를 backend가 선택하고 compact 결과만 반환한다.
+// ML 대상은 항상 서울의 실제 100m 전체다. 250/500m는 응답 결과만 표시 격자로 집계한다.
 export function simulateSeoulGridPolicy(
   changes: Record<string, number>,
-  coupleLandCover = true
+  coupleLandCover = true,
+  displayResolution: Exclude<GridResolution, 'gu'> = '100m'
 ): Promise<BatchSimulationResponse> {
+  const displayRequest =
+    displayResolution === '100m' ? {} : { display_resolution: displayResolution };
   return postJson<
     BatchSimulationResponse,
     {
@@ -265,11 +273,13 @@ export function simulateSeoulGridPolicy(
       compact: true;
       changes: Record<string, number>;
       couple_land_cover: boolean;
+      display_resolution?: '250m' | '500m';
     }
   >('/api/simulate/batch', {
     scope_mode: 'seoul',
     compact: true,
     changes,
-    couple_land_cover: coupleLandCover
+    couple_land_cover: coupleLandCover,
+    ...displayRequest
   });
 }

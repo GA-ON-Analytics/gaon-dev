@@ -448,39 +448,61 @@ function prepareExtrusionData(
 ): FeatureCollection {
   const baselineData = getBaselineExtrusionData(gridData);
 
-  if (resolution === '250m' || resolution === '500m') {
-    const aggregateDelta = getFiniteLst(batchSimulationResult?.mean_delta_c);
-    if (
-      batchSimulationResult?.target_mode !== 'aggregate' ||
-      batchSimulationResult.aggregate_resolution !== resolution ||
-      batchSimulationResult.aggregate_id !== selectedGridId ||
-      selectedGridId === null ||
-      aggregateDelta === null
-    ) {
-      return baselineData;
-    }
+  if (
+    !isSeoulOverview &&
+    (resolution === '250m' || resolution === '500m')
+  ) {
+    const isDistrictDisplayResult =
+      batchSimulationResult?.target_mode === 'district' &&
+      batchSimulationResult.display_resolution === resolution;
+    // 구 전체 display result는 아래 공통 ID→delta O(N) 경로에서 모든 기둥에 적용한다.
+    if (!isDistrictDisplayResult) {
+      const aggregateDelta = getFiniteLst(batchSimulationResult?.mean_delta_c);
+      if (
+        batchSimulationResult?.target_mode !== 'aggregate' ||
+        batchSimulationResult.aggregate_resolution !== resolution ||
+        batchSimulationResult.aggregate_id !== selectedGridId ||
+        selectedGridId === null ||
+        aggregateDelta === null
+      ) {
+        return baselineData;
+      }
 
-    return {
-      ...baselineData,
-      features: baselineData.features.map((feature) => {
-        if (getGridId(feature.properties) !== selectedGridId) return feature;
-        const lst = getFiniteLst(feature.properties?.[NUMERIC_LST_PROPERTY]);
-        if (lst === null) return feature;
-        const afterVisualLst = lst + aggregateDelta;
-        return {
-          ...feature,
-          properties: {
-            ...(feature.properties ?? {}),
-            [AFTER_VISUAL_LST_PROPERTY]: afterVisualLst,
-            [AFTER_VISUAL_HEIGHT_PROPERTY]: getVisualHeight(afterVisualLst)
-          }
-        };
-      })
-    };
+      return {
+        ...baselineData,
+        features: baselineData.features.map((feature) => {
+          if (getGridId(feature.properties) !== selectedGridId) return feature;
+          const lst = getFiniteLst(feature.properties?.[NUMERIC_LST_PROPERTY]);
+          if (lst === null) return feature;
+          const afterVisualLst = lst + aggregateDelta;
+          return {
+            ...feature,
+            properties: {
+              ...(feature.properties ?? {}),
+              [AFTER_VISUAL_LST_PROPERTY]: afterVisualLst,
+              [AFTER_VISUAL_HEIGHT_PROPERTY]: getVisualHeight(afterVisualLst)
+            }
+          };
+        })
+      };
+    }
   }
 
   if (isSeoulOverview) {
     if (batchSimulationResult?.target_mode !== 'seoul') return baselineData;
+    if (
+      resolution !== '100m' &&
+      batchSimulationResult.display_resolution !== resolution
+    ) {
+      return baselineData;
+    }
+    if (
+      resolution === '100m' &&
+      batchSimulationResult.display_resolution !== undefined &&
+      batchSimulationResult.display_resolution !== '100m'
+    ) {
+      return baselineData;
+    }
 
     let resultCache = SEOUL_POLICY_DATA_CACHE.get(gridData);
     const cachedPolicyData = resultCache?.get(batchSimulationResult);
@@ -532,6 +554,9 @@ function prepareExtrusionData(
 
     if (import.meta.env.DEV) {
       console.info('[Map3D] Seoul policy data prepared', {
+        resolution,
+        featureCount: baselineData.features.length,
+        resultCount: batchSimulationResult.results.length,
         resultMapMs: Number(resultMapMs.toFixed(2)),
         featureMappingMs: Number(featureMappingMs.toFixed(2)),
         beforeSetDataMs: Number((performance.now() - preparationStarted).toFixed(2)),
@@ -712,7 +737,17 @@ function setGridSourceData(
   const existingSource = map.getSource(GRID_SOURCE_ID);
 
   if (existingSource) {
-    void (existingSource as GeoJSONSource).setData(data);
+    const setDataStarted = performance.now();
+    const update = (existingSource as GeoJSONSource).setData(data);
+    if (import.meta.env.DEV) {
+      void Promise.resolve(update).then(() => {
+        console.info('[Map3D] GeoJSON source updated', {
+          resolution,
+          featureCount: data.features.length,
+          setDataMs: Number((performance.now() - setDataStarted).toFixed(2))
+        });
+      });
+    }
   } else {
     map.addSource(GRID_SOURCE_ID, {
       type: 'geojson',
