@@ -369,8 +369,11 @@ function GridDetailSidePanel({
       <div className="sidePanelBody">
         <section className="rightPanelDashboard">
           <div className="gridReport">
-            {selectedDistrict === '전체' && selectedGridResolution === '100m' && (
-              <SeoulSimulationCard onBatchSimulationResult={onBatchSimulationResult} />
+            {selectedDistrict === '전체' && selectedGridResolution !== 'gu' && (
+              <SeoulSimulationCard
+                selectedGridResolution={selectedGridResolution}
+                onBatchSimulationResult={onBatchSimulationResult}
+              />
             )}
             {properties ? (
             <>
@@ -957,8 +960,10 @@ function formatPolicyFeatureValue(feature: PolicyFeature, value: number): string
 }
 
 function SeoulSimulationCard({
+  selectedGridResolution,
   onBatchSimulationResult
 }: {
+  selectedGridResolution: Exclude<GridResolution, 'gu'>;
   onBatchSimulationResult: (result: BatchSimulationResponse | null) => void;
 }) {
   return (
@@ -968,7 +973,7 @@ function SeoulSimulationCard({
         aggregateGridId={null}
         guCode={null}
         selectedDistrict="전체"
-        selectedGridResolution="100m"
+        selectedGridResolution={selectedGridResolution}
         properties={null}
         featureRanges={null}
         policyScope="seoul"
@@ -1006,6 +1011,11 @@ function PolicyPresetSection({
     selectedGridResolution === '250m' || selectedGridResolution === '500m';
   const isDistrictScope = policyScope === 'district';
   const isSeoulScope = policyScope === 'seoul';
+  const isAggregateSelection =
+    isBatchResolution && !isDistrictScope && !isSeoulScope;
+  const displayResolution = isBatchResolution
+    ? selectedGridResolution
+    : '100m';
   const skipsSingleGridApplicability =
     isBatchResolution || isDistrictScope || isSeoulScope;
   const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyPreset['id'] | null>(null);
@@ -1087,7 +1097,7 @@ function PolicyPresetSection({
     onBatchSimulationResult(null);
 
     try {
-      if (isBatchResolution) {
+      if (isAggregateSelection) {
         if (!aggregateGridId) {
           setPolicyError('선택한 집계 격자를 확인할 수 없어요.');
           return;
@@ -1129,14 +1139,16 @@ function PolicyPresetSection({
       const response = isSeoulScope
         ? await simulateSeoulGridPolicy(
             request.changes ?? {},
-            request.couple_land_cover ?? false
+            request.couple_land_cover ?? false,
+            displayResolution
           )
         : isDistrictScope
         ? guCode
           ? await simulateDistrictGridPolicy(
               guCode,
               request.changes ?? {},
-              request.couple_land_cover ?? false
+              request.couple_land_cover ?? false,
+              displayResolution
             )
           : null
         : await simulateScopedGridPolicy(
@@ -1207,24 +1219,38 @@ function PolicyPresetSection({
         선택한 범위의 각 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.
       </p>
 
-      {selectedGridResolution === '100m' && (
+      {isSeoulScope && (
         <fieldset className="policyScopeSelector">
           <legend>정책 적용 범위</legend>
-          {isSeoulScope ? (
-            <label style={{ gridColumn: '1 / -1' }}>
-              <input
-                type="radio"
-                name="policy-scope-seoul"
-                value="seoul"
-                checked
-                readOnly
-              />
-              <span>
-                <b>서울시 전체</b>
-                <small>서울의 모든 실제 100m 격자</small>
-              </span>
-            </label>
-          ) : ([
+          <label style={{ gridColumn: '1 / -1' }}>
+            <input
+              type="radio"
+              name="policy-scope-seoul"
+              value="seoul"
+              checked
+              readOnly
+            />
+            <span>
+              <b>서울시 전체</b>
+              <small>
+                {selectedGridResolution === '100m'
+                  ? '서울의 모든 실제 100m 격자'
+                  : `실제 100m 격자를 ${selectedGridResolution}로 집계`}
+              </small>
+            </span>
+          </label>
+          <p>
+            {selectedGridResolution === '100m'
+              ? '서울의 모든 실제 100m 격자에 동일 정책을 적용합니다.'
+              : '서울의 모든 실제 100m 격자에 동일 정책을 적용하고 현재 해상도로 집계합니다.'}
+          </p>
+        </fieldset>
+      )}
+
+      {selectedGridResolution === '100m' && !isSeoulScope && (
+        <fieldset className="policyScopeSelector">
+          <legend>정책 적용 범위</legend>
+          {([
               { scope: 100, label: '100m', description: '현재 격자' },
               { scope: 300, label: '300m', description: '주변 약 9개 100m 격자' },
               { scope: 500, label: '500m', description: '주변 약 25개 100m 격자' },
@@ -1250,32 +1276,48 @@ function PolicyPresetSection({
             </label>
           ))}
           <p>
-            {isSeoulScope
-              ? '서울의 모든 실제 100m 격자에 동일 정책을 적용합니다.'
-              : isDistrictScope
+            {isDistrictScope
               ? `선택한 ${selectedDistrict}의 모든 100m 격자에 동일 정책을 적용합니다.`
               : '서울 경계에서는 실제 존재하는 격자 수가 달라질 수 있습니다.'}
           </p>
         </fieldset>
       )}
 
-      {isBatchResolution && (
+      {isBatchResolution && !isSeoulScope && (
         <fieldset className="policyScopeSelector">
           <legend>정책 적용 범위</legend>
-          <label style={{ gridColumn: '1 / -1' }}>
+          <label>
             <input
               type="radio"
               name={`policy-scope-${aggregateGridId ?? selectedGridResolution}`}
               value={selectedGridResolution}
-              checked
-              readOnly
+              checked={isAggregateSelection}
+              onChange={() => changeScope(100)}
             />
             <span>
               <b>선택한 {selectedGridResolution} 격자</b>
               <small>실제 구성 100m 격자를 개별 예측</small>
             </span>
           </label>
-          <p>이 영역을 구성하는 실제 100m 격자에 동일 정책을 적용합니다.</p>
+          <label>
+            <input
+              type="radio"
+              name={`policy-scope-${aggregateGridId ?? selectedGridResolution}`}
+              value="district"
+              checked={isDistrictScope}
+              disabled={!guCode}
+              onChange={() => changeScope('district')}
+            />
+            <span>
+              <b>구 전체</b>
+              <small>{selectedDistrict} 전체 실제 100m 격자</small>
+            </span>
+          </label>
+          <p>
+            {isDistrictScope
+              ? `선택 자치구의 모든 실제 100m 격자에 동일 정책을 적용하고 ${selectedGridResolution} 단위로 집계합니다.`
+              : '이 영역을 구성하는 실제 100m 격자에 동일 정책을 적용합니다.'}
+          </p>
         </fieldset>
       )}
 
@@ -1397,6 +1439,25 @@ function PolicyPresetSection({
               <dt>대상 격자(100m)</dt>
               <dd>{policyBatchResult.grid_count.toLocaleString()}개</dd>
             </div>
+            {(policyBatchResult.target_mode === 'seoul' ||
+              policyBatchResult.target_mode === 'district') &&
+              policyBatchResult.display_resolution &&
+              policyBatchResult.display_resolution !== '100m' && (
+                <>
+                  <div>
+                    <dt>표시 해상도</dt>
+                    <dd>{policyBatchResult.display_resolution}</dd>
+                  </div>
+                  <div>
+                    <dt>표시 집계 격자</dt>
+                    <dd>
+                      {policyBatchResult.display_grid_count === undefined
+                        ? '—'
+                        : `${policyBatchResult.display_grid_count.toLocaleString()}개`}
+                    </dd>
+                  </div>
+                </>
+              )}
             <div>
               <dt>변화 미미</dt>
               <dd>{policyBatchResult.unchanged_grid_count.toLocaleString()}개</dd>
@@ -1431,8 +1492,13 @@ function PolicyPresetSection({
             )}
           </dl>
           <p className="policyAnomalyNote">
-            {isBatchResolution
+            {isAggregateSelection
               ? '선택 영역을 구성하는 100m 격자를 개별 예측한 뒤 실제 격자 면적으로 가중해 집계한 정책 시나리오입니다.'
+              : (policyBatchResult.target_mode === 'seoul' ||
+                  policyBatchResult.target_mode === 'district') &&
+                policyBatchResult.display_resolution !== undefined &&
+                policyBatchResult.display_resolution !== '100m'
+              ? `정책 계산은 100m 격자 단위로 수행되며 ${policyBatchResult.display_resolution} 지도 해상도로 면적가중 집계됩니다.`
               : policyBatchResult.aggregation === 'area_weighted'
               ? '평균 예상 변화는 각 100m 격자를 개별 예측한 뒤 실제 격자 면적으로 가중한 모델 결과입니다.'
               : '평균 예상 변화는 각 구성 100m 격자를 개별 예측한 뒤 단순 평균한 모델 결과입니다.'}
@@ -1505,6 +1571,11 @@ function SimulationCard({
   const featureRanges = useFeatureRanges();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // aggregate를 새로 선택하거나 해상도를 바꾸면 기존 동작인 '선택 격자'를 기본값으로 복귀시킨다.
+  useEffect(() => {
+    setPolicyScope(isBatchResolution ? 100 : 500);
+  }, [aggregateGridId, isBatchResolution, selectedGridResolution]);
 
   // 연동 중에는 불투수면이 녹지에서 파생되므로 슬라이더를 잠그고 파생값을 대신 보여준다.
   // (예전엔 슬라이더 기본값 imp=5가 항상 changes에 실려 연동이 한 번도 걸리지 않았다)

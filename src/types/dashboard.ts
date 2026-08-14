@@ -162,6 +162,13 @@ export interface BatchSimulationGridResult extends Partial<SimulationResponse> {
   grid_id: string;
   status: 'success' | 'failed';
   area_m2?: number | null;
+  constituent_count?: number;
+  policy_target_count?: number;
+  outside_constituent_count?: number;
+  success_count?: number;
+  failed_count?: number;
+  successful_area_m2?: number;
+  aggregation_area_m2?: number;
   error?: string;
 }
 
@@ -198,6 +205,10 @@ export interface BatchSimulationResponse {
   scope_mode?: 'district' | 'seoul';
   aggregate_resolution?: '250m' | '500m';
   aggregate_id?: string;
+  source_resolution?: '100m';
+  display_resolution?: '100m' | '250m' | '500m';
+  source_grid_count?: number;
+  display_grid_count?: number;
   compact?: boolean;
   results: BatchSimulationGridResult[];
 }

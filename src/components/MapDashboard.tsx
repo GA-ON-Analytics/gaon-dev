@@ -1689,14 +1689,22 @@ export function MapDashboard() {
     batchSimulationContext?.resolution === selectedGridResolution &&
     batchSimulationContext.district === selectedDistrict &&
     batchSimulationContext.selectedGridId === selectedMapGridId;
+  const isActiveSeoulPolicyResult =
+    selectedDistrict === ALL_DISTRICTS &&
+    selectedGridResolution !== 'gu' &&
+    batchSimulationResult?.target_mode === 'seoul' &&
+    (selectedGridResolution === '100m'
+      ? batchSimulationResult.display_resolution === undefined ||
+        batchSimulationResult.display_resolution === '100m'
+      : batchSimulationResult.display_resolution === selectedGridResolution);
   const isActive100mPolicyResult =
     selectedGridResolution === '100m' &&
-    ((selectedDistrict === ALL_DISTRICTS &&
-      batchSimulationResult?.target_mode === 'seoul') ||
-      (selectedDistrict !== ALL_DISTRICTS &&
-        (batchSimulationResult?.target_mode === 'spatial_scope' ||
-          (batchSimulationResult?.target_mode === 'district' &&
-            batchSimulationResult.gu_code === selectedDistrictCode))));
+    selectedDistrict !== ALL_DISTRICTS &&
+    (batchSimulationResult?.target_mode === 'spatial_scope' ||
+      (batchSimulationResult?.target_mode === 'district' &&
+        batchSimulationResult.gu_code === selectedDistrictCode &&
+        (batchSimulationResult.display_resolution === undefined ||
+          batchSimulationResult.display_resolution === '100m')));
   const isActiveAggregatePolicyResult =
     (selectedGridResolution === '250m' || selectedGridResolution === '500m') &&
     selectedDistrict !== ALL_DISTRICTS &&
@@ -1704,9 +1712,18 @@ export function MapDashboard() {
     batchSimulationResult?.target_mode === 'aggregate' &&
     batchSimulationResult.aggregate_resolution === selectedGridResolution &&
     batchSimulationResult.aggregate_id === selectedMapGridId;
+  const isActiveDistrictDisplayPolicyResult =
+    (selectedGridResolution === '250m' || selectedGridResolution === '500m') &&
+    selectedDistrict !== ALL_DISTRICTS &&
+    batchSimulationResult?.target_mode === 'district' &&
+    batchSimulationResult.gu_code === selectedDistrictCode &&
+    batchSimulationResult.display_resolution === selectedGridResolution;
   const activePolicyBatchResult =
     policyContextMatches &&
-    (isActive100mPolicyResult || isActiveAggregatePolicyResult)
+    (isActiveSeoulPolicyResult ||
+      isActive100mPolicyResult ||
+      isActiveAggregatePolicyResult ||
+      isActiveDistrictDisplayPolicyResult)
       ? batchSimulationResult
       : null;
   const policyGridIds = useMemo(() => {

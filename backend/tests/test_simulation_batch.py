@@ -9,6 +9,7 @@ from backend import main
 from backend.ml import predict_core
 from backend.simulation_scope import (
     _geometry_centroid,
+    load_aggregate_constituent_mapping,
     load_aggregate_grid_index,
     load_grid_spatial_index,
 )
@@ -71,6 +72,33 @@ class FakeBatchPredictCore(FakePredictCore):
         self.batch_calls.append((list(grid_ids), dict(changes), couple_land_cover))
         return [
             self.predict(grid_id, changes, couple_land_cover)
+            for grid_id in grid_ids
+        ]
+
+
+class FakeSeoulBatchPredictCore:
+    def __init__(self, failed_grid_ids: set[str] | None = None):
+        self.failed_grid_ids = failed_grid_ids or set()
+        self.batch_calls: list[list[str]] = []
+
+    def predict_batch(
+        self,
+        grid_ids: list[str],
+        changes: dict[str, float],
+        couple_land_cover: bool = True,
+    ) -> list[dict]:
+        del changes, couple_land_cover
+        self.batch_calls.append(list(grid_ids))
+        return [
+            {"grid_id": grid_id, "error": "prediction failed"}
+            if grid_id in self.failed_grid_ids
+            else {
+                "grid_id": grid_id,
+                "before_anomaly": 1.0,
+                "after_anomaly": 0.8,
+                "delta_c": -0.2,
+                "warnings": [],
+            }
             for grid_id in grid_ids
         ]
 
@@ -330,6 +358,123 @@ class SimulationBatchApiTests(unittest.TestCase):
         self.assertEqual(payload["grid_count"], len(district_cells))
         self.assertEqual([result["grid_id"] for result in payload["results"]], expected_ids)
         self.assertEqual(fake.batch_calls, [(expected_ids, changes, False)])
+        self.assertNotIn("source_resolution", payload)
+        self.assertNotIn("display_resolution", payload)
+        self.assertNotIn("source_grid_count", payload)
+        self.assertNotIn("display_grid_count", payload)
+
+    def test_district_display_resolution_predicts_only_district_100m_and_aggregates_results(
+        self,
+    ) -> None:
+        gu_code = "11500"
+        source_cells = self.index.select_district(gu_code)
+        source_ids = [cell.grid_id for cell in source_cells]
+        for resolution, expected_display_count in (("250m", 761), ("500m", 214)):
+            with self.subTest(resolution=resolution):
+                fake = FakeSeoulBatchPredictCore()
+                response = self.post_batch(
+                    {
+                        "gu_code": gu_code,
+                        "scope_mode": "district",
+                        "display_resolution": resolution,
+                        "compact": True,
+                        "changes": {"green_ratio": 0.1},
+                        "couple_land_cover": False,
+                    },
+                    fake,
+                )
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                predicted_ids = [grid_id for chunk in fake.batch_calls for grid_id in chunk]
+                self.assertEqual(predicted_ids, source_ids)
+                self.assertEqual(len(predicted_ids), len(set(predicted_ids)))
+                self.assertEqual(payload["target_mode"], "district")
+                self.assertEqual(payload["gu_code"], gu_code)
+                self.assertEqual(payload["source_resolution"], "100m")
+                self.assertEqual(payload["display_resolution"], resolution)
+                self.assertEqual(payload["source_grid_count"], len(source_cells))
+                self.assertEqual(payload["grid_count"], len(source_cells))
+                self.assertEqual(payload["success_count"], len(source_cells))
+                self.assertEqual(payload["mean_delta_c"], -0.2)
+                self.assertEqual(payload["display_grid_count"], expected_display_count)
+                self.assertEqual(len(payload["results"]), expected_display_count)
+                expected_display_ids = {
+                    aggregate.display_grid_id
+                    for aggregate in self.aggregate_indexes[resolution].cells
+                    if aggregate.gu_code == gu_code
+                }
+                self.assertEqual(
+                    {result["grid_id"] for result in payload["results"]},
+                    expected_display_ids,
+                )
+
+                mapping = load_aggregate_constituent_mapping(
+                    str(main.DASHBOARD_GRID_PATHS[resolution]),
+                    str(main.DASHBOARD_100M_MAP_PATH),
+                    resolution == "500m",
+                )
+                for result in payload["results"]:
+                    members = mapping[result["grid_id"]]
+                    policy_area = sum(
+                        cell.area_m2 for cell in members if cell.gu_code == gu_code
+                    )
+                    outside_area = sum(
+                        cell.area_m2 for cell in members if cell.gu_code != gu_code
+                    )
+                    expected_delta = round(
+                        -0.2 * policy_area / (policy_area + outside_area),
+                        3,
+                    )
+                    self.assertEqual(result["status"], "success")
+                    self.assertEqual(result["delta_c"], expected_delta)
+                    self.assertEqual(
+                        result["outside_constituent_count"],
+                        sum(cell.gu_code != gu_code for cell in members),
+                    )
+
+    def test_district_display_partial_failure_uses_successful_target_area(self) -> None:
+        resolution = "250m"
+        gu_code = "11680"
+        display_grid_id = "11680_00009"
+        mapping = load_aggregate_constituent_mapping(
+            str(main.DASHBOARD_GRID_PATHS[resolution]),
+            str(main.DASHBOARD_100M_MAP_PATH),
+            False,
+        )
+        members = mapping[display_grid_id]
+        failed_grid_id = members[-1].grid_id
+        response = self.post_batch(
+            {
+                "gu_code": gu_code,
+                "scope_mode": "district",
+                "display_resolution": resolution,
+                "compact": True,
+                "changes": {"green_ratio": 0.1},
+                "couple_land_cover": False,
+            },
+            FakeSeoulBatchPredictCore(failed_grid_ids={failed_grid_id}),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["failed_count"], 1)
+        target = next(
+            result for result in payload["results"]
+            if result["grid_id"] == display_grid_id
+        )
+        successful_members = [
+            cell for cell in members if cell.grid_id != failed_grid_id
+        ]
+        self.assertEqual(target["status"], "success")
+        self.assertEqual(target["delta_c"], -0.2)
+        self.assertEqual(target["success_count"], len(successful_members))
+        self.assertEqual(target["failed_count"], 1)
+        self.assertAlmostEqual(
+            target["aggregation_area_m2"],
+            sum(cell.area_m2 for cell in successful_members),
+            places=2,
+        )
 
     def test_district_invalid_gu_code_and_selector_conflicts(self) -> None:
         malformed = self.post_batch(
@@ -449,6 +594,93 @@ class SimulationBatchApiTests(unittest.TestCase):
             for start in range(0, len(expected_ids), main.SEOUL_BATCH_CHUNK_SIZE)
         ]
         self.assertEqual(fake.batch_calls, expected_calls)
+        self.assertNotIn("source_resolution", payload)
+        self.assertNotIn("display_resolution", payload)
+        self.assertNotIn("source_grid_count", payload)
+        self.assertNotIn("display_grid_count", payload)
+
+    def test_seoul_aggregate_display_predicts_unique_100m_once_and_returns_only_display_results(
+        self,
+    ) -> None:
+        source_ids = [cell.grid_id for cell in self.index.select_seoul()]
+        for resolution, expected_display_count in (("250m", 11_307), ("500m", 3_225)):
+            with self.subTest(resolution=resolution):
+                fake = FakeSeoulBatchPredictCore()
+                response = self.post_batch(
+                    {
+                        "scope_mode": "seoul",
+                        "display_resolution": resolution,
+                        "changes": {"green_ratio": 0.1},
+                        "couple_land_cover": False,
+                        "compact": True,
+                    },
+                    fake,
+                )
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                predicted_ids = [grid_id for chunk in fake.batch_calls for grid_id in chunk]
+                self.assertEqual(predicted_ids, source_ids)
+                self.assertEqual(len(predicted_ids), len(set(predicted_ids)))
+                self.assertEqual(payload["target_mode"], "seoul")
+                self.assertEqual(payload["source_resolution"], "100m")
+                self.assertEqual(payload["display_resolution"], resolution)
+                self.assertEqual(payload["source_grid_count"], 64_574)
+                self.assertEqual(payload["grid_count"], 64_574)
+                self.assertEqual(payload["success_count"], 64_574)
+                self.assertEqual(payload["display_grid_count"], expected_display_count)
+                self.assertEqual(len(payload["results"]), expected_display_count)
+                self.assertTrue(
+                    all(result["grid_id"] in self.aggregate_indexes[resolution].by_id
+                        for result in payload["results"])
+                )
+                self.assertTrue(
+                    all(result["delta_c"] == -0.2 for result in payload["results"])
+                )
+
+    def test_seoul_aggregate_display_weights_successful_constituents_and_fails_only_when_all_fail(
+        self,
+    ) -> None:
+        resolution = "250m"
+        display_grid_id = "11680_00009"
+        mapping = load_aggregate_constituent_mapping(
+            str(main.DASHBOARD_GRID_PATHS[resolution]),
+            str(main.DASHBOARD_100M_MAP_PATH),
+            False,
+        )
+        members = mapping[display_grid_id]
+        self.assertGreater(len(members), 1)
+        successful_members = members[:-1]
+        results = [
+            {
+                "grid_id": cell.grid_id,
+                "before_anomaly": 1.0,
+                "after_anomaly": 1.0 + index / 10,
+                "delta_c": index / 10,
+                "status": "success",
+            }
+            for index, cell in enumerate(successful_members, start=1)
+        ]
+        aggregated = main._aggregate_display_results(resolution, results)
+        target = next(result for result in aggregated if result["grid_id"] == display_grid_id)
+        expected = round(
+            sum((index / 10) * cell.area_m2
+                for index, cell in enumerate(successful_members, start=1))
+            / sum(cell.area_m2 for cell in successful_members),
+            3,
+        )
+        self.assertEqual(target["status"], "success")
+        self.assertEqual(target["delta_c"], expected)
+        self.assertEqual(target["success_count"], len(successful_members))
+        self.assertEqual(target["failed_count"], 1)
+
+        failed = main._aggregate_display_results(resolution, [])
+        failed_target = next(
+            result for result in failed if result["grid_id"] == display_grid_id
+        )
+        self.assertEqual(failed_target["status"], "failed")
+        self.assertEqual(failed_target["success_count"], 0)
+        self.assertEqual(failed_target["failed_count"], len(members))
 
     def test_seoul_requires_compact_and_rejects_selector_conflicts(self) -> None:
         invalid_requests = (
@@ -473,6 +705,11 @@ class SimulationBatchApiTests(unittest.TestCase):
             },
             {"aggregate_resolution": "250m"},
             {"aggregate_id": "11680_00009"},
+            {
+                "grid_id": REGULAR_CENTER_GRID_ID,
+                "scope_m": 100,
+                "display_resolution": "500m",
+            },
         )
         for request in invalid_requests:
             with self.subTest(request=request):

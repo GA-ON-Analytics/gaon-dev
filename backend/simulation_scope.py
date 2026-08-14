@@ -17,6 +17,7 @@ from typing import Any
 EARTH_RADIUS_M = 6_371_008.8
 SEOUL_REFERENCE_LATITUDE = 37.5665
 ALLOWED_SCOPE_METERS = (100, 300, 500)
+SPATIAL_BUCKET_SIZE_M = 500
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class GridCell:
 class AggregateGridCell:
     display_grid_id: str
     gu_code: str
+    area_m2: float
     geometry: dict[str, Any]
     member_grid_ids: tuple[str, ...]
 
@@ -222,6 +224,16 @@ class SeoulGridSpatialIndex:
             gu_code: tuple(sorted(items, key=lambda cell: cell.grid_id))
             for gu_code, items in district_cells.items()
         }
+        spatial_buckets: dict[tuple[int, int], list[GridCell]] = {}
+        for cell in cells:
+            key = (
+                math.floor(cell.x_m / SPATIAL_BUCKET_SIZE_M),
+                math.floor(cell.y_m / SPATIAL_BUCKET_SIZE_M),
+            )
+            spatial_buckets.setdefault(key, []).append(cell)
+        self.spatial_buckets = {
+            key: tuple(items) for key, items in spatial_buckets.items()
+        }
 
     @classmethod
     def from_geojson(cls, path: Path) -> "SeoulGridSpatialIndex":
@@ -290,6 +302,29 @@ class SeoulGridSpatialIndex:
         """지도 GeoJSON에 실제로 존재하는 서울 100m 격자 전체를 반환한다."""
         return self.cells
 
+    def select_bounds(
+        self, west: float, south: float, east: float, north: float
+    ) -> tuple[GridCell, ...]:
+        """고정 공간 버킷에서 bbox 후보만 찾는다.
+
+        최종 포함 여부는 호출자가 실제 Polygon/MultiPolygon으로 다시 판정하므로
+        기존 centroid + half-open 경계 의미는 바뀌지 않는다.
+        """
+        west_x, south_y = _to_meter_coordinates(west, south)
+        east_x, north_y = _to_meter_coordinates(east, north)
+        min_bucket_x = math.floor(min(west_x, east_x) / SPATIAL_BUCKET_SIZE_M)
+        max_bucket_x = math.floor(max(west_x, east_x) / SPATIAL_BUCKET_SIZE_M)
+        min_bucket_y = math.floor(min(south_y, north_y) / SPATIAL_BUCKET_SIZE_M)
+        max_bucket_y = math.floor(max(south_y, north_y) / SPATIAL_BUCKET_SIZE_M)
+        candidates = [
+            cell
+            for bucket_x in range(min_bucket_x, max_bucket_x + 1)
+            for bucket_y in range(min_bucket_y, max_bucket_y + 1)
+            for cell in self.spatial_buckets.get((bucket_x, bucket_y), ())
+            if west <= cell.longitude <= east and south <= cell.latitude <= north
+        ]
+        return tuple(candidates)
+
     def select_aggregate_geometry(
         self, geometry: dict[str, Any], gu_code: str
     ) -> tuple[GridCell, ...]:
@@ -305,10 +340,8 @@ class SeoulGridSpatialIndex:
         west, south, east, north = _geometry_bounds(geometry)
         selected = [
             cell
-            for cell in self.cells
-            if west <= cell.longitude <= east
-            and south <= cell.latitude <= north
-            and _geometry_contains_point(geometry, cell.longitude, cell.latitude)
+            for cell in self.select_bounds(west, south, east, north)
+            if _geometry_contains_point(geometry, cell.longitude, cell.latitude)
         ]
         if selected:
             return tuple(sorted(selected, key=lambda cell: cell.grid_id))
@@ -343,6 +376,7 @@ class SeoulAggregateGridIndex:
             properties = feature.get("properties") or {}
             display_grid_id = properties.get("display_grid_id")
             gu_code = properties.get("gu_code")
+            area_m2 = properties.get("area_m2")
             geometry = feature.get("geometry")
             raw_member_ids = properties.get("member_grid_ids")
             if not isinstance(display_grid_id, str) or not display_grid_id:
@@ -350,6 +384,14 @@ class SeoulAggregateGridIndex:
             if not isinstance(geometry, dict):
                 raise ValueError(
                     f"Aggregate feature is missing geometry: {display_grid_id}"
+                )
+            if (
+                not isinstance(area_m2, (int, float))
+                or not math.isfinite(area_m2)
+                or area_m2 < 0
+            ):
+                raise ValueError(
+                    f"Aggregate feature has invalid area_m2: {display_grid_id}"
                 )
             member_grid_ids = tuple(
                 grid_id
@@ -360,6 +402,7 @@ class SeoulAggregateGridIndex:
                 AggregateGridCell(
                     display_grid_id=display_grid_id,
                     gu_code=str(gu_code or ""),
+                    area_m2=float(area_m2),
                     geometry=geometry,
                     member_grid_ids=member_grid_ids,
                 )
@@ -412,3 +455,22 @@ def load_grid_spatial_index(path: str) -> SeoulGridSpatialIndex:
 @lru_cache(maxsize=2)
 def load_aggregate_grid_index(path: str) -> SeoulAggregateGridIndex:
     return SeoulAggregateGridIndex.from_geojson(Path(path))
+
+
+@lru_cache(maxsize=2)
+def load_aggregate_constituent_mapping(
+    aggregate_path: str,
+    grid_path: str,
+    use_explicit_members: bool,
+) -> dict[str, tuple[GridCell, ...]]:
+    """고정 dashboard 데이터의 aggregate→실제 100m 구성원 매핑을 캐시한다."""
+    aggregate_index = load_aggregate_grid_index(aggregate_path)
+    grid_index = load_grid_spatial_index(grid_path)
+    return {
+        aggregate.display_grid_id: aggregate_index.select_constituents(
+            aggregate.display_grid_id,
+            grid_index,
+            use_explicit_members=use_explicit_members,
+        )
+        for aggregate in aggregate_index.cells
+    }
