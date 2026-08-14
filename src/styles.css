@@ -2353,29 +2353,31 @@ td {
 .gridDetailSidePanel .policyPresetNotice{
   margin:-6px 0 13px; color:var(--gdp-ink3); font-size:11px; line-height:1.5;
 }
-/* 두 칸이 아니라 한 칸으로 세운다. 두 칸에서는 글자 칸이 96px뿐이라
-   가장 긴 '소규모 공원·정원 조성'(131px)이 어떤 크기로 줄여도 두 줄이 됐다.
-   한 줄짜리 행으로 세우면 이름이 다 들어가고, 아이콘·상태를 좌우 끝에 놓을 수
-   있어 목록이 오히려 또렷해진다. */
 .gridDetailSidePanel .policyPresetGrid{
-  display:grid; grid-template-columns:minmax(0,1fr); gap:6px;
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px;
 }
 /* 정책 6종은 이 화면의 핵심인데 흰 칸에 얇은 선뿐이라 목록처럼 보였다.
    ① 회색 바탕을 깔아 '누르는 것'으로 보이게 하고 ② 정책마다 아이콘을 붙여
    이름을 다 읽지 않아도 구분되게 하고 ③ 고른 것은 진초록으로 확실히 바꾼다. */
+/* 아이콘·이름은 첫 줄, '적용 불가'는 그 아래 줄. 한 줄에 셋을 늘어놓으면
+   이름 칸이 32px밖에 안 남아 이름이 접힌다. 그리드라 같은 행의 두 버튼은
+   높이가 자동으로 맞는다. */
 .gridDetailSidePanel .policyPresetButton{
-  min-height:44px; padding:9px 12px; border:1px solid transparent; border-radius:11px;
+  min-height:46px; padding:9px; border:1px solid transparent; border-radius:11px;
   background:var(--gdp-sub); color:var(--gdp-ink); cursor:pointer;
-  display:flex; align-items:center; gap:9px;
-  text-align:left; font:inherit;
+  display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:2px 6px;
+  align-content:center; text-align:left; font:inherit;
   transition:background .12s ease, border-color .12s ease, transform .12s ease;
 }
-.gridDetailSidePanel .policyPresetIcon{ flex:none; font-size:15px; font-style:normal; line-height:1; }
+.gridDetailSidePanel .policyPresetIcon{ font-size:13px; font-style:normal; line-height:1; }
+/* 버튼에는 짧은 이름을 쓴다(POLICY_SHORT_NAMES). 두 칸 배치에서 이름에 쓸 수
+   있는 폭이 76px뿐이라 '소규모 공원·정원 조성'은 접힌다. 정식 이름은 바로
+   아래 상세 카드에 그대로 뜬다. keep-all 은 그래도 접힐 때를 위한 안전장치다. */
 .gridDetailSidePanel .policyPresetButton span{
-  flex:1; min-width:0; font-size:12.5px; line-height:1.35; font-weight:700; word-break:keep-all;
+  font-size:11.5px; line-height:1.35; font-weight:700; word-break:keep-all;
 }
 .gridDetailSidePanel .policyPresetButton small{
-  flex:none; color:var(--gdp-danger); font-size:9.5px; font-weight:700;
+  grid-column:1 / -1; color:var(--gdp-danger); font-size:9px; font-weight:700;
 }
 .gridDetailSidePanel .policyPresetButton:hover{
   border-color:var(--gdp-green); background:var(--gdp-green-soft); transform:translateY(-1px);
