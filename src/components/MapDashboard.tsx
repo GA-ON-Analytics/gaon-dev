@@ -1521,6 +1521,13 @@ export function MapDashboard() {
     },
     [handle100mFeatureClick]
   );
+  const handle3DDistrictDrillDown = useCallback(
+    (guCode: string) => {
+      const districtName = districtNameByCode.get(guCode);
+      if (districtName) handleDistrictChange(districtName);
+    },
+    [districtNameByCode, handleDistrictChange]
+  );
   // 구·해상도 전환 effect가 기존 선택을 비운 뒤 검색 결과를 실제 100m 클릭과 같은 경로로 반영한다.
   useEffect(() => {
     if (!gridSearchHit) return;
@@ -1591,13 +1598,10 @@ export function MapDashboard() {
     };
   }, [policyGridIds]);
   const map3DGridData = useMemo<FeatureCollection | null>(() => {
-    if (
-      selectedGridResolution !== '100m' ||
-      selectedDistrict === ALL_DISTRICTS ||
-      !gridGeoJson
-    ) {
+    if (selectedGridResolution !== '100m' || !gridGeoJson) {
       return null;
     }
+    if (selectedDistrict === ALL_DISTRICTS) return gridGeoJson;
     if (!policyScopeGridData) return gridGeoJson;
 
     const currentGridIds = new Set(
@@ -2051,6 +2055,7 @@ export function MapDashboard() {
         gridInfoSign={mapGridInfoSign}
         shelterSign={mapShelterSign}
         onGridFeatureClick={handle3DGridFeatureClick}
+        onDistrictDrillDown={handle3DDistrictDrillDown}
         onClearSelectedGrid={clearSelected100mGrid}
       />
       {!loading && !error && gridLoading && (

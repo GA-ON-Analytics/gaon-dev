@@ -56,6 +56,8 @@ const EMPTY_GRID_DATA: FeatureCollection = {
   type: 'FeatureCollection',
   features: []
 };
+const GRID_BOUNDS_CACHE = new WeakMap<FeatureCollection, LngLatBoundsLike | null>();
+const SEOUL_EXTRUSION_DATA_CACHE = new WeakMap<FeatureCollection, FeatureCollection>();
 
 const OSM_RASTER_STYLE: StyleSpecification = {
   version: 8,
@@ -88,6 +90,7 @@ interface Heat3DMapProps {
   gridInfoSign: Map3DGridInfoSign | null;
   shelterSign: Map3DShelterSign | null;
   onGridFeatureClick: Map3DGridFeatureClickHandler;
+  onDistrictDrillDown: Map3DDistrictDrillDownHandler;
   onClearSelectedGrid: Map3DClearSelectedGridHandler;
 }
 
@@ -110,6 +113,8 @@ export type Map3DGridFeatureClickHandler = (
   feature: FeatureCollection['features'][number],
   position: { lng: number; lat: number }
 ) => void;
+
+export type Map3DDistrictDrillDownHandler = (guCode: string) => void;
 
 export type Map3DClearSelectedGridHandler = (gridId: string) => void;
 
@@ -149,6 +154,10 @@ function extendBounds(input: unknown, bounds: MutableBounds): void {
 }
 
 function getGridBounds(gridData: FeatureCollection): LngLatBoundsLike | null {
+  if (GRID_BOUNDS_CACHE.has(gridData)) {
+    return GRID_BOUNDS_CACHE.get(gridData) ?? null;
+  }
+
   const bounds: MutableBounds = {
     west: Number.POSITIVE_INFINITY,
     south: Number.POSITIVE_INFINITY,
@@ -178,13 +187,16 @@ function getGridBounds(gridData: FeatureCollection): LngLatBoundsLike | null {
     !Number.isFinite(bounds.east) ||
     !Number.isFinite(bounds.north)
   ) {
+    GRID_BOUNDS_CACHE.set(gridData, null);
     return null;
   }
 
-  return [
+  const result: LngLatBoundsLike = [
     [bounds.west, bounds.south],
     [bounds.east, bounds.north]
   ];
+  GRID_BOUNDS_CACHE.set(gridData, result);
+  return result;
 }
 
 function getFiniteLst(value: unknown): number | null {
@@ -206,6 +218,15 @@ function getGridId(properties: unknown): string | null {
   const record = properties as Record<string, unknown>;
   const value = record.grid_id ?? record.display_grid_id;
   if (typeof value === 'string' && value.trim() !== '') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function getGuCode(properties: unknown): string | null {
+  if (!properties || typeof properties !== 'object') return null;
+
+  const value = (properties as Record<string, unknown>).gu_code;
+  if (typeof value === 'string' && value.trim() !== '') return value.trim();
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return null;
 }
@@ -381,8 +402,36 @@ function getPolicyGridIds(
 
 function prepareExtrusionData(
   gridData: FeatureCollection,
-  batchSimulationResult: BatchSimulationResponse | null
+  batchSimulationResult: BatchSimulationResponse | null,
+  isSeoulOverview: boolean
 ): FeatureCollection {
+  if (isSeoulOverview) {
+    const cached = SEOUL_EXTRUSION_DATA_CACHE.get(gridData);
+    if (cached) return cached;
+
+    const projected: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: gridData.features.map((feature) => {
+        const properties = feature.properties ?? {};
+        const lst = getFiniteLst(properties[LST_PROPERTY]);
+        return {
+          type: 'Feature',
+          geometry: feature.geometry,
+          properties: {
+            grid_id: properties.grid_id ?? properties.display_grid_id ?? null,
+            gu_code: properties.gu_code ?? null,
+            gu_name: properties.gu_name ?? null,
+            [LST_PROPERTY]: lst,
+            [NUMERIC_LST_PROPERTY]: lst,
+            [VISUAL_HEIGHT_PROPERTY]: lst === null ? 0 : getVisualHeight(lst)
+          }
+        };
+      })
+    };
+    SEOUL_EXTRUSION_DATA_CACHE.set(gridData, projected);
+    return projected;
+  }
+
   const successfulDeltas = getSuccessfulPolicyDeltas(batchSimulationResult);
 
   return {
@@ -522,10 +571,11 @@ function updateGridPolicyScope(map: Map, policyGridIds: string[]): void {
 function setGridSourceData(
   map: Map,
   gridData: FeatureCollection | null,
-  batchSimulationResult: BatchSimulationResponse | null
+  batchSimulationResult: BatchSimulationResponse | null,
+  isSeoulOverview: boolean
 ): void {
   const data = gridData
-    ? prepareExtrusionData(gridData, batchSimulationResult)
+    ? prepareExtrusionData(gridData, batchSimulationResult, isSeoulOverview)
     : EMPTY_GRID_DATA;
   const existingSource = map.getSource(GRID_SOURCE_ID);
 
@@ -572,9 +622,10 @@ function updateGridLayer(
   map: Map,
   gridData: FeatureCollection | null,
   batchSimulationResult: BatchSimulationResponse | null,
-  viewMode: Map3DViewMode
+  viewMode: Map3DViewMode,
+  isSeoulOverview: boolean
 ): void {
-  setGridSourceData(map, gridData, batchSimulationResult);
+  setGridSourceData(map, gridData, batchSimulationResult, isSeoulOverview);
 
   if (!map.getLayer(GRID_FILL_LAYER_ID)) {
     map.addLayer({
@@ -670,11 +721,13 @@ export default function Heat3DMap({
   gridInfoSign,
   shelterSign,
   onGridFeatureClick,
+  onDistrictDrillDown,
   onClearSelectedGrid
 }: Heat3DMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const gridDataRef = useRef(gridData);
+  const isSeoulOverviewRef = useRef(selectedDistrict === ALL_DISTRICTS);
   const batchSimulationResultRef = useRef(batchSimulationResult);
   const viewModeRef = useRef(viewMode);
   const policyGridIdsRef = useRef(getPolicyGridIds(batchSimulationResult));
@@ -682,6 +735,7 @@ export default function Heat3DMap({
   const gridInfoSignRef = useRef(gridInfoSign);
   const shelterSignRef = useRef(shelterSign);
   const onGridFeatureClickRef = useRef(onGridFeatureClick);
+  const onDistrictDrillDownRef = useRef(onDistrictDrillDown);
   const onClearSelectedGridRef = useRef(onClearSelectedGrid);
   const mapSignsRef = useRef<MapSignInstances>({
     gridInfoPopup: null,
@@ -691,20 +745,23 @@ export default function Heat3DMap({
   });
   const isMapLoadedRef = useRef(false);
   const [initializationError, setInitializationError] = useState(false);
+  const isSeoulOverview = selectedDistrict === ALL_DISTRICTS;
   gridDataRef.current = gridData;
-  batchSimulationResultRef.current = batchSimulationResult;
-  viewModeRef.current = viewMode;
-  policyGridIdsRef.current = getPolicyGridIds(batchSimulationResult);
-  selectedGridIdRef.current = selectedGridId;
+  isSeoulOverviewRef.current = isSeoulOverview;
+  batchSimulationResultRef.current = isSeoulOverview ? null : batchSimulationResult;
+  viewModeRef.current = isSeoulOverview ? 'before' : viewMode;
+  policyGridIdsRef.current = isSeoulOverview ? [] : getPolicyGridIds(batchSimulationResult);
+  selectedGridIdRef.current = isSeoulOverview ? null : selectedGridId;
   onGridFeatureClickRef.current = onGridFeatureClick;
+  onDistrictDrillDownRef.current = onDistrictDrillDown;
   onClearSelectedGridRef.current = onClearSelectedGrid;
 
   const hasSupportedGridData =
     resolution === '100m' &&
-    selectedDistrict !== ALL_DISTRICTS &&
     Boolean(gridData?.features.length);
-  gridInfoSignRef.current = hasSupportedGridData ? gridInfoSign : null;
-  shelterSignRef.current = hasSupportedGridData ? shelterSign : null;
+  const supportsDistrictDetails = hasSupportedGridData && !isSeoulOverview;
+  gridInfoSignRef.current = supportsDistrictDetails ? gridInfoSign : null;
+  shelterSignRef.current = supportsDistrictDetails ? shelterSign : null;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -717,6 +774,12 @@ export default function Heat3DMap({
     const handleGridClick = (event: MapLayerMouseEvent) => {
       const renderedFeature = event.features?.[0];
       if (!renderedFeature) return;
+
+      if (isSeoulOverviewRef.current) {
+        const guCode = getGuCode(renderedFeature.properties);
+        if (guCode) onDistrictDrillDownRef.current(guCode);
+        return;
+      }
 
       // MapLibre 전용 __gaon_* 속성이 상세 상태로 넘어가지 않도록 원본 feature를 되찾는다.
       const originalFeature = getOriginalGridFeature(
@@ -750,7 +813,8 @@ export default function Heat3DMap({
           map,
           gridDataRef.current,
           batchSimulationResultRef.current,
-          viewModeRef.current
+          viewModeRef.current,
+          isSeoulOverviewRef.current
         );
         updateGridPolicyScope(map, policyGridIdsRef.current);
         updateGridSelection(map, selectedGridIdRef.current);
@@ -789,7 +853,8 @@ export default function Heat3DMap({
       map,
       gridData,
       batchSimulationResultRef.current,
-      viewModeRef.current
+      viewModeRef.current,
+      isSeoulOverview
     );
   }, [gridData]);
 
@@ -797,8 +862,14 @@ export default function Heat3DMap({
     const map = mapRef.current;
     if (!map || !isMapLoadedRef.current) return;
 
+    if (isSeoulOverviewRef.current) {
+      updateGridPolicyScope(map, []);
+      updateGridViewMode(map, 'before');
+      return;
+    }
+
     // 새 ML/API 호출 없이 기존 source data의 시나리오 속성만 교체한다.
-    setGridSourceData(map, gridDataRef.current, batchSimulationResult);
+    setGridSourceData(map, gridDataRef.current, batchSimulationResult, false);
     updateGridPolicyScope(map, getPolicyGridIds(batchSimulationResult));
     updateGridViewMode(map, viewModeRef.current);
   }, [batchSimulationResult]);
@@ -814,8 +885,8 @@ export default function Heat3DMap({
     const map = mapRef.current;
     if (!map || !isMapLoadedRef.current) return;
 
-    updateGridSelection(map, selectedGridId);
-  }, [selectedGridId]);
+    updateGridSelection(map, isSeoulOverview ? null : selectedGridId);
+  }, [isSeoulOverview, selectedGridId]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -824,11 +895,11 @@ export default function Heat3DMap({
     updateMapSigns(
       map,
       mapSignsRef.current,
-      hasSupportedGridData ? gridInfoSign : null,
-      hasSupportedGridData ? shelterSign : null,
+      supportsDistrictDetails ? gridInfoSign : null,
+      supportsDistrictDetails ? shelterSign : null,
       (gridId) => onClearSelectedGridRef.current(gridId)
     );
-  }, [gridInfoSign, hasSupportedGridData, shelterSign]);
+  }, [gridInfoSign, shelterSign, supportsDistrictDetails]);
 
   return (
     <div className="heat3dMap" role="region" aria-label="서울 3D 지도">
@@ -840,7 +911,14 @@ export default function Heat3DMap({
             : '100m 3D 상세보기는 자치구 선택 후 이용할 수 있습니다.'}
         </div>
       )}
-      {hasSupportedGridData && !initializationError && (
+      {hasSupportedGridData && !initializationError && isSeoulOverview && (
+        <div className="heat3dMapNotice heat3dHeightNotice" role="note">
+          서울 전체 · 100m 열 분포
+          <br />
+          격자를 선택하면 해당 자치구로 이동합니다.
+        </div>
+      )}
+      {supportsDistrictDetails && !initializationError && (
         <div className="heat3dMapNotice heat3dHeightNotice" role="note">
           격자 높이는 서울 전체 100m 격자의 지표면온도 범위를 기준으로 표현한 상대적
           시각화이며 실제 지형·건물 높이가 아닙니다.
