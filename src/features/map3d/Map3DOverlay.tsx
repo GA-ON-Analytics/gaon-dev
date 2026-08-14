@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type { BatchSimulationResponse, GridResolution } from '../../types/dashboard';
 import Heat3DMap, {
   type Map3DClearSelectedGridHandler,
+  type Map3DDistrictDrillDownHandler,
   type Map3DGridFeatureClickHandler,
   type Map3DGridInfoSign,
   type Map3DShelterSign,
@@ -21,6 +22,7 @@ interface Map3DOverlayProps {
   gridInfoSign: Map3DGridInfoSign | null;
   shelterSign: Map3DShelterSign | null;
   onGridFeatureClick: Map3DGridFeatureClickHandler;
+  onDistrictDrillDown: Map3DDistrictDrillDownHandler;
   onClearSelectedGrid: Map3DClearSelectedGridHandler;
 }
 
@@ -33,19 +35,25 @@ export default function Map3DOverlay({
   gridInfoSign,
   shelterSign,
   onGridFeatureClick,
+  onDistrictDrillDown,
   onClearSelectedGrid
 }: Map3DOverlayProps) {
   const [is3DOpen, setIs3DOpen] = useState(false);
   const [viewMode, setViewMode] = useState<Map3DViewMode>('before');
+  const canOpen3D = resolution === '100m' && Boolean(gridData?.features.length);
 
   useEffect(() => {
     // 새 시뮬레이션 결과는 즉시 After로 보이고, 결과 reset 시 Before로 복귀한다.
     setViewMode(batchSimulationResult ? 'after' : 'before');
   }, [batchSimulationResult]);
 
+  useEffect(() => {
+    if (!canOpen3D) setIs3DOpen(false);
+  }, [canOpen3D]);
+
   return (
     <div className="map3dOverlay">
-      {is3DOpen && (
+      {is3DOpen && canOpen3D && (
         <div className="map3dSurface">
           <Heat3DMap
             gridData={gridData}
@@ -57,6 +65,7 @@ export default function Map3DOverlay({
             gridInfoSign={gridInfoSign}
             shelterSign={shelterSign}
             onGridFeatureClick={onGridFeatureClick}
+            onDistrictDrillDown={onDistrictDrillDown}
             onClearSelectedGrid={onClearSelectedGrid}
           />
           {batchSimulationResult && (
@@ -85,10 +94,12 @@ export default function Map3DOverlay({
           )}
         </div>
       )}
-      <Map3DToggle
-        is3DOpen={is3DOpen}
-        onToggle={() => setIs3DOpen((isOpen) => !isOpen)}
-      />
+      {canOpen3D && (
+        <Map3DToggle
+          is3DOpen={is3DOpen}
+          onToggle={() => setIs3DOpen((isOpen) => !isOpen)}
+        />
+      )}
     </div>
   );
 }
