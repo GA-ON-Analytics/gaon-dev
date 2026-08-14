@@ -1143,6 +1143,8 @@ export function MapDashboard() {
     setGridSearchError(null);
     setAggregateGridSearchHit(null);
     setBatchSimulationResult(null);
+    // 3D를 연 채 지역을 바꿀 때 이전 지역 source가 새 context로 잠시 보이지 않게 비운다.
+    setGridGeoJson(null);
     setSelectedDistrict(district);
   }, []);
   const handleDongSearch = useCallback(
@@ -1210,6 +1212,8 @@ export function MapDashboard() {
     setGridSearchError(null);
     setAggregateGridSearchHit(null);
     setBatchSimulationResult(null);
+    // MapLibre instance는 유지하되 새 해상도 데이터가 올 때까지 기존 source를 비운다.
+    setGridGeoJson(null);
     setSelectedGridResolution(resolution);
   }, []);
 
@@ -1600,9 +1604,11 @@ export function MapDashboard() {
     };
   }, [policyGridIds]);
   const map3DGridData = useMemo<FeatureCollection | null>(() => {
-    if (selectedGridResolution !== '100m' || !gridGeoJson) {
+    if (!gridGeoJson || isGuResolution(selectedGridResolution)) {
       return null;
     }
+    // 250m/500m는 기존 2D가 로드한 실제 aggregate collection을 그대로 시각화한다.
+    if (selectedGridResolution !== '100m') return gridGeoJson;
     if (selectedDistrict === ALL_DISTRICTS) return gridGeoJson;
     if (!policyScopeGridData) return gridGeoJson;
 

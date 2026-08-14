@@ -40,27 +40,33 @@ export default function Map3DOverlay({
 }: Map3DOverlayProps) {
   const [is3DOpen, setIs3DOpen] = useState(false);
   const [viewMode, setViewMode] = useState<Map3DViewMode>('before');
-  const canOpen3D = resolution === '100m' && Boolean(gridData?.features.length);
+  const supports3DResolution =
+    resolution === '100m' || resolution === '250m' || resolution === '500m';
+  const has3DGridData = Boolean(gridData?.features.length);
+  const canOpen3D = supports3DResolution && has3DGridData;
+  // 정책 결과와 Before/After는 실제 100m ML context에서만 유효하다.
+  const activeBatchSimulationResult =
+    resolution === '100m' ? batchSimulationResult : null;
   const contextLabel = `${
     selectedDistrict === '전체' ? '서울시 전체' : selectedDistrict
-  } · 100m 열 분포`;
+  } · ${resolution} 열 분포`;
 
   useEffect(() => {
     // 새 시뮬레이션 결과는 즉시 After로 보이고, 결과 reset 시 Before로 복귀한다.
-    setViewMode(batchSimulationResult ? 'after' : 'before');
-  }, [batchSimulationResult]);
+    setViewMode(activeBatchSimulationResult ? 'after' : 'before');
+  }, [activeBatchSimulationResult]);
 
   useEffect(() => {
-    if (!canOpen3D) setIs3DOpen(false);
-  }, [canOpen3D]);
+    if (!supports3DResolution) setIs3DOpen(false);
+  }, [supports3DResolution]);
 
   return (
     <div className="map3dOverlay">
-      {is3DOpen && canOpen3D && (
+      {is3DOpen && supports3DResolution && (
         <div className="map3dSurface">
           <Heat3DMap
             gridData={gridData}
-            batchSimulationResult={batchSimulationResult}
+            batchSimulationResult={activeBatchSimulationResult}
             viewMode={viewMode}
             resolution={resolution}
             selectedDistrict={selectedDistrict}
@@ -75,7 +81,7 @@ export default function Map3DOverlay({
             <div className="map3dContextLabel" aria-label={`현재 3D 분석 범위: ${contextLabel}`}>
               {contextLabel}
             </div>
-            {batchSimulationResult && (
+            {activeBatchSimulationResult && (
               <>
                 <div
                   className="map3dPolicyViewControl"
@@ -108,7 +114,7 @@ export default function Map3DOverlay({
           </div>
         </div>
       )}
-      {canOpen3D && (
+      {supports3DResolution && (canOpen3D || is3DOpen) && (
         <Map3DToggle
           is3DOpen={is3DOpen}
           onToggle={() => setIs3DOpen((isOpen) => !isOpen)}
