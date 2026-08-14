@@ -30,6 +30,8 @@ function rememberSeen() {
 
 interface Step {
   title: string;
+  /** 단계 목록에 쓰는 짧은 이름. 제목은 문장이라 목록에 넣으면 길다. */
+  label: string;
   body: readonly string[];
   /**
    * public/guide/ 의 화면 사진. 아직 없으면 자리표시가 대신 뜬다 —
@@ -45,6 +47,7 @@ interface Step {
 const STEPS: readonly Step[] = [
   {
     title: '어디를 먼저 시원하게 할지 찾는 대시보드예요',
+    label: '서비스 소개',
     body: [
       '서울을 100m 격자로 나눠, 여름철 지표면온도와 그 온도를 만든 요인을 격자마다 보여줍니다.',
       '녹지를 늘리거나 지붕을 밝게 칠하면 그 격자의 온도가 얼마나 내려갈지도 예측해 볼 수 있어요.'
@@ -54,6 +57,7 @@ const STEPS: readonly Step[] = [
   },
   {
     title: '지도에서 격자를 클릭하세요',
+    label: '격자 클릭',
     body: [
       '격자 하나를 누르면 오른쪽에 그 자리의 지표면온도, 온도에 영향이 큰 요인, 취약성이 열립니다.',
       '구 평균보다 몇 ℃ 높은지, 구 안에서 몇 번째로 시급한지도 함께 나옵니다.'
@@ -63,6 +67,7 @@ const STEPS: readonly Step[] = [
   },
   {
     title: '보고 싶은 지표로 지도 색을 바꿀 수 있어요',
+    label: '지도 지표',
     body: [
       '왼쪽 "지도 지표 선택"에서 개선 우선순위, 실제 지표면온도, 녹지율 같은 지표를 고르면 지도 전체가 그 기준으로 다시 칠해집니다.',
       '지금 어떤 지표를 보고 있는지는 목록 위 검은 칩에 표시됩니다.'
@@ -72,6 +77,7 @@ const STEPS: readonly Step[] = [
   },
   {
     title: '정책을 넣어보고 온도를 비교하세요',
+    label: '정책 시뮬레이션',
     body: [
       '격자를 고른 뒤 "이 격자 개선해보기"를 누르면 정책 시나리오로 바로 내려갑니다.',
       '포장공간 녹지화·옥상녹화·쿨루프 등 6가지를 같은 조건으로 비교하거나, 녹지율과 불투수면을 직접 움직여 예측할 수 있어요.',
@@ -82,6 +88,7 @@ const STEPS: readonly Step[] = [
   },
   {
     title: '말로 물어봐도 됩니다',
+    label: 'AI 챗봇',
     body: [
       '오른쪽 아래 마스코트를 누르면 AI 챗봇이 열립니다.',
       '"녹지율을 5%p 높여줘"처럼 말하면 시뮬레이션을 대신 돌려주고, "어떤 정책이 가장 효과적이야?"처럼 물으면 정책을 비교해 줍니다.',
@@ -151,37 +158,52 @@ function OnboardingGuide({ onClose }: Props) {
           </button>
         </header>
 
-        <div className="onboardingBody">
-          <div className="onboardingShot">
-            {missingImages[current.image] ? (
-              <div className="onboardingShotEmpty">
-                <span aria-hidden="true">🖼️</span>
-                <p>화면 사진 준비 중</p>
-              </div>
-            ) : (
-              <img
-                src={current.image}
-                alt={current.imageAlt}
-                onError={() =>
-                  setMissingImages((prev) => ({ ...prev, [current.image]: true }))
-                }
-              />
-            )}
-          </div>
-
-          {/* 첫 줄은 그 단계의 요점, 나머지는 곁들이는 설명. 다 같은 크기로 쌓으면
-              어디부터 읽어야 할지 모르겠는 문단 덩어리가 된다. */}
-          <div className="onboardingText">
-            <p className="onboardingLead">{current.body[0]}</p>
-            {current.body.length > 1 && (
-              <ul>
-                {current.body.slice(1).map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            )}
-          </div>
+        <div className="onboardingShot">
+          {missingImages[current.image] ? (
+            <div className="onboardingShotEmpty">
+              <span aria-hidden="true">🖼️</span>
+              <p>화면 사진 준비 중</p>
+            </div>
+          ) : (
+            <img
+              src={current.image}
+              alt={current.imageAlt}
+              onError={() =>
+                setMissingImages((prev) => ({ ...prev, [current.image]: true }))
+              }
+            />
+          )}
         </div>
+
+        {/* 첫 줄은 그 단계의 요점, 나머지는 곁들이는 설명. 다 같은 크기로 쌓으면
+            어디부터 읽어야 할지 모르겠는 문단 덩어리가 된다. */}
+        <div className="onboardingText">
+          <p className="onboardingLead">{current.body[0]}</p>
+          {current.body.length > 1 && (
+            <ul>
+              {current.body.slice(1).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* 넓은 화면에서만 보이는 단계 목록. 지금 어디인지 알려주고 눌러서
+            건너뛸 수도 있다. 좁은 화면에서는 자리를 많이 먹어 점으로 대신한다. */}
+        <nav className="onboardingSteps" aria-label="가이드 단계">
+          {STEPS.map((item, index) => (
+            <button
+              key={item.label}
+              type="button"
+              className={index === step ? 'on' : undefined}
+              aria-current={index === step ? 'step' : undefined}
+              onClick={() => setStep(index)}
+            >
+              <span>{index + 1}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
         <footer className="onboardingFooter">
           <div className="onboardingDots" aria-hidden="true">
@@ -189,12 +211,16 @@ function OnboardingGuide({ onClose }: Props) {
               <span key={item.title} className={index === step ? 'on' : undefined} />
             ))}
           </div>
+          {/* '이전'은 첫 단계에서도 자리를 지킨다(비활성). 아예 없애면 그 폭만큼
+              '다음'이 옆으로 밀려, 단계를 넘길 때마다 버튼이 움직인다. */}
           <div className="onboardingActions">
-            {step > 0 && (
-              <button type="button" onClick={() => setStep((prev) => prev - 1)}>
-                이전
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={step === 0}
+              onClick={() => setStep((prev) => prev - 1)}
+            >
+              이전
+            </button>
             <button
               className="primary"
               type="button"
