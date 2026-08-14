@@ -755,31 +755,8 @@ function buildGridTooltip(feature: Feature<Geometry>, layer: LayerKey, gridMeter
   `;
 }
 
-/** 쉼터 핀·라벨 전용 pane 이름. 팝업(700)보다 위. */
-const SHELTER_PANE = 'shelterTop';
-
 /** 라벨이 격자 팝업을 피해 내려가는 거리. styles.css 의 .shelterTipBelow 와 같아야 한다. */
 const SHELTER_LABEL_SHIFT = 112;
-
-/**
- * 쉼터 핀과 라벨을 격자 정보 팝업 위로 올리는 pane 을 만든다.
- *
- * Leaflet 은 팝업과 툴팁을 다른 pane 에 그리고 그 z-index 가 고정이다
- * (팝업 700 · 툴팁 650 · 마커 600). pane 끼리의 문제라 툴팁 요소에 z-index 를
- * 줘도 올라가지 않는다. 그렇다고 `.leaflet-tooltip-pane` 전체를 올리면 마우스를
- * 따라다니는 격자 hover 툴팁까지 팝업을 덮어버린다. 그래서 쉼터만 옮긴다.
- */
-function ShelterPane() {
-  const map = useMap();
-
-  useEffect(() => {
-    if (map.getPane(SHELTER_PANE)) return;
-    const pane = map.createPane(SHELTER_PANE);
-    pane.style.zIndex = '705';
-  }, [map]);
-
-  return null;
-}
 
 /**
  * 쉼터 핀과 라벨.
@@ -872,7 +849,10 @@ function ShelterMarker({ shelter }: { shelter: ShelterPin | null }) {
           '아래로 내리기'는 위 useEffect 가 DOM 클래스로 직접 건다. React 로 하면
           두 가지가 걸린다 — className 은 Leaflet 툴팁을 만들 때 한 번만 반영되고,
           key 로 다시 만들면 위치 계산이 어긋나 핀에서 350px 떨어진 곳에 뜬다(실측). */}
-      <Tooltip className="shelterTip" direction="top" opacity={1} permanent pane={SHELTER_PANE}>
+      {/* 전용 pane 을 만들어 팝업 위로 올리지 않는다. 자리를 피하는 것으로
+          대부분 해결되고, 그래도 겹치는 드문 경우에는 격자 설명이 이겨야 한다
+          — Leaflet 기본값이 툴팁(650) < 팝업(700)이라 그대로 두면 된다. */}
+      <Tooltip className="shelterTip" direction="top" opacity={1} permanent>
         <b>무더위쉼터</b>
         <span>{shelter.name}</span>
         {shelter.distance !== null && (
@@ -1855,8 +1835,6 @@ export function MapDashboard() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {/* 쉼터 pane 은 그 pane 을 쓰는 마커보다 먼저 만들어져야 한다. */}
-          <ShelterPane />
           <MapZoomWatcher onZoomChange={setZoomLevel} />
           <MapFocus
             center={gridFocus?.center ?? center}
