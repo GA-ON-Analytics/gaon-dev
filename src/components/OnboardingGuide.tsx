@@ -27,32 +27,54 @@ function rememberSeen() {
 
 interface Step {
   title: string;
-  body: string;
+  body: readonly string[];
   /**
    * public/guide/ 의 화면 사진. 아직 없으면 자리표시가 대신 뜬다 —
    * 파일을 넣기만 하면 코드 수정 없이 붙는다.
+   *
+   * ⚠️ PNG를 그대로 넣지 말 것. 스크린샷 PNG는 수 MB고, 이미지는 geojson과 달리
+   * gzip으로 줄지 않는다(이미 압축된 형식). WebP로 바꾸고 가로 1200px 이하로.
    */
   image: string;
   imageAlt: string;
 }
 
-const STEPS: Step[] = [
+const STEPS: readonly Step[] = [
   {
-    title: '지도에서 격자를 클릭하세요',
-    body: '100m 격자를 누르면 오른쪽에 그 자리의 지표면온도, 온도에 영향이 큰 요인, 취약성이 열립니다.',
-    image: '/guide/step-1-grid.webp',
-    imageAlt: '지도에서 격자 하나를 클릭한 화면'
+    title: '어디를 먼저 시원하게 할지 찾는 대시보드예요',
+    body: [
+      '서울을 100m 격자로 나눠, 여름철 지표면온도와 그 온도를 만든 요인을 격자마다 보여줍니다.',
+      '녹지를 늘리거나 지붕을 밝게 칠하면 그 격자의 온도가 얼마나 내려갈지도 예측해 볼 수 있어요.'
+    ],
+    image: '/guide/step-1-overview.webp',
+    imageAlt: '서울 전체가 격자 색으로 칠해진 대시보드 첫 화면'
   },
   {
-    title: '보고 싶은 지표로 바꿔 보세요',
-    body: '왼쪽 "지도 지표 선택"에서 개선 우선순위, 실제 지표면온도, 녹지율 같은 지표로 지도 색을 바꿀 수 있어요.',
-    image: '/guide/step-2-indicator.webp',
+    title: '지도에서 격자를 클릭하세요',
+    body: [
+      '격자 하나를 누르면 오른쪽에 그 자리의 지표면온도, 온도에 영향이 큰 요인, 취약성이 열립니다.',
+      '구 평균보다 몇 ℃ 높은지, 구 안에서 몇 번째로 시급한지도 함께 나옵니다.'
+    ],
+    image: '/guide/step-2-grid.webp',
+    imageAlt: '지도에서 격자 하나를 클릭해 상세 패널이 열린 화면'
+  },
+  {
+    title: '보고 싶은 지표로 지도 색을 바꿀 수 있어요',
+    body: [
+      '왼쪽 "지도 지표 선택"에서 개선 우선순위, 실제 지표면온도, 녹지율 같은 지표를 고르면 지도 전체가 그 기준으로 다시 칠해집니다.',
+      '지금 어떤 지표를 보고 있는지는 목록 위 검은 칩에 표시됩니다.'
+    ],
+    image: '/guide/step-3-indicator.webp',
     imageAlt: '지도 지표를 바꿔 지도 색이 달라진 화면'
   },
   {
     title: '정책을 넣어보고 온도를 비교하세요',
-    body: '정책 6종을 같은 조건으로 비교하거나, 녹지율·불투수면을 직접 움직여 온도가 얼마나 내려가는지 예측할 수 있습니다.',
-    image: '/guide/step-3-simulation.webp',
+    body: [
+      '격자를 고른 뒤 "이 격자 개선해보기"를 누르면 정책 시나리오로 바로 내려갑니다.',
+      '포장공간 녹지화·옥상녹화·쿨루프 등 6가지를 같은 조건으로 비교하거나, 녹지율과 불투수면을 직접 움직여 예측할 수 있어요.',
+      '각 정책에는 서울시가 실제로 시행한 사례를 붙여 뒀습니다.'
+    ],
+    image: '/guide/step-4-simulation.webp',
     imageAlt: '정책 시나리오와 직접 시뮬레이션 화면'
   }
 ];
@@ -69,21 +91,25 @@ function OnboardingGuide({ onClose }: Props) {
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;
 
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        rememberSeen();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   function close() {
     rememberSeen();
     onClose();
   }
-
-  useEffect(() => {
-    closeRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-    // close는 onClose만 참조한다 — 단계가 바뀔 때마다 다시 걸 필요가 없다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClose]);
 
   return createPortal(
     <div className="onboardingBackdrop" onClick={close}>
@@ -112,25 +138,28 @@ function OnboardingGuide({ onClose }: Props) {
           </button>
         </header>
 
-        <div className="onboardingShot">
-          {missingImages[current.image] ? (
-            <div className="onboardingShotEmpty" aria-hidden="true">
-              <span>🖼️</span>
-              <p>화면 사진 준비 중</p>
-            </div>
-          ) : (
-            <img
-              src={current.image}
-              alt={current.imageAlt}
-              loading="lazy"
-              onError={() =>
-                setMissingImages((prev) => ({ ...prev, [current.image]: true }))
-              }
-            />
-          )}
-        </div>
+        <div className="onboardingBody">
+          <div className="onboardingShot">
+            {missingImages[current.image] ? (
+              <div className="onboardingShotEmpty">
+                <span aria-hidden="true">🖼️</span>
+                <p>화면 사진 준비 중</p>
+              </div>
+            ) : (
+              <img
+                src={current.image}
+                alt={current.imageAlt}
+                onError={() =>
+                  setMissingImages((prev) => ({ ...prev, [current.image]: true }))
+                }
+              />
+            )}
+          </div>
 
-        <p className="onboardingBody">{current.body}</p>
+          {current.body.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
 
         <footer className="onboardingFooter">
           <div className="onboardingDots" aria-hidden="true">
@@ -155,7 +184,7 @@ function OnboardingGuide({ onClose }: Props) {
         </footer>
 
         <p className="onboardingRecall">
-          이 가이드는 왼쪽 패널의 <b>사용 가이드</b> 버튼으로 다시 볼 수 있어요.
+          왼쪽 패널 맨 위 <b>?</b> 버튼을 누르면 언제든 다시 볼 수 있어요.
         </p>
       </div>
     </div>,
