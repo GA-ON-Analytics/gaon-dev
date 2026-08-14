@@ -57,7 +57,7 @@ const EMPTY_GRID_DATA: FeatureCollection = {
   features: []
 };
 const GRID_BOUNDS_CACHE = new WeakMap<FeatureCollection, LngLatBoundsLike | null>();
-const SEOUL_EXTRUSION_DATA_CACHE = new WeakMap<FeatureCollection, FeatureCollection>();
+const EXTRUSION_DATA_CACHE = new WeakMap<FeatureCollection, FeatureCollection>();
 const SEOUL_POLICY_DATA_CACHE = new WeakMap<
   FeatureCollection,
   WeakMap<BatchSimulationResponse, FeatureCollection>
@@ -407,36 +407,45 @@ function getPolicyGridIds(
   ];
 }
 
+function getBaselineExtrusionData(
+  gridData: FeatureCollection
+): FeatureCollection {
+  const cached = EXTRUSION_DATA_CACHE.get(gridData);
+  if (cached) return cached;
+
+  const baselineData: FeatureCollection = {
+    type: 'FeatureCollection',
+    features: gridData.features.map((feature) => {
+      const properties = feature.properties ?? {};
+      const lst = getFiniteLst(properties[LST_PROPERTY]);
+      return {
+        type: 'Feature',
+        geometry: feature.geometry,
+        properties: {
+          // 100m과 aggregate의 실제 ID 필드를 각각 보존한다. 원본 feature는 mutate하지 않는다.
+          grid_id: properties.grid_id ?? null,
+          display_grid_id: properties.display_grid_id ?? null,
+          gu_code: properties.gu_code ?? null,
+          gu_name: properties.gu_name ?? null,
+          [LST_PROPERTY]: lst,
+          [NUMERIC_LST_PROPERTY]: lst,
+          [VISUAL_HEIGHT_PROPERTY]: lst === null ? 0 : getVisualHeight(lst)
+        }
+      };
+    })
+  };
+  EXTRUSION_DATA_CACHE.set(gridData, baselineData);
+  return baselineData;
+}
+
 function prepareExtrusionData(
   gridData: FeatureCollection,
   batchSimulationResult: BatchSimulationResponse | null,
   isSeoulOverview: boolean
 ): FeatureCollection {
-  if (isSeoulOverview) {
-    let baselineData = SEOUL_EXTRUSION_DATA_CACHE.get(gridData);
-    if (!baselineData) {
-      baselineData = {
-        type: 'FeatureCollection',
-        features: gridData.features.map((feature) => {
-          const properties = feature.properties ?? {};
-          const lst = getFiniteLst(properties[LST_PROPERTY]);
-          return {
-            type: 'Feature',
-            geometry: feature.geometry,
-            properties: {
-              grid_id: properties.grid_id ?? properties.display_grid_id ?? null,
-              gu_code: properties.gu_code ?? null,
-              gu_name: properties.gu_name ?? null,
-              [LST_PROPERTY]: lst,
-              [NUMERIC_LST_PROPERTY]: lst,
-              [VISUAL_HEIGHT_PROPERTY]: lst === null ? 0 : getVisualHeight(lst)
-            }
-          };
-        })
-      };
-      SEOUL_EXTRUSION_DATA_CACHE.set(gridData, baselineData);
-    }
+  const baselineData = getBaselineExtrusionData(gridData);
 
+  if (isSeoulOverview) {
     if (batchSimulationResult?.target_mode !== 'seoul') return baselineData;
 
     let resultCache = SEOUL_POLICY_DATA_CACHE.get(gridData);
@@ -507,13 +516,14 @@ function prepareExtrusionData(
     return policyData;
   }
 
+  if (!batchSimulationResult) return baselineData;
+
   const successfulDeltas = getSuccessfulPolicyDeltas(batchSimulationResult);
 
   return {
-    ...gridData,
-    features: gridData.features.map((feature) => {
+    ...baselineData,
+    features: baselineData.features.map((feature) => {
       const lst = getFiniteLst(feature.properties?.[LST_PROPERTY]);
-      const visualHeight = lst === null ? 0 : getVisualHeight(lst);
       const gridId = getGridId(feature.properties);
       const delta = gridId ? successfulDeltas.get(gridId) : undefined;
       // delta_c는 고정된 anomaly reference에서 예측한 변화량이다.
@@ -527,8 +537,6 @@ function prepareExtrusionData(
         ...feature,
         properties: {
           ...(feature.properties ?? {}),
-          [NUMERIC_LST_PROPERTY]: lst,
-          [VISUAL_HEIGHT_PROPERTY]: visualHeight,
           ...(afterVisualLst === null
             ? {}
             : {
@@ -803,6 +811,7 @@ export default function Heat3DMap({
   const mapRef = useRef<Map | null>(null);
   const gridDataRef = useRef(gridData);
   const isSeoulOverviewRef = useRef(selectedDistrict === ALL_DISTRICTS);
+  const is100mResolutionRef = useRef(resolution === '100m');
   const batchSimulationResultRef = useRef(batchSimulationResult);
   const viewModeRef = useRef(viewMode);
   const policyGridIdsRef = useRef(getPolicyGridIds(batchSimulationResult));
@@ -821,23 +830,28 @@ export default function Heat3DMap({
   const isMapLoadedRef = useRef(false);
   const [initializationError, setInitializationError] = useState(false);
   const isSeoulOverview = selectedDistrict === ALL_DISTRICTS;
+  const is100mResolution = resolution === '100m';
+  const supports3DResolution =
+    is100mResolution || resolution === '250m' || resolution === '500m';
   gridDataRef.current = gridData;
   isSeoulOverviewRef.current = isSeoulOverview;
+  is100mResolutionRef.current = is100mResolution;
   batchSimulationResultRef.current = batchSimulationResult;
   viewModeRef.current = viewMode;
   policyGridIdsRef.current = getPolicyGridIds(batchSimulationResult);
-  selectedGridIdRef.current = isSeoulOverview ? null : selectedGridId;
   onGridFeatureClickRef.current = onGridFeatureClick;
   onDistrictDrillDownRef.current = onDistrictDrillDown;
   onClearSelectedGridRef.current = onClearSelectedGrid;
 
   const hasSupportedGridData =
-    resolution === '100m' &&
+    supports3DResolution &&
     Boolean(gridData?.features.length);
-  const supportsDistrictDetails = hasSupportedGridData && !isSeoulOverview;
+  const supports100mDetails =
+    hasSupportedGridData && is100mResolution && !isSeoulOverview;
   const showsPolicyScope = getPolicyGridIds(batchSimulationResult).length > 0;
-  gridInfoSignRef.current = supportsDistrictDetails ? gridInfoSign : null;
-  shelterSignRef.current = supportsDistrictDetails ? shelterSign : null;
+  selectedGridIdRef.current = supports100mDetails ? selectedGridId : null;
+  gridInfoSignRef.current = supports100mDetails ? gridInfoSign : null;
+  shelterSignRef.current = supports100mDetails ? shelterSign : null;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -856,6 +870,9 @@ export default function Heat3DMap({
         if (guCode) onDistrictDrillDownRef.current(guCode);
         return;
       }
+
+      // 자치구 250m/500m는 이번 단계에서 LST 탐색만 제공한다.
+      if (!is100mResolutionRef.current) return;
 
       // MapLibre 전용 __gaon_* 속성이 상세 상태로 넘어가지 않도록 원본 feature를 되찾는다.
       const originalFeature = getOriginalGridFeature(
@@ -960,8 +977,8 @@ export default function Heat3DMap({
     const map = mapRef.current;
     if (!map || !isMapLoadedRef.current) return;
 
-    updateGridSelection(map, isSeoulOverview ? null : selectedGridId);
-  }, [isSeoulOverview, selectedGridId]);
+    updateGridSelection(map, supports100mDetails ? selectedGridId : null);
+  }, [selectedGridId, supports100mDetails]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -970,20 +987,24 @@ export default function Heat3DMap({
     updateMapSigns(
       map,
       mapSignsRef.current,
-      supportsDistrictDetails ? gridInfoSign : null,
-      supportsDistrictDetails ? shelterSign : null,
+      supports100mDetails ? gridInfoSign : null,
+      supports100mDetails ? shelterSign : null,
       (gridId) => onClearSelectedGridRef.current(gridId)
     );
-  }, [gridInfoSign, shelterSign, supportsDistrictDetails]);
+  }, [gridInfoSign, shelterSign, supports100mDetails]);
 
   return (
-    <div className="heat3dMap" role="region" aria-label="서울 3D 지도">
+    <div
+      className="heat3dMap"
+      role="region"
+      aria-label={`${selectedDistrict === ALL_DISTRICTS ? '서울시 전체' : selectedDistrict} ${resolution} 3D 지도`}
+    >
       <div ref={containerRef} className="heat3dMapCanvas" />
       {!hasSupportedGridData && !initializationError && (
         <div className="heat3dMapNotice" role="status">
-          {resolution === '100m' && selectedDistrict !== ALL_DISTRICTS
-            ? '100m 격자 데이터를 준비 중입니다.'
-            : '100m 3D 상세보기는 자치구 선택 후 이용할 수 있습니다.'}
+          {supports3DResolution
+            ? `${resolution} 격자 데이터를 준비 중입니다.`
+            : '3D 열 분포는 100m, 250m, 500m에서 이용할 수 있습니다.'}
         </div>
       )}
       {hasSupportedGridData && !initializationError && (
@@ -1005,7 +1026,7 @@ export default function Heat3DMap({
               </span>
             ))}
           </div>
-          {(showsPolicyScope || (supportsDistrictDetails && selectedGridId)) && (
+          {(showsPolicyScope || (supports100mDetails && selectedGridId)) && (
             <div className="map3dLegendMarks">
               {showsPolicyScope && (
                 <span>
@@ -1013,7 +1034,7 @@ export default function Heat3DMap({
                   정책 대상 범위
                 </span>
               )}
-              {supportsDistrictDetails && selectedGridId && (
+              {supports100mDetails && selectedGridId && (
                 <span>
                   <i className="isSelectedGrid" />
                   선택 격자
@@ -1025,16 +1046,18 @@ export default function Heat3DMap({
       )}
       {hasSupportedGridData && !initializationError && isSeoulOverview && (
         <div className="heat3dMapNotice heat3dHeightNotice" role="note">
-          격자를 선택하면 해당 자치구의 100m 상세 분석으로 이동합니다.
+          격자를 선택하면 해당 자치구의 {resolution} 열 분포로 이동합니다.
           <span>
             높이는 지표면온도 차이를 강조한 상대적 표현이며 실제 지형·건물 높이가
             아닙니다.
           </span>
         </div>
       )}
-      {supportsDistrictDetails && !initializationError && (
+      {hasSupportedGridData && !isSeoulOverview && !initializationError && (
         <div className="heat3dMapNotice heat3dHeightNotice" role="note">
-          격자를 선택하면 상세 정보와 정책 시뮬레이션을 확인할 수 있습니다.
+          {is100mResolution
+            ? '격자를 선택하면 상세 정보와 정책 시뮬레이션을 확인할 수 있습니다.'
+            : '집계 격자의 지표면온도 분포를 3D로 탐색합니다.'}
           <span>
             높이는 지표면온도 차이를 강조한 상대적 표현이며 실제 지형·건물 높이가
             아닙니다.
