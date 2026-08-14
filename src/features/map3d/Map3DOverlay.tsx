@@ -81,34 +81,28 @@ export default function Map3DOverlay({
               {contextLabel}
             </div>
             {activeBatchSimulationResult && (
-              <>
-                <div
-                  className="map3dPolicyViewControl"
-                  role="group"
-                  aria-label="정책 시뮬레이션 전후 비교"
+              <div
+                className="map3dPolicyViewControl"
+                role="group"
+                aria-label="정책 시뮬레이션 전후 비교"
+              >
+                <button
+                  type="button"
+                  className={viewMode === 'before' ? 'isActive' : ''}
+                  aria-pressed={viewMode === 'before'}
+                  onClick={() => setViewMode('before')}
                 >
-                  <button
-                    type="button"
-                    className={viewMode === 'before' ? 'isActive' : ''}
-                    aria-pressed={viewMode === 'before'}
-                    onClick={() => setViewMode('before')}
-                  >
-                    현재
-                  </button>
-                  <button
-                    type="button"
-                    className={viewMode === 'after' ? 'isActive' : ''}
-                    aria-pressed={viewMode === 'after'}
-                    onClick={() => setViewMode('after')}
-                  >
-                    정책 적용 후
-                  </button>
-                </div>
-                <p className="map3dPolicyScenarioNote">
-                  정책 적용 후는 현재 관측 LST에 모델 예측 변화량을 반영한 시나리오이며
-                  실제 미래 관측값이 아닙니다.
-                </p>
-              </>
+                  현재
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === 'after' ? 'isActive' : ''}
+                  aria-pressed={viewMode === 'after'}
+                  onClick={() => setViewMode('after')}
+                >
+                  정책 적용 후
+                </button>
+              </div>
             )}
           </div>
         </div>

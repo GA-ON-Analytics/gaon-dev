@@ -53,6 +53,10 @@
 .gridDetailSidePanel,
 .aiChatDock,
 .aiChatFab,
+.map3dViewHeader,
+.heat3dMapNotice,
+.map3dLegend,
+.map3dToggle,
 .leaflet-control-container {
   zoom: var(--ui-scale);
 }

@@ -46,6 +46,12 @@ const LST_COLOR_FALLBACK = '#d7dce3';
 const LST_BREAK_LOW = 35;
 const LST_BREAK_MEDIUM = 38;
 const LST_BREAK_HIGH = 41;
+const LST_LEGEND_ITEMS = [
+  { label: `<${LST_BREAK_LOW}℃`, color: LST_COLOR_LOW },
+  { label: `${LST_BREAK_LOW}~${LST_BREAK_MEDIUM}℃`, color: LST_COLOR_MEDIUM },
+  { label: `${LST_BREAK_MEDIUM}~${LST_BREAK_HIGH}℃`, color: LST_COLOR_HIGH },
+  { label: `≥${LST_BREAK_HIGH}℃`, color: LST_COLOR_VERY_HIGH }
+] as const;
 // 현재 서울 전체 100m 데이터에서 검증된 공통 시각화 기준이다.
 const SEOUL_LST_MIN = 24.4014;
 const SEOUL_LST_MAX = 52.4678;
@@ -1116,17 +1122,18 @@ export default function Heat3DMap({
             <strong>지표면온도(LST)</strong>
             <span>높을수록 기둥이 높음</span>
           </div>
-          <div className="map3dLegendScale">
-            {[
-              { label: '<35℃', color: LST_COLOR_LOW },
-              { label: '35~38℃', color: LST_COLOR_MEDIUM },
-              { label: '38~41℃', color: LST_COLOR_HIGH },
-              { label: '≥41℃', color: LST_COLOR_VERY_HIGH }
-            ].map((item) => (
-              <span key={item.label}>
-                <i style={{ background: item.color }} />
-                {item.label}
-              </span>
+          <div
+            className="map3dLegendScale"
+            role="img"
+            aria-label={LST_LEGEND_ITEMS.map((item) => item.label).join(', ')}
+          >
+            {LST_LEGEND_ITEMS.map((item) => (
+              <span key={item.label} style={{ background: item.color }} />
+            ))}
+          </div>
+          <div className="map3dLegendTicks">
+            {LST_LEGEND_ITEMS.map((item) => (
+              <span key={item.label}>{item.label}</span>
             ))}
           </div>
           {(showsPolicyScope || (supportsGridDetails && selectedGridId)) && (
