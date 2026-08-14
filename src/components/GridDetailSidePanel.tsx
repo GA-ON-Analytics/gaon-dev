@@ -12,6 +12,7 @@ import {
   policyApplicability,
   policySimulationRequest,
   POLICY_ICONS,
+  POLICY_SHORT_NAMES,
   usePolicyPresets
 } from '../config/policyPresets';
 import type {
@@ -1198,7 +1199,7 @@ function PolicyPresetSection({
               <em className="policyPresetIcon" aria-hidden="true">
                 {POLICY_ICONS[preset.id] ?? '🌿'}
               </em>
-              <span>{preset.name}</span>
+              <span>{POLICY_SHORT_NAMES[preset.id] ?? preset.name}</span>
               {!applicability.applicable && <small>적용 불가</small>}
             </button>
           );

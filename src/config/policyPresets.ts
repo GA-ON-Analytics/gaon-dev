@@ -33,6 +33,18 @@ export const POLICY_ICONS: Partial<Record<PolicyId, string>> = {
   cool_roof: '☀️'
 };
 
+/**
+ * 정책 목록 버튼에만 쓰는 짧은 이름. 정식 이름은 바로 아래 상세 카드에 그대로 뜨고,
+ * 챗봇도 백엔드의 정식 이름을 쓴다.
+ *
+ * 두 칸 배치라 버튼의 글자 칸이 90px대인데 '소규모 공원·정원 조성'은 131px이
+ * 필요하다. 아이콘을 빼도, 글자를 줄여도 두 줄로 접히면서 낱말 가운데가 잘렸다.
+ * 여기 없는 정책은 정식 이름을 그대로 쓴다.
+ */
+export const POLICY_SHORT_NAMES: Partial<Record<PolicyId, string>> = {
+  small_park: '작은 공원·정원'
+};
+
 const STANDARD_SCENARIO = '100m 격자 기준 표준 시나리오 · 격자 내 10% 수준 개입';
 
 // 정책 정의는 백엔드가 원본이다(`backend/policy_presets.py`).
