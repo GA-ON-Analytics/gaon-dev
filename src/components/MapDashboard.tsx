@@ -661,8 +661,15 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
+type ShelterPin = {
+  position: [number, number];
+  name: string;
+  addr: string;
+  distance: number | null;
+};
+
 // 선택 격자의 '가장 가까운 무더위쉼터'를 지도 핀으로 찍기 위한 정보 (좌표 없으면 null)
-function getShelterPin(properties: GridAnalysisProperties | null) {
+function getShelterPin(properties: GridAnalysisProperties | null): ShelterPin | null {
   if (!properties) return null;
   const lat = toFiniteNumber(properties.nearest_shelter_lat);
   const lon = toFiniteNumber(properties.nearest_shelter_lon);
@@ -745,6 +752,129 @@ function buildGridTooltip(feature: Feature<Geometry>, layer: LayerKey, gridMeter
       <small>${getGridIdentifier(properties)} · 면적 ${formatAnyProperty(properties, 'area_m2')}</small>
     </div>
   `;
+}
+
+/** 쉼터 핀·라벨 전용 pane 이름. 팝업(700)보다 위. */
+const SHELTER_PANE = 'shelterTop';
+
+/** 라벨이 격자 팝업을 피해 내려가는 거리. styles.css 의 .shelterTipBelow 와 같아야 한다. */
+const SHELTER_LABEL_SHIFT = 112;
+
+/**
+ * 쉼터 핀과 라벨을 격자 정보 팝업 위로 올리는 pane 을 만든다.
+ *
+ * Leaflet 은 팝업과 툴팁을 다른 pane 에 그리고 그 z-index 가 고정이다
+ * (팝업 700 · 툴팁 650 · 마커 600). pane 끼리의 문제라 툴팁 요소에 z-index 를
+ * 줘도 올라가지 않는다. 그렇다고 `.leaflet-tooltip-pane` 전체를 올리면 마우스를
+ * 따라다니는 격자 hover 툴팁까지 팝업을 덮어버린다. 그래서 쉼터만 옮긴다.
+ */
+function ShelterPane() {
+  const map = useMap();
+
+  useEffect(() => {
+    if (map.getPane(SHELTER_PANE)) return;
+    const pane = map.createPane(SHELTER_PANE);
+    pane.style.zIndex = '705';
+  }, [map]);
+
+  return null;
+}
+
+/**
+ * 쉼터 핀과 라벨.
+ *
+ * 라벨이 격자 정보 팝업과 겹치는 문제가 있었다. 쉼터가 가까운 격자
+ * (예: 11680_03624 는 6m)에서는 팝업이 라벨을 통째로 덮었다.
+ * z-index 로 올리면 이번엔 라벨이 팝업을 덮어 둘 중 하나는 못 읽는다.
+ * 그래서 **겹칠 자리면 라벨을 핀 아래로 내린다**. 둘 다 읽을 수 있다.
+ *
+ * 판단은 라벨의 현재 위치가 아니라 '핀 기준으로 라벨이 차지할 자리'로 한다.
+ * 현재 위치로 재면 내렸다가 안 겹치니 다시 올리는 진동이 생긴다.
+ */
+function ShelterMarker({ shelter }: { shelter: ShelterPin | null }) {
+  const map = useMap();
+  const shelterKey = shelter ? `${shelter.position[0]},${shelter.position[1]}` : '';
+
+  useEffect(() => {
+    if (!shelter) return;
+
+    const update = () => {
+      const label = document.querySelector('.leaflet-tooltip.shelterTip');
+      const popup = document.querySelector('.gridTempTooltip');
+      if (!label) return;
+      if (!popup) {
+        label.classList.remove('shelterTipBelow');
+        return;
+      }
+
+      // 판단 기준은 라벨의 '원래 자리'(핀 위)다. 지금 내려가 있으면 내린 만큼
+      // 되돌려서 잰다. 핀 좌표로 재려 했더니 핀과 라벨의 기준 원점이 달라
+      // 어긋났고, 현재 자리로 재면 내렸다 올렸다 진동한다.
+      const shifted = label.classList.contains('shelterTipBelow');
+      const box = label.getBoundingClientRect();
+      const top = shifted ? box.top - SHELTER_LABEL_SHIFT : box.top;
+      const bottom = shifted ? box.bottom - SHELTER_LABEL_SHIFT : box.bottom;
+      const popupBox = popup.getBoundingClientRect();
+
+      label.classList.toggle(
+        'shelterTipBelow',
+        !(
+          box.right < popupBox.left ||
+          box.left > popupBox.right ||
+          bottom < popupBox.top ||
+          top > popupBox.bottom
+        )
+      );
+    };
+
+    // 격자 팝업은 지도 이동이 끝난 뒤에 붙는다. 처음 한 번만 재면 팝업이 아직
+    // 없어서 '안 겹친다'로 잘못 판단한다. popupopen 까지 듣고, 이동 애니메이션이
+    // 끝난 뒤로도 한 번 더 잰다.
+    const timers = [window.setTimeout(update, 0), window.setTimeout(update, 400)];
+    map.on('move zoom resize popupopen popupclose', update);
+    return () => {
+      timers.forEach(window.clearTimeout);
+      map.off('move zoom resize popupopen popupclose', update);
+    };
+  }, [map, shelter, shelterKey]);
+
+  if (!shelter) return null;
+
+  return (
+    <Marker
+      position={shelter.position}
+      icon={SHELTER_PIN_ICON}
+      alt={`무더위쉼터 ${shelter.name}`}
+      pane={SHELTER_PANE}
+    >
+      {/* 항상 보이는 라벨.
+          hover로 띄우면 두 가지가 걸린다. (1) 격자 hover 툴팁이 sticky라 마우스를
+          따라다니며 이 라벨을 덮는다. (2) 핀 그림(-45도 회전한 28x28)의 대각선이
+          아이콘 클릭영역(28x34) 밖으로 나와, 삐져나온 부분을 클릭하면 아래 격자
+          레이어로 통과해 다른 격자가 선택된다.
+          항상 띄워두면 hover도 클릭도 필요 없어 둘 다 우회한다.
+
+          '아래로 내리기'는 위 useEffect 가 DOM 클래스로 직접 건다. React 로 하면
+          두 가지가 걸린다 — className 은 Leaflet 툴팁을 만들 때 한 번만 반영되고,
+          key 로 다시 만들면 위치 계산이 어긋나 핀에서 350px 떨어진 곳에 뜬다(실측). */}
+      <Tooltip className="shelterTip" direction="top" opacity={1} permanent pane={SHELTER_PANE}>
+        <b>무더위쉼터</b>
+        <span>{shelter.name}</span>
+        {shelter.distance !== null && (
+          <span className="stDist">
+            여기서 약 {Math.round(shelter.distance).toLocaleString()}m
+          </span>
+        )}
+      </Tooltip>
+      <Popup className="shelterPopup" autoPan={false}>
+        <strong>{shelter.name}</strong>
+        {shelter.addr && <span>{shelter.addr}</span>}
+        {shelter.distance !== null && (
+          <span>선택 격자에서 약 {Math.round(shelter.distance)}m</span>
+        )}
+      </Popup>
+    </Marker>
+  );
 }
 
 function MapZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
@@ -1704,6 +1834,8 @@ export function MapDashboard() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          {/* 쉼터 pane 은 그 pane 을 쓰는 마커보다 먼저 만들어져야 한다. */}
+          <ShelterPane />
           <MapZoomWatcher onZoomChange={setZoomLevel} />
           <MapFocus
             center={gridFocus?.center ?? center}
@@ -1858,41 +1990,8 @@ export function MapDashboard() {
               eventHandlers={{ click: () => handleDistrictChange(district.district) }}
             />
           ))}
-          {(() => {
-            // 선택 격자의 가장 가까운 쉼터를 지도에 핀으로 표시 (100m는 hydrate 후 좌표가 채워짐)
-            const shelter = getShelterPin(selectedGridProperties);
-            if (!shelter) return null;
-            return (
-              <Marker
-                position={shelter.position}
-                icon={SHELTER_PIN_ICON}
-                alt={`무더위쉼터 ${shelter.name}`}
-              >
-                {/* 항상 보이는 라벨.
-                    hover로 띄우면 두 가지가 걸린다. (1) 격자 hover 툴팁이 sticky라 마우스를
-                    따라다니며 이 라벨을 덮는다. (2) 핀 그림(-45도 회전한 28x28)의 대각선이
-                    아이콘 클릭영역(28x34) 밖으로 나와, 삐져나온 부분을 클릭하면 아래 격자
-                    레이어로 통과해 다른 격자가 선택된다.
-                    항상 띄워두면 hover도 클릭도 필요 없어 둘 다 우회한다. */}
-                <Tooltip className="shelterTip" direction="top" opacity={1} permanent>
-                  <b>무더위쉼터</b>
-                  <span>{shelter.name}</span>
-                  {shelter.distance !== null && (
-                    <span className="stDist">
-                      여기서 약 {Math.round(shelter.distance).toLocaleString()}m
-                    </span>
-                  )}
-                </Tooltip>
-                <Popup className="shelterPopup" autoPan={false}>
-                  <strong>{shelter.name}</strong>
-                  {shelter.addr && <span>{shelter.addr}</span>}
-                  {shelter.distance !== null && (
-                    <span>선택 격자에서 약 {Math.round(shelter.distance)}m</span>
-                  )}
-                </Popup>
-              </Marker>
-            );
-          })()}
+          {/* 선택 격자의 가장 가까운 쉼터를 지도에 핀으로 표시 (100m는 hydrate 후 좌표가 채워짐) */}
+          <ShelterMarker shelter={getShelterPin(selectedGridProperties)} />
           {/* 줌·축척을 우측 상단 도구 팔레트(.rightToolbar) 옆으로 모았다.
               지도 조작 컨트롤이 화면 양 끝에 흩어져 있으면 시선이 두 번 움직인다. */}
           <ZoomControl position="topright" />

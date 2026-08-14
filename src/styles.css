@@ -1797,6 +1797,18 @@ td {
   border-top-color: #1f5121;
 }
 
+/* 라벨이 격자 정보 팝업과 겹칠 자리면 핀 아래로 내린다(ShelterMarker 가 판단).
+   Leaflet 이 위치를 transform 으로 잡으므로 transform 을 쓰면 자리가 어긋난다.
+   margin 으로 내리고, 방향이 뒤집힌 꼬리는 감춘다 — 핀이 하나뿐이라 꼬리가
+   없어도 어느 핀의 라벨인지 헷갈리지 않는다. */
+.leaflet-tooltip.shelterTip.shelterTipBelow {
+  margin-top: 112px;
+}
+
+.leaflet-tooltip.shelterTip.shelterTipBelow::before {
+  display: none;
+}
+
 .districtLabelIconWithValue {
   display: grid;
   place-items: center;
