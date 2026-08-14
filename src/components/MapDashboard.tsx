@@ -841,12 +841,15 @@ function ShelterMarker({ shelter }: { shelter: ShelterPin | null }) {
 
   if (!shelter) return null;
 
+  // 핀은 기본 마커 pane(600)에 둔다. 팝업(700) 위로 올렸더니 핀이 격자 코드를
+  // 가렸다. 핀은 실제 쉼터 좌표라 피할 수가 없으므로 겹치면 팝업이 이기게 두고,
+  // 아래로 삐져나온 부분만 보이게 한다. 라벨은 아래 Tooltip 이 팝업을 피해
+  // 내려가므로 온전히 보인다.
   return (
     <Marker
       position={shelter.position}
       icon={SHELTER_PIN_ICON}
       alt={`무더위쉼터 ${shelter.name}`}
-      pane={SHELTER_PANE}
     >
       {/* 항상 보이는 라벨.
           hover로 띄우면 두 가지가 걸린다. (1) 격자 hover 툴팁이 sticky라 마우스를
