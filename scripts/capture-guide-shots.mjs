@@ -26,14 +26,7 @@ const APP_URL = 'http://localhost:5173';
 // 16:10. 가이드 팝업의 사진 칸이 같은 비율이라 잘리는 부분이 없다.
 const WIDTH = 1440;
 const HEIGHT = 900;
-// 팝업 안에서 480px 남짓으로 보인다. 전체 화면을 그대로 넣으면 글자가 안 읽혀서,
-// 단계마다 봐야 할 곳만 잘라낸다. [left, top, right, bottom] · 2배 해상도 기준.
-const SHOTS = [
-  { name: 'step-1-overview', crop: null },
-  { name: 'step-2-grid', crop: null },
-  { name: 'step-3-indicator', crop: [0, 0, 1800, 1125] },
-  { name: 'step-4-simulation', crop: [1400, 0, 2880, 925] }
-];
+// 자르는 위치와 최종 크기는 guide-shots-to-webp.py 가 정한다. 여기서는 원본만 남긴다.
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -110,7 +103,7 @@ async function main() {
     `--user-data-dir=${profileDirectory}`,
     `--window-size=${WIDTH},${HEIGHT}`,
     '--hide-scrollbars',
-    '--force-device-scale-factor=2',
+    '--force-device-scale-factor=3',
     '--no-first-run',
     '--no-default-browser-check',
     APP_URL
@@ -144,7 +137,7 @@ async function main() {
   await send('Emulation.setDeviceMetricsOverride', {
     width: WIDTH,
     height: HEIGHT,
-    deviceScaleFactor: 2,
+    deviceScaleFactor: 3,
     mobile: false
   });
 

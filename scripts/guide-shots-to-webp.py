@@ -15,18 +15,24 @@ from PIL import Image
 
 GUIDE_DIR = Path(__file__).resolve().parent.parent / "public" / "guide"
 
-# 팝업 안에서 480px 남짓으로 보인다. 전체 화면을 그대로 넣으면 글자가 안 읽혀서
-# 단계마다 봐야 할 곳만 잘라낸다. crop 은 (left, top, right, bottom), 2배 해상도 기준.
-# 잘라낸 결과도 16:10 이어야 한다 — 팝업의 사진 칸이 그 비율이다.
-JOBS: list[tuple[str, tuple[int, int, int, int] | None]] = [
-    ("step-1-overview", None),                    # 서울 전체가 요점이라 그대로
-    ("step-2-grid", None),                        # 클릭 → 오른쪽이 열린다, 둘 다 필요
-    ("step-3-indicator", (0, 0, 1800, 1125)),     # 왼쪽 지표 목록 + 지도 색
-    ("step-4-simulation", (1400, 0, 2880, 925)),  # 오른쪽 정책 패널
+# 잘라낼 곳을 화면 비율(0~1)로 적는다. 촬영 배율을 바꿔도 그대로 쓸 수 있다.
+# (왼쪽, 위, 폭) — 높이는 16:10 이 되게 폭에서 계산한다. 팝업의 사진 칸이 그 비율이다.
+#
+# 전체 화면을 그대로 넣으면 팝업 안에서 글자가 안 읽힌다. 단계마다 그 단계에서
+# 봐야 할 곳만 남기고 바짝 자른다.
+JOBS: list[tuple[str, tuple[float, float, float] | None]] = [
+    ("step-1-overview", None),                      # 서울 전체가 요점이라 그대로
+    ("step-2-grid", (0.23, 0.0, 0.77)),             # 지도 팝업 + 오른쪽 상세 패널
+    # 0.52 로 자르면 선택된 지표 행이 가로로 잘려 망가져 보인다. 잘라내는 높이는
+    # 폭에서 나오므로, 세로를 더 담으려면 폭을 넓혀야 한다.
+    ("step-3-indicator", (0.0, 0.0, 0.60)),         # 왼쪽 지표 목록 + 지도 색
+    ("step-4-simulation", (0.47, 0.0, 0.53)),       # 오른쪽 정책 패널
 ]
 
-TARGET_WIDTH = 1200
-TARGET_HEIGHT = 750
+# 팝업에서 664px 남짓으로 보인다. 2배 이상 담아두면 고해상도 화면에서도 또렷하다.
+TARGET_WIDTH = 1600
+TARGET_HEIGHT = 1000
+QUALITY = 85
 
 
 def main() -> None:
@@ -37,17 +43,27 @@ def main() -> None:
             continue
 
         image = Image.open(source).convert("RGB")
-        if crop:
-            image = image.crop(crop)
-
         width, height = image.size
-        ratio = width / height
-        if abs(ratio - 1.6) > 0.02:
-            raise SystemExit(f"{name}: 16:10 이 아닙니다 ({width}x{height}). crop 을 고치세요.")
+
+        if crop:
+            left_ratio, top_ratio, width_ratio = crop
+            box_width = round(width * width_ratio)
+            box_height = round(box_width / 1.6)
+            left = round(width * left_ratio)
+            top = round(height * top_ratio)
+            if box_height > height:
+                raise SystemExit(f"{name}: 잘라낼 높이가 원본보다 큽니다. 폭을 줄이세요.")
+            image = image.crop((left, top, left + box_width, top + box_height))
+
+        box_width, box_height = image.size
+        if abs(box_width / box_height - 1.6) > 0.02:
+            raise SystemExit(f"{name}: 16:10 이 아닙니다 ({box_width}x{box_height}).")
+        if box_width < TARGET_WIDTH:
+            print(f"  주의: {name} 원본이 {box_width}px 이라 {TARGET_WIDTH}px 로 늘립니다.")
 
         image = image.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.LANCZOS)
         target = GUIDE_DIR / f"{name}.webp"
-        image.save(target, "WEBP", quality=72, method=6)
+        image.save(target, "WEBP", quality=QUALITY, method=6)
         source.unlink()
         print(f"{name:20s} {target.stat().st_size / 1024:6.1f} KB")
 
