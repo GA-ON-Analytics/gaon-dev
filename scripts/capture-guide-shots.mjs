@@ -141,8 +141,13 @@ async function main() {
     mobile: false
   });
 
-  // 가이드 팝업 자신이 첫 접속에 뜨므로, 본 것으로 표시하고 다시 연다.
-  await evaluate(`localStorage.setItem('gaon_onboarding_seen','1'); location.href='${APP_URL}'`);
+  // 가이드 팝업 자신이 첫 접속에 뜨므로 본 것으로 표시한다. 챗봇 말풍선도 같이
+  // 꺼야 한다 — 가이드를 본 사람으로 인식돼 바로 떠서 사진마다 찍혀 들어간다.
+  await evaluate(
+    `localStorage.setItem('gaon_onboarding_seen','1');` +
+      ` localStorage.setItem('gaon_chat_hint_seen','1');` +
+      ` location.href='${APP_URL}'`
+  );
   await sleep(6000);
   await evaluate(PAGE_HELPERS);
   await sleep(3000);

@@ -4509,12 +4509,17 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   min-width: 0;
 }
 
-/* 첫 줄(요점)은 크고 진하게, 나머지는 초록 점을 단 목록으로. 전부 같은 크기로
-   쌓으면 어디부터 읽어야 할지 모를 문단 덩어리가 된다. */
+/* 요점은 초록 카드, 곁들이는 설명은 회색 카드. 이 프로젝트의 카드 톤
+   (.gdpChatIntro)과 같은 반경·테두리를 쓴다. 전부 같은 크기의 문단으로 쌓으면
+   어디부터 읽어야 할지 모를 덩어리가 된다. */
 .onboardingLead {
   margin: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(31, 81, 33, 0.12);
+  border-radius: 15px;
+  background: var(--gdp-green-soft);
   color: var(--gdp-ink);
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
   line-height: 1.6;
   letter-spacing: -0.01em;
@@ -4522,31 +4527,33 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 
 .onboardingText ul {
   display: flex;
-  margin: 14px 0 0;
+  margin: 10px 0 0;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding: 0;
   list-style: none;
 }
 
 .onboardingText li {
   position: relative;
-  padding-left: 15px;
+  padding: 11px 14px 11px 30px;
+  border-radius: 13px;
+  background: var(--gdp-sub);
   color: var(--gdp-ink2);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
 .onboardingText li::before {
   position: absolute;
-  top: 8px;
-  left: 0;
+  top: 17px;
+  left: 14px;
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--gdp-green);
   content: '';
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 /* 사진 자리는 비율로 잡아둔다. 사진이 아직 없어도 팝업 높이가 단계마다
