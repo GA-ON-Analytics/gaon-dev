@@ -53,6 +53,7 @@
 .gridDetailSidePanel,
 .aiChatDock,
 .aiChatFab,
+.aiChatHint,
 .leaflet-control-container {
   zoom: var(--ui-scale);
 }
@@ -727,6 +728,35 @@ td {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* 가이드 다시 보기. 헤더 오른쪽 끝에 붙인다(제목 묶음이 남는 폭을 다 쓰게 flex:1). */
+.heatPanelHeader > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 글자('사용 가이드')로 두면 폭을 60px 먹어 제목이 두 줄로 밀린다. 왼쪽 패널은
+   좁아서(284px) 그 여유가 없다. */
+.heatPanelGuide {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: 1px solid var(--gdp-line);
+  border-radius: 50%;
+  background: var(--gdp-sub);
+  color: var(--gdp-ink2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  place-items: center;
+}
+
+.heatPanelGuide:hover {
+  border-color: var(--gdp-green);
+  background: var(--gdp-green-soft);
+  color: var(--gdp-green);
 }
 
 /* 브랜드 로고 마크. 대시보드에서 GA:ON을 알아볼 수 있는 유일한 지점이라 헤더에 둔다. */
@@ -1795,6 +1825,18 @@ td {
 /* 말풍선 꼬리도 배경색에 맞춘다 (기본값은 흰색이라 튄다) */
 .leaflet-tooltip.shelterTip.leaflet-tooltip-top::before {
   border-top-color: #1f5121;
+}
+
+/* 라벨이 격자 정보 팝업과 겹칠 자리면 핀 아래로 내린다(ShelterMarker 가 판단).
+   Leaflet 이 위치를 transform 으로 잡으므로 transform 을 쓰면 자리가 어긋난다.
+   margin 으로 내리고, 방향이 뒤집힌 꼬리는 감춘다 — 핀이 하나뿐이라 꼬리가
+   없어도 어느 핀의 라벨인지 헷갈리지 않는다. */
+.leaflet-tooltip.shelterTip.shelterTipBelow {
+  margin-top: 112px;
+}
+
+.leaflet-tooltip.shelterTip.shelterTipBelow::before {
+  display: none;
 }
 
 .districtLabelIconWithValue {
@@ -3666,6 +3708,12 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   right: calc(var(--detail-panel-width) + var(--chat-edge-gap));
 }
 
+.gisShell.panelOpen .aiChatHint {
+  right: calc(
+    var(--detail-panel-width) + var(--chat-edge-gap) + var(--chat-fab-size) + 12px
+  );
+}
+
 .aiChatDock,
 .aiChatFab {
   transition-property: right, transform, box-shadow;
@@ -3678,6 +3726,9 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   .gisShell.panelOpen .aiChatDock,
   .gisShell.panelOpen .aiChatFab {
     right: 16px;
+  }
+  .gisShell.panelOpen .aiChatHint {
+    right: calc(16px + var(--chat-fab-size) + 12px);
   }
   .gisShell.panelOpen .aiChatDock {
     right: 0;
@@ -4360,4 +4411,496 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   text-decoration: underline;
   text-underline-offset: 2px;
   white-space: nowrap;
+}
+
+
+/* ── 첫 접속 사용 가이드 ────────────────────────────────────────────────
+   document.body 로 portal 한다. 왼쪽 패널·상세 패널에는 zoom: var(--ui-scale) 이
+   걸려 있어서 그 안에 두면 화면 좌표와 CSS 좌표가 어긋난다. 바깥에 두면 보정이
+   필요 없다. gdp 팔레트는 스코프 안에서만 살아있어 여기서 다시 선언한다. */
+.onboardingBackdrop {
+  --gdp-card: #ffffff;
+  --gdp-sub: #f5f7f9;
+  --gdp-ink: #191f28;
+  --gdp-ink2: #4e5968;
+  --gdp-ink3: #8b95a1;
+  --gdp-line: #eceef1;
+  --gdp-green: #1f5121;
+  --gdp-green-soft: #e4f1e5;
+  position: fixed;
+  z-index: 1400;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(15, 22, 33, 0.46);
+  backdrop-filter: blur(2px);
+}
+
+.onboardingModal {
+  display: flex;
+  overflow: hidden;
+  width: min(1560px, 100%);
+  max-height: 94vh;
+  flex-direction: column;
+  border-radius: 20px;
+  background: var(--gdp-card);
+  box-shadow: 0 20px 52px rgba(15, 22, 33, 0.3);
+  color: var(--gdp-ink);
+  cursor: default;
+}
+
+.onboardingHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 24px 14px;
+}
+
+.onboardingHeader > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.onboardingKicker {
+  color: var(--gdp-green);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.onboardingHeader strong {
+  font-size: 20px;
+  line-height: 1.35;
+  /* keep-all 이 없으면 '대시보 / 드예요' 처럼 낱말 가운데가 잘린다. */
+  word-break: keep-all;
+}
+
+.onboardingClose {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--gdp-sub);
+  color: var(--gdp-ink2);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.onboardingClose:hover {
+  background: var(--gdp-line);
+}
+
+/* 팝업은 그리드다. 좁은 화면은 한 줄씩 쌓고, 넓은 화면은 사진을 왼쪽에 세로로
+   꽉 채우고 오른쪽에 제목·설명·버튼을 놓는다. 설명 카드만 오른쪽에 두면 그 칸이
+   세로로 남아 카드가 허공에 뜬 것처럼 보인다. */
+.onboardingModal {
+  display: grid;
+  grid-template-areas:
+    'header'
+    'shot'
+    'text'
+    'footer'
+    'recall';
+  grid-template-rows: auto 1fr auto auto auto;
+}
+
+.onboardingHeader {
+  grid-area: header;
+}
+
+.onboardingShot {
+  grid-area: shot;
+}
+
+.onboardingText {
+  grid-area: text;
+  margin: 0 24px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--gdp-sub);
+}
+
+.onboardingLead {
+  margin: 0;
+  word-break: keep-all;
+  color: var(--gdp-ink);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+}
+
+.onboardingText ul {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onboardingText li {
+  position: relative;
+  word-break: keep-all;
+  padding: 10px 0 10px 14px;
+  border-top: 1px solid rgba(25, 31, 40, 0.07);
+  color: var(--gdp-ink2);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.onboardingText li:last-child {
+  padding-bottom: 0;
+}
+
+.onboardingText li::before {
+  position: absolute;
+  top: 17px;
+  left: 1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gdp-green);
+  content: '';
+  opacity: 0.5;
+}
+
+/* 사진 자리는 비율로 잡아둔다. 사진이 아직 없어도 팝업 높이가 단계마다
+   출렁이지 않는다. 남는 높이를 받아 커지고, 그 높이에서 16:10 이 되는 폭을
+   스스로 정한다 — justify-self 를 stretch(기본)로 두면 폭이 먼저 꽉 차서
+   비율이 깨지고 사진 좌우에 흰 여백이 생긴다. */
+.onboardingShot {
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  width: auto;
+  max-width: calc(100% - 48px);
+  height: 100%;
+  margin: 0 24px 16px;
+  border: 1px solid var(--gdp-line);
+  border-radius: 14px;
+  aspect-ratio: 16 / 10;
+  background: var(--gdp-sub);
+}
+
+.onboardingShot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.onboardingShotEmpty {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  color: var(--gdp-ink3);
+}
+
+.onboardingShotEmpty span {
+  font-size: 22px;
+}
+
+.onboardingShotEmpty p {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+
+
+/* 단계 목록 — 넓은 화면 전용. 좁은 화면에서는 점(.onboardingDots)이 대신한다. */
+.onboardingSteps {
+  display: none;
+  grid-area: steps;
+}
+
+.onboardingSteps button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--gdp-ink3);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.onboardingSteps button span {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--gdp-sub);
+  color: var(--gdp-ink3);
+  font-size: 10.5px;
+  font-weight: 700;
+  place-items: center;
+}
+
+.onboardingSteps button:hover {
+  background: var(--gdp-sub);
+  color: var(--gdp-ink2);
+}
+
+.onboardingSteps button.on {
+  background: var(--gdp-green-soft);
+  color: var(--gdp-green);
+  font-weight: 700;
+}
+
+.onboardingSteps button.on span {
+  background: var(--gdp-green);
+  color: #ffffff;
+}
+
+.onboardingFooter {
+  grid-area: footer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 24px 6px;
+}
+
+.onboardingDots {
+  display: flex;
+  gap: 5px;
+}
+
+.onboardingDots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gdp-line);
+}
+
+.onboardingDots span.on {
+  width: 16px;
+  border-radius: 999px;
+  background: var(--gdp-green);
+}
+
+.onboardingActions {
+  display: flex;
+  gap: 7px;
+}
+
+/* '다음'과 '시작하기'는 글자 수가 달라 폭이 변한다. 최소 폭을 맞춰 마지막
+   단계에서 버튼이 옆으로 늘어나지 않게 한다. */
+.onboardingActions button {
+  min-width: 96px;
+  min-height: 38px;
+  padding: 0 18px;
+  border: 1px solid var(--gdp-line);
+  border-radius: 10px;
+  background: var(--gdp-card);
+  color: var(--gdp-ink2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.onboardingActions button {
+  font-size: 13px;
+}
+
+.onboardingActions button.primary {
+  border-color: var(--gdp-green);
+  background: var(--gdp-green);
+  color: #fff;
+}
+
+.onboardingActions button:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.onboardingActions button:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: var(--gdp-ink3);
+  cursor: default;
+  opacity: 0.45;
+}
+
+.onboardingRecall {
+  grid-area: recall;
+  margin: 0;
+  padding: 0 24px 15px;
+  color: var(--gdp-ink3);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.onboardingRecall b {
+  color: var(--gdp-ink2);
+}
+
+/* 넓은 화면 — 사진 왼쪽, 나머지 전부 오른쪽. 빈 줄(.)이 설명과 버튼 사이에
+   남는 높이를 몰아 받아, 버튼이 칸 아래쪽에 자연스럽게 앉는다. */
+@media (min-width: 1080px) {
+  .onboardingModal {
+    /* 제목·설명은 위에, 버튼·안내문은 아래에 붙인다. 세로 가운데로 모으면
+       단계마다 글 길이가 달라 묶음 높이가 변하고, 그때마다 제목·버튼·닫기가
+       조금씩 움직여 화면이 덜컹거린다. 빈 줄(.)이 그 차이를 흡수한다. */
+    grid-template-columns: minmax(0, 1fr) 372px;
+    grid-template-areas:
+      'shot header'
+      'shot text'
+      'shot .'
+      'shot steps'
+      'shot footer'
+      'shot recall';
+    grid-template-rows: auto auto 1fr auto auto auto;
+    padding: 26px;
+    column-gap: 26px;
+  }
+
+  .onboardingShot {
+    max-width: 100%;
+    margin: 0;
+  }
+
+  .onboardingHeader {
+    /* 제목이 한 줄인 단계와 두 줄인 단계가 섞여 있다. 높이를 두 줄 기준으로
+       잡아두면 그 아래 설명 카드가 단계마다 위아래로 뛰지 않는다.
+       box-sizing 이 border-box 라 위아래 여백도 이 값 안에 든다.
+       '사용 가이드 · n / 5'와 닫기 버튼은 위에 붙이고, 제목만 사이 간격으로
+       내린다. 위 여백으로 내리면 셋이 같이 내려간다. */
+    min-height: 120px;
+    padding: 6px 0 14px;
+  }
+
+  .onboardingHeader > div {
+    gap: 33px;   /* 제목은 원래 자리(위에서 78px)를 유지한다 */
+  }
+
+  /* 점(●)을 감춘 자리에 space-between 이 남아 버튼이 왼쪽으로 붙는다. */
+  .onboardingFooter {
+    justify-content: flex-end;
+  }
+
+  .onboardingSteps {
+    display: grid;
+    gap: 2px;
+    padding-bottom: 4px;
+    border-top: 1px solid var(--gdp-line);
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+
+  /* 목록이 진행 상황을 보여주므로 점은 겹친다. */
+  .onboardingDots {
+    display: none;
+  }
+
+  .onboardingText {
+    margin: 0;
+  }
+
+  .onboardingFooter {
+    padding: 18px 0 0;
+  }
+
+  .onboardingRecall {
+    padding: 12px 0 0;
+  }
+}
+
+
+/* ── 챗봇 첫 안내 말풍선 ────────────────────────────────────────────────
+   버튼은 마스코트 얼굴 + 말풍선 배지인데, 처음 온 사람은 마우스를 올려볼 이유가
+   없어 이름표(hover 툴팁)를 영영 못 본다. 첫 접속에 한 번만 옆에 띄운다.
+   위치는 FAB 과 같은 기준(오른쪽 아래)에서 버튼 폭만큼 왼쪽으로 민 자리다. */
+.aiChatHint {
+  position: fixed;
+  z-index: 1101;
+  right: calc(var(--chat-edge-gap) + var(--chat-fab-size) + 12px);
+  bottom: var(--chat-bottom-gap);
+  display: grid;
+  max-width: min(272px, calc(100vw - 130px));
+  gap: 3px;
+  padding: 12px 32px 13px 14px;
+  border-radius: 14px;
+  background: #191f28;
+  box-shadow: 0 10px 28px rgba(15, 22, 33, 0.28);
+  color: #ffffff;
+  animation: aiChatHintIn 0.28s ease both;
+}
+
+.aiChatHint strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.aiChatHint span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+/* 어느 버튼을 말하는지 알 수 있게 꼬리를 단다. */
+.aiChatHint::after {
+  position: absolute;
+  right: -6px;
+  bottom: 18px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  border-radius: 2px;
+  background: #191f28;
+  content: '';
+}
+
+.aiChatHintClose {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.aiChatHintClose:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+/* 말풍선이 떠 있는 동안에는 버튼도 한 번 눈에 띄게 한다. */
+.aiChatFab.hasHint {
+  box-shadow: 0 0 0 6px rgba(31, 81, 33, 0.18), 0 10px 24px rgba(20, 30, 45, 0.24);
+}
+
+@keyframes aiChatHintIn {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aiChatHint {
+    animation: none;
+  }
 }
