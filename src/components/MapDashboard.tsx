@@ -1142,6 +1142,7 @@ export function MapDashboard() {
     setGridFocus(null);
     setGridSearchError(null);
     setAggregateGridSearchHit(null);
+    setBatchSimulationResult(null);
     setSelectedDistrict(district);
   }, []);
   const handleDongSearch = useCallback(
@@ -1208,6 +1209,7 @@ export function MapDashboard() {
     setGridFocus(null);
     setGridSearchError(null);
     setAggregateGridSearchHit(null);
+    setBatchSimulationResult(null);
     setSelectedGridResolution(resolution);
   }, []);
 
@@ -1553,13 +1555,17 @@ export function MapDashboard() {
     () => getShelterPin(selectedGridProperties),
     [selectedGridProperties]
   );
+  const selectedDistrictCode = districtCodeByName.get(selectedDistrict) ?? null;
   const activePolicyBatchResult =
     selectedGridResolution === '100m' &&
     selectedDistrict !== ALL_DISTRICTS &&
-    batchSimulationResult?.target_mode === 'spatial_scope'
+    (batchSimulationResult?.target_mode === 'spatial_scope' ||
+      (batchSimulationResult?.target_mode === 'district' &&
+        batchSimulationResult.gu_code === selectedDistrictCode))
       ? batchSimulationResult
       : null;
   const policyGridIds = useMemo(() => {
+    if (activePolicyBatchResult?.target_mode !== 'spatial_scope') return [];
     const ids = activePolicyBatchResult?.results
       .map((result) => result.grid_id.trim())
       .filter(Boolean) ?? [];

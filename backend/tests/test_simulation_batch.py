@@ -53,6 +53,24 @@ class FakePredictCore:
         }
 
 
+class FakeBatchPredictCore(FakePredictCore):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.batch_calls: list[tuple[list[str], dict[str, float], bool]] = []
+
+    def predict_batch(
+        self,
+        grid_ids: list[str],
+        changes: dict[str, float],
+        couple_land_cover: bool = True,
+    ) -> list[dict]:
+        self.batch_calls.append((list(grid_ids), dict(changes), couple_land_cover))
+        return [
+            self.predict(grid_id, changes, couple_land_cover)
+            for grid_id in grid_ids
+        ]
+
+
 class SimulationBatchApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -89,6 +107,9 @@ class SimulationBatchApiTests(unittest.TestCase):
                 self.assertEqual(payload["failed_count"], 0)
                 self.assertEqual(len(payload["results"]), expected_count)
                 self.assertEqual(payload["aggregation"], "area_weighted")
+                self.assertNotIn("gu_code", payload)
+                self.assertNotIn("scope_mode", payload)
+                self.assertNotIn("compact", payload)
                 self.assertTrue(all(call[1] == changes for call in fake.calls))
                 self.assertTrue(all(call[2] is False for call in fake.calls))
 
@@ -216,6 +237,119 @@ class SimulationBatchApiTests(unittest.TestCase):
         self.assertEqual(payload["count"], 2)
         self.assertEqual(payload["mean_delta_c"], -0.2)
         self.assertEqual(payload["aggregation"], "unweighted")
+        self.assertNotIn("compact", payload)
+
+    def test_district_selector_uses_map_gu_code_and_vectorized_batch(self) -> None:
+        gu_code = "11110"
+        district_cells = self.index.select_district(gu_code)
+        changes = {"green_ratio": 0.05}
+        fake = FakeBatchPredictCore()
+        response = self.post_batch(
+            {
+                "gu_code": gu_code,
+                "scope_mode": "district",
+                "changes": changes,
+                "couple_land_cover": False,
+                "compact": True,
+            },
+            fake,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        expected_ids = [cell.grid_id for cell in district_cells]
+        self.assertEqual(payload["target_mode"], "district")
+        self.assertEqual(payload["gu_code"], gu_code)
+        self.assertEqual(payload["scope_mode"], "district")
+        self.assertTrue(payload["compact"])
+        self.assertEqual(payload["grid_count"], len(district_cells))
+        self.assertEqual([result["grid_id"] for result in payload["results"]], expected_ids)
+        self.assertEqual(fake.batch_calls, [(expected_ids, changes, False)])
+
+    def test_district_invalid_gu_code_and_selector_conflicts(self) -> None:
+        malformed = self.post_batch(
+            {"gu_code": "1168", "scope_mode": "district"},
+            FakePredictCore(),
+        )
+        self.assertEqual(malformed.status_code, 422)
+
+        missing = self.post_batch(
+            {"gu_code": "99999", "scope_mode": "district"},
+            FakePredictCore(),
+        )
+        self.assertEqual(missing.status_code, 404)
+
+        incomplete = self.post_batch(
+            {"gu_code": "11110"},
+            FakePredictCore(),
+        )
+        self.assertEqual(incomplete.status_code, 422)
+
+        conflicts = (
+            {
+                "grid_ids": [REGULAR_CENTER_GRID_ID],
+                "gu_code": "11110",
+                "scope_mode": "district",
+            },
+            {
+                "grid_id": REGULAR_CENTER_GRID_ID,
+                "scope_m": 500,
+                "gu_code": "11110",
+                "scope_mode": "district",
+            },
+        )
+        for request in conflicts:
+            with self.subTest(request=request):
+                response = self.post_batch(request, FakePredictCore())
+                self.assertEqual(response.status_code, 422)
+
+    def test_district_compact_fields_summary_and_partial_failure(self) -> None:
+        gu_code = "11110"
+        cells = self.index.select_district(gu_code)
+        failed_grid_id = cells[-1].grid_id
+        fake = FakeBatchPredictCore(failed_grid_ids={failed_grid_id})
+        response = self.post_batch(
+            {
+                "gu_code": gu_code,
+                "scope_mode": "district",
+                "changes": {"albedo": 0.02},
+                "compact": True,
+            },
+            fake,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["grid_count"], len(cells))
+        self.assertEqual(payload["success_count"], len(cells) - 1)
+        self.assertEqual(payload["failed_count"], 1)
+        self.assertEqual(
+            payload["improved_grid_count"]
+            + payload["unchanged_grid_count"]
+            + payload["worsened_grid_count"],
+            payload["success_count"],
+        )
+        success = next(result for result in payload["results"] if result["status"] == "success")
+        failed = next(result for result in payload["results"] if result["status"] == "failed")
+        self.assertEqual(set(success), {"grid_id", "status", "delta_c", "area_m2"})
+        self.assertEqual(set(failed), {"grid_id", "status", "error"})
+        self.assertEqual(failed["grid_id"], failed_grid_id)
+        self.assertEqual(payload["aggregation"], "area_weighted")
+        self.assertIsNotNone(payload["total_area_m2"])
+
+    def test_compact_is_rejected_for_existing_selectors(self) -> None:
+        requests = (
+            {"grid_ids": [REGULAR_CENTER_GRID_ID], "compact": True},
+            {
+                "grid_id": REGULAR_CENTER_GRID_ID,
+                "scope_m": 100,
+                "compact": True,
+            },
+        )
+        for request in requests:
+            with self.subTest(request=request):
+                response = self.post_batch(request, FakePredictCore())
+                self.assertEqual(response.status_code, 422)
 
     def test_summary_uses_successful_grid_area_weights(self) -> None:
         summary = main._batch_summary(

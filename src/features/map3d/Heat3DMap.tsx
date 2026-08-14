@@ -368,6 +368,8 @@ function getSuccessfulPolicyDeltas(
 function getPolicyGridIds(
   batchSimulationResult: BatchSimulationResponse | null
 ): string[] {
+  // 구 전체에서는 모든 기둥에 초록 cap을 얹지 않고 LST Before/After 색을 그대로 보여준다.
+  if (batchSimulationResult?.target_mode === 'district') return [];
   return [
     ...new Set(
       (batchSimulationResult?.results ?? [])
