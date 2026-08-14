@@ -835,6 +835,7 @@ export default function Heat3DMap({
     resolution === '100m' &&
     Boolean(gridData?.features.length);
   const supportsDistrictDetails = hasSupportedGridData && !isSeoulOverview;
+  const showsPolicyScope = getPolicyGridIds(batchSimulationResult).length > 0;
   gridInfoSignRef.current = supportsDistrictDetails ? gridInfoSign : null;
   shelterSignRef.current = supportsDistrictDetails ? shelterSign : null;
 
@@ -985,17 +986,59 @@ export default function Heat3DMap({
             : '100m 3D 상세보기는 자치구 선택 후 이용할 수 있습니다.'}
         </div>
       )}
+      {hasSupportedGridData && !initializationError && (
+        <aside className="map3dLegend" aria-label="3D 지표면온도 범례">
+          <div className="map3dLegendHead">
+            <strong>지표면온도(LST)</strong>
+            <span>높을수록 기둥이 높음</span>
+          </div>
+          <div className="map3dLegendScale">
+            {[
+              { label: '<35℃', color: LST_COLOR_LOW },
+              { label: '35~38℃', color: LST_COLOR_MEDIUM },
+              { label: '38~41℃', color: LST_COLOR_HIGH },
+              { label: '≥41℃', color: LST_COLOR_VERY_HIGH }
+            ].map((item) => (
+              <span key={item.label}>
+                <i style={{ background: item.color }} />
+                {item.label}
+              </span>
+            ))}
+          </div>
+          {(showsPolicyScope || (supportsDistrictDetails && selectedGridId)) && (
+            <div className="map3dLegendMarks">
+              {showsPolicyScope && (
+                <span>
+                  <i className="isPolicyScope" />
+                  정책 대상 범위
+                </span>
+              )}
+              {supportsDistrictDetails && selectedGridId && (
+                <span>
+                  <i className="isSelectedGrid" />
+                  선택 격자
+                </span>
+              )}
+            </div>
+          )}
+        </aside>
+      )}
       {hasSupportedGridData && !initializationError && isSeoulOverview && (
         <div className="heat3dMapNotice heat3dHeightNotice" role="note">
-          서울 전체 · 100m 열 분포
-          <br />
-          격자를 선택하면 해당 자치구로 이동합니다.
+          격자를 선택하면 해당 자치구의 100m 상세 분석으로 이동합니다.
+          <span>
+            높이는 지표면온도 차이를 강조한 상대적 표현이며 실제 지형·건물 높이가
+            아닙니다.
+          </span>
         </div>
       )}
       {supportsDistrictDetails && !initializationError && (
         <div className="heat3dMapNotice heat3dHeightNotice" role="note">
-          격자 높이는 서울 전체 100m 격자의 지표면온도 범위를 기준으로 표현한 상대적
-          시각화이며 실제 지형·건물 높이가 아닙니다.
+          격자를 선택하면 상세 정보와 정책 시뮬레이션을 확인할 수 있습니다.
+          <span>
+            높이는 지표면온도 차이를 강조한 상대적 표현이며 실제 지형·건물 높이가
+            아닙니다.
+          </span>
         </div>
       )}
       {initializationError && (
