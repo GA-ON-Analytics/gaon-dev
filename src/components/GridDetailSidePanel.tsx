@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import PolicyCaseModal from './PolicyCaseModal';
+import { POLICY_CASES } from '../config/policyCases';
 import {
   ApiRequestError,
   getAiFeatureCatalog,
@@ -9,6 +11,8 @@ import {
   POLICY_FEATURE_LABELS,
   policyApplicability,
   policySimulationRequest,
+  POLICY_ICONS,
+  POLICY_SHORT_NAMES,
   usePolicyPresets
 } from '../config/policyPresets';
 import type {
@@ -273,6 +277,45 @@ function Donut({
   );
 }
 
+/**
+ * 요약 카드 → 시뮬레이션 카드로 스크롤.
+ *
+ * `zoom: var(--ui-scale)`이 걸린 컨테이너라 함정이 두 개다.
+ *
+ * 1. 좌표계 — getBoundingClientRect는 배율이 곱해진 화면 px를 주는데 scrollTop은
+ *    배율 이전 CSS px이다. 이동량을 배율로 나눠야 한다. 배율은 --ui-scale을 읽는
+ *    대신 실제 렌더 높이 / 레이아웃 높이로 구한다(그 값은 JS가 계속 덮어쓴다).
+ * 2. 부드러운 스크롤 — `behavior: 'smooth'`도 `scrollIntoView`도 이 컨테이너에서는
+ *    아예 듣지 않는다(실측: 1,027px 가야 하는데 0~65px에서 섰다). scrollTop 직접
+ *    대입은 정상이라, 애니메이션을 직접 돌린다.
+ */
+function scrollToSimulation() {
+  const card = document.getElementById('gdpSimCard');
+  const scroller = card?.closest('.rightPanelDashboard');
+  if (!card || !(scroller instanceof HTMLElement)) return;
+
+  const scale = card.getBoundingClientRect().height / card.offsetHeight || 1;
+  const delta =
+    (card.getBoundingClientRect().top - scroller.getBoundingClientRect().top) / scale;
+  const from = scroller.scrollTop;
+  const to = Math.min(from + delta - 8, scroller.scrollHeight - scroller.clientHeight);
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    scroller.scrollTop = to;
+    return;
+  }
+
+  const duration = 420;
+  const start = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - (1 - t) ** 3;
+    scroller.scrollTop = from + (to - from) * eased;
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 // 빈 상세 패널의 제목은 '무엇을 누르라'는 행동만, 아래 설명은 '지금 어디를 보고
 // 있는지'만 말한다. 둘 다 "클릭하세요"로 쓰면 같은 말이 두 줄 반복된다.
 function selectionTitle(district: string, resolution: GridResolution) {
@@ -316,6 +359,17 @@ function GridDetailSidePanel({
   const level = heatLevel(anomaly);
   // 핵심 피처 결측 격자면 모델 기반 분석(SHAP·시뮬레이션)을 신뢰불가로 처리한다.
   const incomplete = isIncompleteGrid(properties);
+  // 요약 카드의 '이 격자 개선해보기' 버튼 조건. SimulationCard의 canSimulate와
+  // 같아야 한다 — 결측 격자(예: 11680_02607)에서 버튼만 남으면 눌러도
+  // '시뮬레이션을 제공하지 않아요' 문구로 떨어진다.
+  const simTargetIds = properties
+    ? selectedGridResolution === '100m'
+      ? typeof properties.grid_id === 'string' && properties.grid_id
+        ? [properties.grid_id]
+        : []
+      : readMemberIds(properties.member_grid_ids)
+    : [];
+  const canSimulate = simTargetIds.length > 0 && !incomplete;
   // 우선순위: 구 내부 순위(rank) + 분모(total)로 백분위(pct)를 낸다.
   // rank 1 = 가장 시급 → 상위 1%. rank가 클수록(=뒤쪽) 개선 급하지 않은 격자.
   const rank = properties?.priority_rank;
@@ -409,6 +463,18 @@ function GridDetailSidePanel({
                     {total ? ` / ${total.toLocaleString()}` : ''}
                   </span>
                 </div>
+              )}
+
+              {/* 이 서비스의 핵심 기능인 시뮬레이션이 패널 아래에서 세 번째라
+                  스크롤해야 보였다. 요약 카드에서 바로 내려갈 수 있게 한다. */}
+              {canSimulate && (
+                <button className="gdpSimJump" type="button" onClick={scrollToSimulation}>
+                  <span>
+                    이 격자 개선해보기
+                    <small>정책 6종 비교 · 직접 시뮬레이션</small>
+                  </span>
+                  <b aria-hidden="true">↓</b>
+                </button>
               )}
             </div>
 
@@ -991,9 +1057,12 @@ function PolicyPresetSection({
   const [policyLoading, setPolicyLoading] = useState(false);
   const requestVersionRef = useRef(0);
 
+  const [caseModalOpen, setCaseModalOpen] = useState(false);
+
   // 격자가 바뀌면 이전 정책 선택과 비동기 결과를 모두 무효화한다.
   useEffect(() => {
     requestVersionRef.current += 1;
+    setCaseModalOpen(false);
     setSelectedPolicyId(null);
     setPolicyResult(null);
     setPolicyBatchResult(null);
@@ -1007,6 +1076,8 @@ function PolicyPresetSection({
   const policyPresets = usePolicyPresets() ?? [];
   const selectedPolicy: PolicyPreset | null =
     policyPresets.find((preset) => preset.id === selectedPolicyId) ?? null;
+  // 사례 요약이 없는 정책(백엔드에 새로 생긴 정책 등)은 버튼 자체를 감춘다.
+  const selectedCase = selectedPolicy ? POLICY_CASES[selectedPolicy.id] ?? null : null;
   const selectedApplicability = selectedPolicy
     ? isBatchResolution
       ? { applicable: true }
@@ -1015,6 +1086,7 @@ function PolicyPresetSection({
 
   function selectPolicy(preset: PolicyPreset) {
     requestVersionRef.current += 1;
+    setCaseModalOpen(false);
     setSelectedPolicyId(preset.id);
     setPolicyResult(null);
     setPolicyBatchResult(null);
@@ -1133,7 +1205,10 @@ function PolicyPresetSection({
               onClick={() => selectPolicy(preset)}
               key={preset.id}
             >
-              <span>{preset.name}</span>
+              <em className="policyPresetIcon" aria-hidden="true">
+                {POLICY_ICONS[preset.id] ?? '🌿'}
+              </em>
+              <span>{POLICY_SHORT_NAMES[preset.id] ?? preset.name}</span>
               {!applicability.applicable && <small>적용 불가</small>}
             </button>
           );
@@ -1147,9 +1222,15 @@ function PolicyPresetSection({
               <strong>{selectedPolicy.name}</strong>
               <span>{selectedPolicy.scenarioLabel}</span>
             </div>
-            <a href={selectedPolicy.sourceUrl} target="_blank" rel="noreferrer">
-              정책 사례 보기
-            </a>
+            {selectedCase && (
+              <button
+                className="policyCaseOpen"
+                type="button"
+                onClick={() => setCaseModalOpen(true)}
+              >
+                정책 사례 보기
+              </button>
+            )}
           </div>
           <p className="policyPresetDescription">{selectedPolicy.description}</p>
 
@@ -1253,6 +1334,14 @@ function PolicyPresetSection({
         <p className="gdpNote sc-note" key={warning}>{warning}</p>
       ))}
       {policyError && <p className="gdpNote gdpSimError">{policyError}</p>}
+
+      {caseModalOpen && selectedPolicy && selectedCase && (
+        <PolicyCaseModal
+          preset={selectedPolicy}
+          policyCase={selectedCase}
+          onClose={() => setCaseModalOpen(false)}
+        />
+      )}
     </section>
   );
 }
@@ -1375,7 +1464,7 @@ function SimulationCard({
   const delta = result?.delta;
 
   return (
-    <div className="card gdpSim">
+    <div className="card gdpSim" id="gdpSimCard">
       <PolicyPresetSection
         key={`${selectedGridResolution}:${gridId || properties.display_grid_id || ''}`}
         gridId={gridId}
