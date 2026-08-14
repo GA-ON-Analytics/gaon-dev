@@ -4431,8 +4431,8 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 .onboardingModal {
   display: flex;
   overflow: hidden;
-  width: min(520px, 100%);
-  max-height: min(660px, 100%);
+  width: min(880px, 100%);
+  max-height: 94vh;
   flex-direction: column;
   border-radius: 20px;
   background: var(--gdp-card);
@@ -4446,7 +4446,7 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 20px 20px 14px;
+  padding: 22px 24px 16px;
 }
 
 .onboardingHeader > div {
@@ -4464,7 +4464,7 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 }
 
 .onboardingHeader strong {
-  font-size: 17px;
+  font-size: 20px;
   line-height: 1.35;
 }
 
@@ -4486,34 +4486,39 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 
 .onboardingBody {
   overflow-y: auto;
-  padding: 0 20px 4px;
+  padding: 0 24px 4px;
 }
 
 .onboardingBody p {
-  margin: 0 0 8px;
+  margin: 0 0 9px;
   color: var(--gdp-ink2);
-  font-size: 12.5px;
-  line-height: 1.65;
+  font-size: 13.5px;
+  line-height: 1.7;
 }
 
 /* 사진 자리는 비율로 잡아둔다. 사진이 아직 없어도 팝업 높이가 단계마다
-   출렁이지 않는다. */
+   출렁이지 않는다. 화면이 낮으면(노트북) 사진부터 줄여 팝업이 화면을 넘지
+   않게 한다 — 그때는 contain 이라 사진이 잘리지 않고 좌우에 여백이 생긴다. */
 .onboardingShot {
   display: flex;
   overflow: hidden;
   align-items: center;
   justify-content: center;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   border: 1px solid var(--gdp-line);
-  border-radius: 13px;
+  border-radius: 14px;
   aspect-ratio: 16 / 10;
+  /* 높이를 max-height 로 자르면 상자 비율이 깨져 사진 좌우에 흰 여백이 생긴다.
+     폭을 줄여야 16:10 을 유지한 채 작아진다 — 52vh 높이에 해당하는 폭이 83vh. */
+  width: min(100%, 83vh);
+  margin-inline: auto;
   background: var(--gdp-sub);
 }
 
 .onboardingShot img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .onboardingShotEmpty {
@@ -4538,7 +4543,7 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 20px 8px;
+  padding: 14px 24px 8px;
 }
 
 .onboardingDots {
@@ -4565,8 +4570,8 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 }
 
 .onboardingActions button {
-  min-height: 34px;
-  padding: 0 15px;
+  min-height: 38px;
+  padding: 0 18px;
   border: 1px solid var(--gdp-line);
   border-radius: 10px;
   background: var(--gdp-card);
@@ -4574,6 +4579,10 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
+}
+
+.onboardingActions button {
+  font-size: 13px;
 }
 
 .onboardingActions button.primary {
@@ -4588,7 +4597,7 @@ body.isDraggingChatDock .aiChatDock .gdpChatHeader{ cursor:grabbing; }
 
 .onboardingRecall {
   margin: 0;
-  padding: 0 20px 16px;
+  padding: 0 24px 18px;
   color: var(--gdp-ink3);
   font-size: 10.5px;
   line-height: 1.5;
