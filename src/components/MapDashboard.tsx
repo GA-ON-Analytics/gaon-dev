@@ -46,6 +46,7 @@ import Map3DOverlay from '../features/map3d/Map3DOverlay';
 const ALL_DISTRICTS = '전체';
 const DEFAULT_DISTRICT = ALL_DISTRICTS;
 const DEFAULT_LAYER: LayerKey = 'priority_score';
+const LST_LAYER: LayerKey = 'mean_actual_lst';
 const DEFAULT_GRID_RESOLUTION: GridResolution = '100m';
 const DEFAULT_CENTER: [number, number] = [37.5665, 126.978];
 const SEOUL_OVERVIEW_ZOOM = 11;
@@ -1002,6 +1003,30 @@ export function MapDashboard() {
   const [gridGeoJson, setGridGeoJson] = useState<FeatureCollection | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState(DEFAULT_DISTRICT);
   const [selectedLayer, setSelectedLayer] = useState<LayerKey>(DEFAULT_LAYER);
+  const [is3DOpen, setIs3DOpen] = useState(false);
+  const previous2DLayerRef = useRef<LayerKey | null>(null);
+  const handle3DOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen === is3DOpen) return;
+
+      if (nextOpen) {
+        previous2DLayerRef.current = selectedLayer;
+        setSelectedLayer(LST_LAYER);
+      } else {
+        setSelectedLayer(previous2DLayerRef.current ?? DEFAULT_LAYER);
+        previous2DLayerRef.current = null;
+      }
+      setIs3DOpen(nextOpen);
+    },
+    [is3DOpen, selectedLayer]
+  );
+  const handleLayerChange = useCallback(
+    (layer: LayerKey) => {
+      if (is3DOpen && layer !== LST_LAYER) return;
+      setSelectedLayer(layer);
+    },
+    [is3DOpen]
+  );
   const [selectedGridResolution, setSelectedGridResolution] =
     useState<GridResolution>(DEFAULT_GRID_RESOLUTION);
   const selectedGridResolutionRef = useRef(selectedGridResolution);
@@ -2314,6 +2339,8 @@ export function MapDashboard() {
         </MapContainer>
       )}
       <Map3DOverlay
+        is3DOpen={is3DOpen}
+        on3DOpenChange={handle3DOpenChange}
         gridData={map3DGridData}
         batchSimulationResult={activePolicyBatchResult}
         resolution={selectedGridResolution}
@@ -2339,6 +2366,7 @@ export function MapDashboard() {
           dongSearchError={dongSearchError}
           selectedDistrict={selectedDistrict}
           selectedLayer={selectedLayer}
+          is3DMode={is3DOpen}
           selectedGridResolution={selectedGridResolution}
           selectedGridProperties={selectedGridProperties}
           gridSearchError={gridSearchError}
@@ -2346,7 +2374,7 @@ export function MapDashboard() {
           onDistrictChange={handleDistrictChange}
           onDongSelect={handleDongSearch}
           onGridResolutionChange={handleGridResolutionChange}
-          onLayerChange={setSelectedLayer}
+          onLayerChange={handleLayerChange}
           onGridSearch={handleGridSearch}
         />
         {/* 범례는 rail의 맨 아래로 민다(CSS margin-top:auto). rail이 이미 뷰포트
@@ -2394,6 +2422,7 @@ interface SearchPanelProps {
   dongSearchError: string | null;
   selectedDistrict: string;
   selectedLayer: LayerKey;
+  is3DMode: boolean;
   selectedGridResolution: GridResolution;
   selectedGridProperties: GridAnalysisProperties | null;
   gridSearchError: string | null;
@@ -2413,6 +2442,7 @@ function SearchPanel({
   dongSearchError,
   selectedDistrict,
   selectedLayer,
+  is3DMode,
   selectedGridResolution,
   selectedGridProperties,
   gridSearchError,
@@ -2775,6 +2805,7 @@ function SearchPanel({
                     key={indicator.key}
                     type="button"
                     className={selectedLayer === indicator.key ? 'active' : ''}
+                    disabled={is3DMode && indicator.key !== LST_LAYER}
                     onClick={() => onLayerChange(indicator.key)}
                     onMouseEnter={(event) => showTip(event, indicator.desc)}
                     onMouseLeave={hideTip}

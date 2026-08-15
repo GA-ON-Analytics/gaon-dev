@@ -14,6 +14,8 @@ import Map3DToggle from './Map3DToggle';
 import './map3d.css';
 
 interface Map3DOverlayProps {
+  is3DOpen: boolean;
+  on3DOpenChange: (isOpen: boolean) => void;
   gridData: FeatureCollection | null;
   batchSimulationResult: BatchSimulationResponse | null;
   resolution: GridResolution;
@@ -27,6 +29,8 @@ interface Map3DOverlayProps {
 }
 
 export default function Map3DOverlay({
+  is3DOpen,
+  on3DOpenChange,
   gridData,
   batchSimulationResult,
   resolution,
@@ -38,7 +42,6 @@ export default function Map3DOverlay({
   onDistrictDrillDown,
   onClearSelectedGrid
 }: Map3DOverlayProps) {
-  const [is3DOpen, setIs3DOpen] = useState(false);
   const [viewMode, setViewMode] = useState<Map3DViewMode>('before');
   const supports3DResolution =
     resolution === '100m' || resolution === '250m' || resolution === '500m';
@@ -56,8 +59,8 @@ export default function Map3DOverlay({
   }, [activeBatchSimulationResult]);
 
   useEffect(() => {
-    if (!supports3DResolution) setIs3DOpen(false);
-  }, [supports3DResolution]);
+    if (!supports3DResolution && is3DOpen) on3DOpenChange(false);
+  }, [is3DOpen, on3DOpenChange, supports3DResolution]);
 
   return (
     <div className="map3dOverlay">
@@ -110,7 +113,7 @@ export default function Map3DOverlay({
       {supports3DResolution && (canOpen3D || is3DOpen) && (
         <Map3DToggle
           is3DOpen={is3DOpen}
-          onToggle={() => setIs3DOpen((isOpen) => !isOpen)}
+          onToggle={() => on3DOpenChange(!is3DOpen)}
         />
       )}
     </div>
