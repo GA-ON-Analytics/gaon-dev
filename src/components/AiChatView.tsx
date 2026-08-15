@@ -903,8 +903,8 @@ function AiUsageGuide({
               선택된 격자가 없습니다.
               <br />
               용어·데이터 출처 같은 질문은 그대로 물어보셔도 됩니다. 격자별
-              데이터 조회와 정책 시뮬레이션은 대시보드에서 100m 격자를 먼저
-              선택해 주세요.
+              데이터 조회와 정책 시뮬레이션은 지도에서 100m 격자를 먼저
+              클릭해 주세요.
             </p>
           )}
         </section>
@@ -1251,8 +1251,8 @@ export default function AiChatView({
   const selectedContext = contextGridId
     ? `${selectedGuName ? `${selectedGuName} · ` : ''}${contextGridId}`
     : displayGridId
-      ? `${selectedGuName ? `${selectedGuName} · ` : ''}${displayGridId} · 100m 격자를 선택해 주세요`
-      : '100m 격자를 선택해 주세요';
+      ? `${selectedGuName ? `${selectedGuName} · ` : ''}${displayGridId} · 100m 격자를 클릭해 주세요`
+      : '100m 격자를 클릭해 주세요';
   return (
     <section
       className={`gdpAiWorkspace${guideCollapsed ? ' guideCollapsed' : ''}`}
@@ -1311,7 +1311,7 @@ export default function AiChatView({
             <p>격자 데이터를 조회하거나 정책 변경 시나리오를 질문해 보세요.</p>
             {!contextGridId && (
               <p>
-                질문을 실행하려면 지도에서 분석 가능한 100m 격자를 먼저 선택해 주세요.
+                질문을 실행하려면 지도에서 분석 가능한 100m 격자를 먼저 클릭해 주세요.
               </p>
             )}
             <p>사용 가이드의 예시는 자동 전송 없이 입력창에 채워집니다.</p>

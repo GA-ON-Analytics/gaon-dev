@@ -37,6 +37,7 @@ import type {
   LayerKey
 } from '../types/dashboard';
 import GridDetailSidePanel from './GridDetailSidePanel';
+import OnboardingGuide, { shouldShowOnboarding } from './OnboardingGuide';
 import AiChatLauncher from './AiChatLauncher';
 import MapLegend from './MapLegend';
 import CanvasGridLayer, { featureContainsPoint } from './CanvasGridLayer';
@@ -669,8 +670,15 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
+type ShelterPin = {
+  position: [number, number];
+  name: string;
+  addr: string;
+  distance: number | null;
+};
+
 // 선택 격자의 '가장 가까운 무더위쉼터'를 지도 핀으로 찍기 위한 정보 (좌표 없으면 null)
-function getShelterPin(properties: GridAnalysisProperties | null) {
+function getShelterPin(properties: GridAnalysisProperties | null): ShelterPin | null {
   if (!properties) return null;
   const lat = toFiniteNumber(properties.nearest_shelter_lat);
   const lon = toFiniteNumber(properties.nearest_shelter_lon);
@@ -753,6 +761,123 @@ function buildGridTooltip(feature: Feature<Geometry>, layer: LayerKey, gridMeter
       <small>${getGridIdentifier(properties)} · 면적 ${formatAnyProperty(properties, 'area_m2')}</small>
     </div>
   `;
+}
+
+/** 라벨이 격자 팝업을 피해 내려가는 거리. styles.css 의 .shelterTipBelow 와 같아야 한다. */
+const SHELTER_LABEL_SHIFT = 112;
+
+/**
+ * 쉼터 핀과 라벨.
+ *
+ * 라벨이 격자 정보 팝업과 겹치는 문제가 있었다. 쉼터가 가까운 격자
+ * (예: 11680_03624 는 6m)에서는 팝업이 라벨을 통째로 덮었다.
+ * z-index 로 올리면 이번엔 라벨이 팝업을 덮어 둘 중 하나는 못 읽는다.
+ * 그래서 **겹칠 자리면 라벨을 핀 아래로 내린다**. 둘 다 읽을 수 있다.
+ *
+ * 판단은 라벨의 현재 위치가 아니라 '핀 기준으로 라벨이 차지할 자리'로 한다.
+ * 현재 위치로 재면 내렸다가 안 겹치니 다시 올리는 진동이 생긴다.
+ */
+function ShelterMarker({ shelter }: { shelter: ShelterPin | null }) {
+  const map = useMap();
+  const shelterKey = shelter ? `${shelter.position[0]},${shelter.position[1]}` : '';
+
+  useEffect(() => {
+    if (!shelter) return;
+
+    const update = () => {
+      const label = document.querySelector('.leaflet-tooltip.shelterTip');
+      const popup = document.querySelector('.gridTempTooltip');
+      if (!label) return;
+      if (!popup) {
+        label.classList.remove('shelterTipBelow');
+        return;
+      }
+
+      // 판단 기준은 라벨의 '원래 자리'(핀 위)다. 지금 내려가 있으면 내린 만큼
+      // 되돌려서 잰다. 핀 좌표로 재려 했더니 핀과 라벨의 기준 원점이 달라
+      // 어긋났고, 현재 자리로 재면 내렸다 올렸다 진동한다.
+      const shifted = label.classList.contains('shelterTipBelow');
+      const box = label.getBoundingClientRect();
+      const top = shifted ? box.top - SHELTER_LABEL_SHIFT : box.top;
+      const bottom = shifted ? box.bottom - SHELTER_LABEL_SHIFT : box.bottom;
+      const popupBox = popup.getBoundingClientRect();
+
+      label.classList.toggle(
+        'shelterTipBelow',
+        !(
+          box.right < popupBox.left ||
+          box.left > popupBox.right ||
+          bottom < popupBox.top ||
+          top > popupBox.bottom
+        )
+      );
+    };
+
+    // 언제 다시 재는가 — 여기가 핵심이다.
+    //
+    // `move`·`zoom` 은 애니메이션 도중에 계속 발생한다. 그때는 라벨과 팝업이
+    // 아직 옮겨지는 중이라 위치가 틀리고(줌 중에는 pane 에 scale 까지 걸린다),
+    // 그 값으로 판단하면 확대·축소할 때마다 겹쳤다 안 겹쳤다 한다.
+    // 끝난 뒤(`moveend`·`zoomend`)에만 재고, 그마저도 자리가 완전히 잡히도록
+    // 한 박자 늦춰 한 번 더 잰다. 격자 팝업은 이동이 끝난 뒤에 붙으므로
+    // `popupopen` 도 듣는다.
+    let timers: number[] = [];
+    const schedule = () => {
+      timers.forEach(window.clearTimeout);
+      timers = [window.setTimeout(update, 0), window.setTimeout(update, 220)];
+    };
+
+    schedule();
+    map.on('moveend zoomend resize popupopen popupclose', schedule);
+    return () => {
+      timers.forEach(window.clearTimeout);
+      map.off('moveend zoomend resize popupopen popupclose', schedule);
+    };
+  }, [map, shelter, shelterKey]);
+
+  if (!shelter) return null;
+
+  // 핀은 기본 마커 pane(600)에 둔다. 팝업(700) 위로 올렸더니 핀이 격자 코드를
+  // 가렸다. 핀은 실제 쉼터 좌표라 피할 수가 없으므로 겹치면 팝업이 이기게 두고,
+  // 아래로 삐져나온 부분만 보이게 한다. 라벨은 아래 Tooltip 이 팝업을 피해
+  // 내려가므로 온전히 보인다.
+  return (
+    <Marker
+      position={shelter.position}
+      icon={SHELTER_PIN_ICON}
+      alt={`무더위쉼터 ${shelter.name}`}
+    >
+      {/* 항상 보이는 라벨.
+          hover로 띄우면 두 가지가 걸린다. (1) 격자 hover 툴팁이 sticky라 마우스를
+          따라다니며 이 라벨을 덮는다. (2) 핀 그림(-45도 회전한 28x28)의 대각선이
+          아이콘 클릭영역(28x34) 밖으로 나와, 삐져나온 부분을 클릭하면 아래 격자
+          레이어로 통과해 다른 격자가 선택된다.
+          항상 띄워두면 hover도 클릭도 필요 없어 둘 다 우회한다.
+
+          '아래로 내리기'는 위 useEffect 가 DOM 클래스로 직접 건다. React 로 하면
+          두 가지가 걸린다 — className 은 Leaflet 툴팁을 만들 때 한 번만 반영되고,
+          key 로 다시 만들면 위치 계산이 어긋나 핀에서 350px 떨어진 곳에 뜬다(실측). */}
+      {/* 전용 pane 을 만들어 팝업 위로 올리지 않는다. 자리를 피하는 것으로
+          대부분 해결되고, 그래도 겹치는 드문 경우에는 격자 설명이 이겨야 한다
+          — Leaflet 기본값이 툴팁(650) < 팝업(700)이라 그대로 두면 된다. */}
+      <Tooltip className="shelterTip" direction="top" opacity={1} permanent>
+        <b>무더위쉼터</b>
+        <span>{shelter.name}</span>
+        {shelter.distance !== null && (
+          <span className="stDist">
+            여기서 약 {Math.round(shelter.distance).toLocaleString()}m
+          </span>
+        )}
+      </Tooltip>
+      <Popup className="shelterPopup" autoPan={false}>
+        <strong>{shelter.name}</strong>
+        {shelter.addr && <span>{shelter.addr}</span>}
+        {shelter.distance !== null && (
+          <span>선택 격자에서 약 {Math.round(shelter.distance)}m</span>
+        )}
+      </Popup>
+    </Marker>
+  );
 }
 
 function MapZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
@@ -900,6 +1025,12 @@ export function MapDashboard() {
     useState<L.LatLng | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(initialDetailPanelOpen);
   const [activeTool, setActiveTool] = useState('지도선택');
+  // 첫 접속이면 사용 가이드를 띄운다. 판단은 마운트 때 한 번만 —
+  // 렌더 중에 localStorage를 읽으면 닫은 뒤에도 다시 뜬다.
+  const [guideOpen, setGuideOpen] = useState(false);
+  useEffect(() => {
+    if (shouldShowOnboarding()) setGuideOpen(true);
+  }, []);
   const activeToolRef = useRef(activeTool);
   activeToolRef.current = activeTool;   // 항상 최신 모드를 담아둠 (클릭 핸들러가 참조)
   const selectedGridIdRef = useRef<string | null>(null);   // 현재 팝업이 열린 격자 id
@@ -2172,41 +2303,8 @@ export function MapDashboard() {
               eventHandlers={{ click: () => handleDistrictChange(district.district) }}
             />
           ))}
-          {(() => {
-            // 선택 격자의 가장 가까운 쉼터를 지도에 핀으로 표시 (100m는 hydrate 후 좌표가 채워짐)
-            const shelter = getShelterPin(selectedGridProperties);
-            if (!shelter) return null;
-            return (
-              <Marker
-                position={shelter.position}
-                icon={SHELTER_PIN_ICON}
-                alt={`무더위쉼터 ${shelter.name}`}
-              >
-                {/* 항상 보이는 라벨.
-                    hover로 띄우면 두 가지가 걸린다. (1) 격자 hover 툴팁이 sticky라 마우스를
-                    따라다니며 이 라벨을 덮는다. (2) 핀 그림(-45도 회전한 28x28)의 대각선이
-                    아이콘 클릭영역(28x34) 밖으로 나와, 삐져나온 부분을 클릭하면 아래 격자
-                    레이어로 통과해 다른 격자가 선택된다.
-                    항상 띄워두면 hover도 클릭도 필요 없어 둘 다 우회한다. */}
-                <Tooltip className="shelterTip" direction="top" opacity={1} permanent>
-                  <b>무더위쉼터</b>
-                  <span>{shelter.name}</span>
-                  {shelter.distance !== null && (
-                    <span className="stDist">
-                      여기서 약 {Math.round(shelter.distance).toLocaleString()}m
-                    </span>
-                  )}
-                </Tooltip>
-                <Popup className="shelterPopup" autoPan={false}>
-                  <strong>{shelter.name}</strong>
-                  {shelter.addr && <span>{shelter.addr}</span>}
-                  {shelter.distance !== null && (
-                    <span>선택 격자에서 약 {Math.round(shelter.distance)}m</span>
-                  )}
-                </Popup>
-              </Marker>
-            );
-          })()}
+          {/* 선택 격자의 가장 가까운 쉼터를 지도에 핀으로 표시 (100m는 hydrate 후 좌표가 채워짐) */}
+          <ShelterMarker shelter={getShelterPin(selectedGridProperties)} />
           {/* 줌·축척을 우측 상단 도구 팔레트(.rightToolbar) 옆으로 모았다.
               지도 조작 컨트롤이 화면 양 끝에 흩어져 있으면 시선이 두 번 움직인다. */}
           <ZoomControl position="topright" />
@@ -2234,6 +2332,7 @@ export function MapDashboard() {
       )}
       <div className="leftOverlayRail">
         <SearchPanel
+          onOpenGuide={() => setGuideOpen(true)}
           districts={districts}
           dongSearchEntries={dongSearchEntries}
           dongSearchLoading={dongSearchLoading}
@@ -2283,6 +2382,7 @@ export function MapDashboard() {
         selectedDisplayGridId={chatDisplayGridId}
         selectedGuName={chatGuName}
       />
+      {guideOpen && <OnboardingGuide onClose={() => setGuideOpen(false)} />}
     </div>
   );
 }
@@ -2303,6 +2403,7 @@ interface SearchPanelProps {
   onGridResolutionChange: (resolution: GridResolution) => void;
   onLayerChange: (layer: LayerKey) => void;
   onGridSearch: (code: string) => void;
+  onOpenGuide: () => void;
 }
 
 function SearchPanel({
@@ -2320,7 +2421,8 @@ function SearchPanel({
   onDongSelect,
   onGridResolutionChange,
   onLayerChange,
-  onGridSearch
+  onGridSearch,
+  onOpenGuide
 }: SearchPanelProps) {
   const [locationQuery, setLocationQuery] = useState('');
   const [gridCodeInput, setGridCodeInput] = useState('');
@@ -2454,6 +2556,17 @@ function SearchPanel({
           <p>Urban Heat Island</p>
           <h1>도시 열섬 해결 대시보드</h1>
         </div>
+        {/* 가이드를 닫은 뒤에도 다시 찾을 수 있어야 한다. 챗봇 창을 옮기고 못 찾는
+            문제를 더블클릭 초기화로 푼 것과 같은 이유다. */}
+        <button
+          className="heatPanelGuide"
+          type="button"
+          onClick={onOpenGuide}
+          title="사용 가이드 다시 보기"
+          aria-label="사용 가이드 다시 보기"
+        >
+          ?
+        </button>
       </div>
 
       <div className="heatControlBlock">
