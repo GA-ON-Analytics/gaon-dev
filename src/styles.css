@@ -1145,6 +1145,15 @@ td {
   background: #eaedf0;
 }
 
+.indicatorList button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.indicatorList button:disabled:hover {
+  background: var(--gdp-sub);
+}
+
 .indicatorList button.active {
   background: var(--gdp-green);
   color: #fff;
