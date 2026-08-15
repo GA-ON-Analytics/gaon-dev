@@ -72,6 +72,39 @@ export interface PolicyPreset {
   minimumRequirements: readonly PolicyMinimumRequirement[];
 }
 
+/** 사례 팝업의 '규모'·'효과' 한 줄. value 는 원문에 적힌 수치 그대로 옮긴다. */
+export interface PolicyCaseFact {
+  label: string;
+  value: string;
+}
+
+/**
+ * 정책 프리셋에 붙는 실제 시행 사례 요약. 원문은 `sourceUrl`(백엔드가 가진 값)이다.
+ *
+ * 출처가 전부 news.seoul.go.kr 인데 이 서버가 `frame-ancestors 'self'` 를 내려보내
+ * iframe 으로는 띄울 수 없다. 그래서 원문을 읽고 우리가 요약해 보여준다.
+ * 여기 들어가는 값은 전부 원문에 적힌 것이어야 한다 — 추정치를 쓰지 말 것(#50).
+ *
+ * 정책 '정의'(변화량·최소요건)와 달리 이건 화면에만 쓰는 설명 문구라
+ * 백엔드가 아니라 `src/config/policyCases.ts`에 둔다.
+ */
+export interface PolicyCase {
+  /** 원문에 나온 사업명 */
+  project: string;
+  agency: string;
+  period: string;
+  /** 무엇을 했는지 2~3줄 */
+  summary: readonly string[];
+  facts: readonly PolicyCaseFact[];
+  /** 수치의 성격을 밝혀야 할 때만 (예: 해외 연구 인용치) */
+  caveat?: string;
+  source: {
+    name: string;
+    /** 원문 수정일 */
+    date: string;
+  };
+}
+
 /** `/api/policies` 응답. 정책 정의의 원본은 `backend/policy_presets.py`다. */
 export interface PolicyPresetsResponse {
   count: number;
@@ -155,7 +188,24 @@ export interface SimulationResponse {
   [key: string]: unknown;
 }
 
-// POST /api/simulate/batch 응답 (여러 격자에 같은 정책 → 평균 저감)
+export type SimulationBatchScope = 100 | 300 | 500;
+export type SimulationPolicyScope = SimulationBatchScope | 'district' | 'seoul';
+
+export interface BatchSimulationGridResult extends Partial<SimulationResponse> {
+  grid_id: string;
+  status: 'success' | 'failed';
+  area_m2?: number | null;
+  constituent_count?: number;
+  policy_target_count?: number;
+  outside_constituent_count?: number;
+  success_count?: number;
+  failed_count?: number;
+  successful_area_m2?: number;
+  aggregation_area_m2?: number;
+  error?: string;
+}
+
+// POST /api/simulate/batch 응답. ML은 각 100m 격자를 개별 예측하고 마지막에 집계한다.
 export interface BatchSimulationResponse {
   count: number;
   mean_delta_c: number | null;
@@ -168,7 +218,32 @@ export interface BatchSimulationResponse {
    * 구별 200셀 표본에서 실제로 0.13~0.35℃ 차이가 났다(관악구는 -0.502 vs -0.177).
    */
   mean_delta_c_unclipped?: number | null;
-  results: SimulationResponse[];
+  grid_count: number;
+  requested_grid_count: number;
+  success_count: number;
+  failed_count: number;
+  mean_before_anomaly: number | null;
+  mean_after_anomaly: number | null;
+  improved_grid_count: number;
+  worsened_grid_count: number;
+  unchanged_grid_count: number;
+  no_change_threshold_c: number;
+  aggregation: 'area_weighted' | 'unweighted' | null;
+  total_area_m2: number | null;
+  successful_area_m2: number | null;
+  target_mode: 'explicit_grid_ids' | 'spatial_scope' | 'district' | 'seoul' | 'aggregate';
+  center_grid_id: string | null;
+  scope_m: SimulationBatchScope | null;
+  gu_code?: string;
+  scope_mode?: 'district' | 'seoul';
+  aggregate_resolution?: '250m' | '500m';
+  aggregate_id?: string;
+  source_resolution?: '100m';
+  display_resolution?: '100m' | '250m' | '500m';
+  source_grid_count?: number;
+  display_grid_count?: number;
+  compact?: boolean;
+  results: BatchSimulationGridResult[];
 }
 
 export interface GridAnalysisProperties {

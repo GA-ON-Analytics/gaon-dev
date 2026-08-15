@@ -1,6 +1,8 @@
+import logging
+import math
 from pathlib import Path
 from re import fullmatch
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,10 +22,16 @@ from backend.policy_presets import (
     POLICY_FEATURE_LABELS,
     policy_presets_payload,
 )
+from backend.simulation_scope import (
+    load_aggregate_constituent_mapping,
+    load_aggregate_grid_index,
+    load_grid_spatial_index,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = Path(__file__).resolve().parent
+LOGGER = logging.getLogger(__name__)
 
 
 def _resolve_public_dir() -> Path:
@@ -108,7 +116,21 @@ class SimulationRequest(BaseModel):
 
 
 class BatchSimulationRequest(BaseModel):
-    grid_ids: list[str]
+    # 기존 250/500m 집계 격자의 명시적 구성 셀 요청을 계속 지원한다.
+    grid_ids: list[str] | None = None
+    # 100m 중심 격자 주변 정책 범위 요청. scope_m은 Pydantic이 422로 검증한다.
+    grid_id: str | None = None
+    scope_m: Literal[100, 300, 500] | None = None
+    # 자치구/서울 전체는 숫자 scope_m contract와 분리된 selector로 받는다.
+    gu_code: str | None = None
+    scope_mode: Literal["district", "seoul"] | None = None
+    # 250/500m aggregate 자체가 아니라, 해당 영역의 실제 100m 구성 셀을 선택한다.
+    aggregate_resolution: Literal["250m", "500m"] | None = None
+    aggregate_id: str | None = None
+    # 행정구역 전체 ML 대상은 항상 실제 100m이고, 이 값은 응답 집계 해상도만 정한다.
+    display_resolution: Literal["100m", "250m", "500m"] | None = None
+    # 행정구역 전체 결과에서는 개별 ML 진단 필드를 줄인다.
+    compact: bool = False
     changes: dict[str, float] = Field(default_factory=dict)
     couple_land_cover: bool = True
 
@@ -217,6 +239,258 @@ def _load_predict_core():
         from ml import predict_core
 
     return predict_core
+
+
+BATCH_NO_CHANGE_THRESHOLD_C = 0.132
+SEOUL_BATCH_CHUNK_SIZE = 10_000
+
+
+def _batch_targets(payload: BatchSimulationRequest) -> tuple[list[tuple[str, float | None]], str]:
+    has_explicit_ids = payload.grid_ids is not None
+    has_spatial_scope = payload.grid_id is not None or payload.scope_m is not None
+    has_administrative_scope = payload.gu_code is not None or payload.scope_mode is not None
+    has_aggregate_scope = (
+        payload.aggregate_resolution is not None or payload.aggregate_id is not None
+    )
+    selector_count = sum(
+        (
+            has_explicit_ids,
+            has_spatial_scope,
+            has_administrative_scope,
+            has_aggregate_scope,
+        )
+    )
+    if selector_count != 1:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Use exactly one selector: grid_ids, grid_id with scope_m, "
+                "gu_code with district scope_mode, seoul scope_mode, or "
+                "aggregate_resolution with aggregate_id"
+            ),
+        )
+
+    supports_display_resolution = has_administrative_scope and (
+        (payload.scope_mode == "seoul" and payload.gu_code is None)
+        or (payload.scope_mode == "district" and payload.gu_code is not None)
+    )
+    if payload.display_resolution is not None and not supports_display_resolution:
+        raise HTTPException(
+            status_code=422,
+            detail="display_resolution is supported only for district or seoul scope",
+        )
+
+    if has_explicit_ids:
+        if payload.compact:
+            raise HTTPException(
+                status_code=422,
+                detail="compact response is supported only for district or seoul scope",
+            )
+        grid_ids = payload.grid_ids or []
+        # 기존 endpoint의 단순 평균 contract와 지도 파일 비의존성을 보존한다.
+        return [(grid_id, None) for grid_id in grid_ids], "explicit_grid_ids"
+
+    if has_aggregate_scope:
+        if payload.compact:
+            raise HTTPException(
+                status_code=422,
+                detail="compact response is not supported for aggregate scope",
+            )
+        if payload.aggregate_resolution is None or payload.aggregate_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail="aggregate_resolution and aggregate_id are both required",
+            )
+        try:
+            grid_index = load_grid_spatial_index(str(DASHBOARD_100M_MAP_PATH))
+            aggregate_index = load_aggregate_grid_index(
+                str(DASHBOARD_GRID_PATHS[payload.aggregate_resolution])
+            )
+            # 500m explicit members match the actual aggregate area. The current
+            # 250m field is a documented bbox restoration with duplicate members,
+            # so 250m uses the real Polygon/MultiPolygon centroid relation instead.
+            cells = aggregate_index.select_constituents(
+                payload.aggregate_id,
+                grid_index,
+                use_explicit_members=payload.aggregate_resolution == "500m",
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="aggregate grid not found") from None
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=503, detail="Aggregate or 100m map data is unavailable"
+            ) from None
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail="Invalid aggregate map data") from exc
+        return [(cell.grid_id, cell.area_m2) for cell in cells], "aggregate"
+
+    if has_administrative_scope:
+        if payload.scope_mode == "seoul":
+            if payload.gu_code is not None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="gu_code must not be provided for seoul scope",
+                )
+            if not payload.compact:
+                raise HTTPException(
+                    status_code=422,
+                    detail="compact response is required for seoul scope",
+                )
+
+            try:
+                index = load_grid_spatial_index(str(DASHBOARD_100M_MAP_PATH))
+                cells = index.select_seoul()
+            except FileNotFoundError:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Seoul 100m map data is unavailable",
+                ) from None
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Invalid Seoul 100m map data",
+                ) from exc
+
+            return [(cell.grid_id, cell.area_m2) for cell in cells], "seoul"
+
+        if payload.gu_code is None or payload.scope_mode != "district":
+            raise HTTPException(
+                status_code=422,
+                detail="gu_code and scope_mode='district' are required for district scope",
+            )
+        if fullmatch(r"\d{5}", payload.gu_code) is None:
+            raise HTTPException(status_code=422, detail="gu_code must be exactly five digits")
+
+        try:
+            index = load_grid_spatial_index(str(DASHBOARD_100M_MAP_PATH))
+            cells = index.select_district(payload.gu_code)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="gu_code not found") from None
+        except FileNotFoundError:
+            raise HTTPException(status_code=503, detail="Seoul 100m map data is unavailable") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail="Invalid Seoul 100m map data") from exc
+
+        return [(cell.grid_id, cell.area_m2) for cell in cells], "district"
+
+    if payload.compact:
+        raise HTTPException(
+            status_code=422,
+            detail="compact response is supported only for district or seoul scope",
+        )
+
+    if payload.grid_id is None or payload.scope_m is None:
+        raise HTTPException(
+            status_code=422,
+            detail="grid_id and scope_m are required when grid_ids is not provided",
+        )
+
+    try:
+        index = load_grid_spatial_index(str(DASHBOARD_100M_MAP_PATH))
+        cells = index.select_scope(payload.grid_id, payload.scope_m)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="center grid_id not found") from None
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Seoul 100m map data is unavailable") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Invalid Seoul 100m map data") from exc
+
+    return [(cell.grid_id, cell.area_m2) for cell in cells], "spatial_scope"
+
+
+def _mean(values: list[tuple[float, float | None]]) -> tuple[float | None, str | None]:
+    if not values:
+        return None, None
+    if all(area is not None and area > 0 for _, area in values):
+        total_area = sum(float(area) for _, area in values if area is not None)
+        weighted = sum(value * float(area) for value, area in values if area is not None)
+        return round(weighted / total_area, 3), "area_weighted"
+    return round(sum(value for value, _ in values) / len(values), 3), "unweighted"
+
+
+def _is_successful_prediction(result: dict[str, Any]) -> bool:
+    values = (
+        result.get("delta_c"),
+        result.get("before_anomaly"),
+        result.get("after_anomaly"),
+    )
+    return all(
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        for value in values
+    )
+
+
+def _batch_summary(
+    targets: list[tuple[str, float | None]],
+    results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    successful = [
+        (target, result)
+        for target, result in zip(targets, results)
+        if _is_successful_prediction(result)
+    ]
+    before_mean, aggregation = _mean(
+        [(float(result["before_anomaly"]), target[1]) for target, result in successful]
+    )
+    after_mean, _ = _mean(
+        [(float(result["after_anomaly"]), target[1]) for target, result in successful]
+    )
+    delta_mean, _ = _mean(
+        [(float(result["delta_c"]), target[1]) for target, result in successful]
+    )
+    unclipped = [
+        (target, result)
+        for target, result in successful
+        if not any("clip" in str(warning) for warning in result.get("warnings") or [])
+    ]
+    unclipped_mean, _ = _mean(
+        [(float(result["delta_c"]), target[1]) for target, result in unclipped]
+    )
+
+    improved = sum(
+        float(result["delta_c"]) < -BATCH_NO_CHANGE_THRESHOLD_C
+        for _, result in successful
+    )
+    worsened = sum(
+        float(result["delta_c"]) > BATCH_NO_CHANGE_THRESHOLD_C
+        for _, result in successful
+    )
+    unchanged = len(successful) - improved - worsened
+    areas = [area for _, area in targets]
+    successful_areas = [target[1] for target, _ in successful]
+
+    return {
+        # 기존 batch consumer가 사용하는 필드.
+        "count": len(results),
+        "mean_delta_c": delta_mean,
+        "clipped_count": len(successful) - len(unclipped),
+        "valid_count": len(successful),
+        "mean_delta_c_unclipped": unclipped_mean,
+        # 중심 범위 batch가 지역 단위 결과를 해석하는 필드.
+        "grid_count": len(targets),
+        "requested_grid_count": len(targets),
+        "success_count": len(successful),
+        "failed_count": len(results) - len(successful),
+        "mean_before_anomaly": before_mean,
+        "mean_after_anomaly": after_mean,
+        "improved_grid_count": improved,
+        "worsened_grid_count": worsened,
+        "unchanged_grid_count": unchanged,
+        "no_change_threshold_c": BATCH_NO_CHANGE_THRESHOLD_C,
+        "aggregation": aggregation,
+        "total_area_m2": (
+            round(sum(float(area) for area in areas if area is not None), 2)
+            if areas and all(area is not None for area in areas)
+            else None
+        ),
+        "successful_area_m2": (
+            round(sum(float(area) for area in successful_areas if area is not None), 2)
+            if successful_areas and all(area is not None for area in successful_areas)
+            else None
+        ),
+    }
 
 
 @app.get("/api/health")
@@ -437,41 +711,275 @@ def simulate(payload: SimulationRequest) -> Any:
                                 couple_land_cover=payload.couple_land_cover)
 
 
+def _predict_batch_individually(
+    predict_core: Any,
+    grid_ids: list[str],
+    changes: dict[str, float],
+    couple_land_cover: bool,
+) -> list[dict[str, Any]]:
+    results = []
+    for grid_id in grid_ids:
+        try:
+            result = predict_core.predict(
+                grid_id,
+                changes,
+                couple_land_cover=couple_land_cover,
+            )
+        except Exception:
+            # 한 격자의 데이터/예측 문제가 나머지 성공 결과를 버리지 않게 개별 실패로 남긴다.
+            LOGGER.exception("Batch simulation failed for grid_id=%s", grid_id)
+            result = {"grid_id": grid_id, "error": "prediction failed"}
+        results.append(result)
+    return results
+
+
+def _predict_batch_vectorized(
+    predict_core: Any,
+    grid_ids: list[str],
+    changes: dict[str, float],
+    couple_land_cover: bool,
+    *,
+    chunk_size: int | None = None,
+    compact: bool = False,
+) -> list[dict[str, Any]]:
+    predict_many = getattr(predict_core, "predict_batch", None)
+    if not callable(predict_many):
+        return _predict_batch_individually(
+            predict_core,
+            grid_ids,
+            changes,
+            couple_land_cover,
+        )
+
+    size = chunk_size or len(grid_ids) or 1
+    results: list[dict[str, Any]] = []
+    for start in range(0, len(grid_ids), size):
+        chunk_ids = grid_ids[start : start + size]
+        try:
+            batch_kwargs: dict[str, Any] = {
+                "couple_land_cover": couple_land_cover,
+            }
+            if compact and getattr(predict_core, "SUPPORTS_COMPACT_BATCH", False):
+                batch_kwargs["compact"] = True
+            chunk_results = predict_many(
+                chunk_ids,
+                changes,
+                **batch_kwargs,
+            )
+            if len(chunk_results) != len(chunk_ids):
+                raise ValueError("predict_batch result count does not match requested grids")
+        except Exception:
+            # 한 chunk의 matrix 실패가 다른 chunk의 성공을 버리지 않게 해당 구간만
+            # 기존 single predict contract로 복구한다.
+            LOGGER.exception(
+                "Vectorized batch simulation failed; falling back to single predict"
+            )
+            chunk_results = _predict_batch_individually(
+                predict_core,
+                chunk_ids,
+                changes,
+                couple_land_cover,
+            )
+        results.extend(chunk_results)
+    return results
+
+
+def _compact_batch_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compact_results = []
+    for result in results:
+        if result["status"] == "success":
+            compact_results.append(
+                {
+                    "grid_id": result["grid_id"],
+                    "status": "success",
+                    "delta_c": result["delta_c"],
+                    "area_m2": result.get("area_m2"),
+                }
+            )
+        else:
+            compact_results.append(
+                {
+                    "grid_id": result["grid_id"],
+                    "status": "failed",
+                    "error": str(result.get("error") or "prediction failed"),
+                }
+            )
+    return compact_results
+
+
+def _aggregate_display_results(
+    display_resolution: Literal["250m", "500m"],
+    results: list[dict[str, Any]],
+    *,
+    gu_code: str | None = None,
+) -> list[dict[str, Any]]:
+    """한 번 예측한 실제 100m 결과를 현재 표시 aggregate로 면적가중한다.
+
+    district 표시에서 경계를 넘는 구성원은 정책 대상이 아니므로 delta=0으로
+    전체 분모에 포함한다. 정책 대상 ML 실패 면적은 기존 successful-area 의미에
+    맞춰 분모에서 제외한다.
+    """
+    aggregate_path = str(DASHBOARD_GRID_PATHS[display_resolution])
+    grid_path = str(DASHBOARD_100M_MAP_PATH)
+    aggregate_index = load_aggregate_grid_index(aggregate_path)
+    constituent_mapping = load_aggregate_constituent_mapping(
+        aggregate_path,
+        grid_path,
+        display_resolution == "500m",
+    )
+    result_by_grid_id = {
+        str(result.get("grid_id")): result
+        for result in results
+        if result.get("grid_id") is not None
+    }
+    display_results: list[dict[str, Any]] = []
+
+    display_aggregates = (
+        aggregate_index.cells
+        if gu_code is None
+        else tuple(
+            aggregate
+            for aggregate in aggregate_index.cells
+            if aggregate.gu_code == gu_code
+        )
+    )
+    for aggregate in display_aggregates:
+        members = constituent_mapping[aggregate.display_grid_id]
+        policy_members = (
+            members
+            if gu_code is None
+            else tuple(cell for cell in members if cell.gu_code == gu_code)
+        )
+        outside_members = (
+            ()
+            if gu_code is None
+            else tuple(cell for cell in members if cell.gu_code != gu_code)
+        )
+        successful = []
+        for cell in policy_members:
+            result = result_by_grid_id.get(cell.grid_id)
+            if result is not None and _is_successful_prediction(result):
+                successful.append((float(result["delta_c"]), cell.area_m2))
+
+        successful_area_m2 = sum(area for _, area in successful)
+        outside_area_m2 = sum(cell.area_m2 for cell in outside_members)
+        aggregation_area_m2 = successful_area_m2 + outside_area_m2
+        # 정책 대상이 하나도 없는 경계 조각은 외부 구성원의 delta=0만으로 계산된다.
+        has_valid_result = bool(successful) or not policy_members
+        delta_c = (
+            round(
+                sum(delta * area for delta, area in successful)
+                / aggregation_area_m2,
+                3,
+            )
+            if has_valid_result and aggregation_area_m2 > 0
+            else None
+        )
+        common = {
+            "grid_id": aggregate.display_grid_id,
+            "area_m2": round(aggregate.area_m2, 2),
+            "constituent_count": len(members),
+            "policy_target_count": len(policy_members),
+            "outside_constituent_count": len(outside_members),
+            "success_count": len(successful),
+            "failed_count": len(policy_members) - len(successful),
+            "successful_area_m2": round(successful_area_m2, 2),
+            "aggregation_area_m2": round(aggregation_area_m2, 2),
+        }
+        if delta_c is None:
+            display_results.append(
+                {
+                    **common,
+                    "status": "failed",
+                    "error": "all constituent predictions failed",
+                }
+            )
+        else:
+            display_results.append(
+                {
+                    **common,
+                    "status": "success",
+                    "delta_c": delta_c,
+                }
+            )
+
+    return display_results
+
+
 @app.post("/api/simulate/batch")
 def simulate_batch(payload: BatchSimulationRequest) -> Any:
     if not _simulation_ready():
         return _simulation_not_connected_response()
 
+    targets, target_mode = _batch_targets(payload)
     predict_core = _load_predict_core()
-    results = [predict_core.predict(grid_id, payload.changes,
-                                    couple_land_cover=payload.couple_land_cover)
-               for grid_id in payload.grid_ids]
-    valid_results = [result for result in results if "delta_c" in result]
-    mean_delta = (
-        round(sum(result["delta_c"] for result in valid_results) / len(valid_results), 3)
-        if valid_results
-        else None
+    grid_ids = [grid_id for grid_id, _ in targets]
+    raw_results = _predict_batch_vectorized(
+        predict_core,
+        grid_ids,
+        payload.changes,
+        payload.couple_land_cover,
+        # 서울 전체만 메모리 상한을 둔다. 기존 자치구/100·300·500 호출 형태는 유지한다.
+        chunk_size=SEOUL_BATCH_CHUNK_SIZE if target_mode == "seoul" else None,
+        compact=payload.compact,
     )
+    results = []
+    for (grid_id, area_m2), result in zip(targets, raw_results):
+        normalized = dict(result)
+        normalized.setdefault("grid_id", grid_id)
+        normalized["area_m2"] = area_m2
+        results.append(normalized)
 
-    # 학습범위 clip에 걸린 셀은 요청보다 적은 개입을 받았는데도 저감이 크게 나온다.
-    # 실측(구별 200셀 표본)에서 그냥 평균하면 clip 제외 평균보다 0.13~0.35℃ 더 시원하게 나왔고,
-    # 이는 delta_c 추정오차(0.132℃)를 넘는다. 즉 반올림 오차가 아니라 계통 편향이다.
-    # 평균값 자체는 바꾸지 않고(사용자가 보던 수가 말없이 달라지면 더 혼란스럽다)
-    # 몇 개가 잘렸는지와 잘린 셀을 뺀 평균을 함께 돌려준다.
-    unclipped = [
-        result
-        for result in valid_results
-        if not any("clip" in str(warning) for warning in result.get("warnings") or [])
-    ]
-    return {
-        "count": len(results),
-        "mean_delta_c": mean_delta,
-        "clipped_count": len(valid_results) - len(unclipped),
-        "valid_count": len(valid_results),
-        "mean_delta_c_unclipped": (
-            round(sum(result["delta_c"] for result in unclipped) / len(unclipped), 3)
-            if unclipped
-            else None
-        ),
-        "results": results,
+    summary = _batch_summary(targets, results)
+    for result in results:
+        result["status"] = "success" if _is_successful_prediction(result) else "failed"
+    if (
+        target_mode in {"district", "seoul"}
+        and payload.display_resolution in {"250m", "500m"}
+    ):
+        try:
+            response_results = _aggregate_display_results(
+                payload.display_resolution,
+                results,
+                gu_code=payload.gu_code if target_mode == "district" else None,
+            )
+        except (FileNotFoundError, KeyError, ValueError) as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid aggregate or 100m map data",
+            ) from exc
+    else:
+        response_results = _compact_batch_results(results) if payload.compact else results
+    response = {
+        **summary,
+        "target_mode": target_mode,
+        "center_grid_id": payload.grid_id if target_mode == "spatial_scope" else None,
+        "scope_m": payload.scope_m if target_mode == "spatial_scope" else None,
+        "results": response_results,
     }
+    if target_mode == "aggregate":
+        response.update(
+            {
+                "aggregate_resolution": payload.aggregate_resolution,
+                "aggregate_id": payload.aggregate_id,
+            }
+        )
+    if target_mode in {"district", "seoul"}:
+        response.update(
+            {
+                "scope_mode": payload.scope_mode,
+                "compact": payload.compact,
+            }
+        )
+        if target_mode == "district":
+            response["gu_code"] = payload.gu_code
+        if payload.display_resolution is not None:
+            response.update(
+                {
+                    "source_resolution": "100m",
+                    "display_resolution": payload.display_resolution,
+                    "source_grid_count": len(targets),
+                    "display_grid_count": len(response_results),
+                }
+            )
+    return response

@@ -1,6 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import AiChatView from './AiChatView';
 import { applyDockPosition, createDockDrag, loadDockPosition } from '../chatDockDrag';
+import { GUIDE_CLOSED_EVENT, ONBOARDING_STORAGE_KEY } from './OnboardingGuide';
+
+/**
+ * 챗봇이 있다는 걸 한 번은 말해준다.
+ *
+ * 버튼은 마스코트 얼굴 + 말풍선 배지인데, 처음 온 사람은 마우스를 올려볼 이유가
+ * 없어서 이름표(hover 툴팁)를 영영 못 본다. 그래서 첫 접속에 딱 한 번, 버튼 옆에
+ * 말풍선을 띄운다. 한 번 본 뒤에는 다시 뜨지 않는다.
+ */
+const CHAT_HINT_STORAGE_KEY = 'gaon_chat_hint_seen';
+
+function readFlag(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === '1';
+  } catch {
+    return true;   // 저장을 못 읽는 환경이면 '이미 봤다'로 친다. 매번 뜨는 게 더 나쁘다.
+  }
+}
+
+function writeFlag(key: string) {
+  try {
+    window.localStorage.setItem(key, '1');
+  } catch {
+    // 저장이 막혀도 이번 방문에는 안 뜬다. 기능은 막지 않는다.
+  }
+}
 
 // GA:ON AI 채팅 진입점.
 //
@@ -63,6 +89,9 @@ export default function AiChatLauncher({
   const [isOpen, setIsOpen] = useState(false);
   // 창을 닫아둔 사이에 답변이 도착했는지. 요청은 창을 닫아도 계속 진행된다.
   const [hasUnread, setHasUnread] = useState(false);
+  // 첫 접속 말풍선. 사용 가이드가 떠 있는 동안 같이 뜨면 둘 다 안 읽히므로,
+  // 가이드를 아직 안 본 사람은 가이드가 닫힌 뒤에 띄운다.
+  const [hintOpen, setHintOpen] = useState(false);
   const fabRef = useRef<HTMLButtonElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
 
@@ -83,6 +112,26 @@ export default function AiChatLauncher({
   useEffect(() => {
     if (isOpen) dockRef.current?.focus();
   }, [isOpen]);
+
+  // 말풍선을 언제 띄울지. 이미 본 사람에게는 띄우지 않는다.
+  useEffect(() => {
+    if (readFlag(CHAT_HINT_STORAGE_KEY)) return;
+
+    // 가이드를 이미 본 사람(재방문)이면 바로, 처음 온 사람이면 가이드를 닫은 뒤.
+    if (readFlag(ONBOARDING_STORAGE_KEY)) {
+      setHintOpen(true);
+      return;
+    }
+    const onGuideClosed = () => setHintOpen(true);
+    window.addEventListener(GUIDE_CLOSED_EVENT, onGuideClosed);
+    return () => window.removeEventListener(GUIDE_CLOSED_EVENT, onGuideClosed);
+  }, []);
+
+  function dismissHint() {
+    if (!hintOpen) return;
+    setHintOpen(false);
+    writeFlag(CHAT_HINT_STORAGE_KEY);
+  }
 
   // 창을 헤더로 끌어 옮긴다.
   //
@@ -146,10 +195,29 @@ export default function AiChatLauncher({
         />
       </div>
 
+      {/* 첫 접속 말풍선. 버튼 안에 넣을 수 없다 — 닫기 버튼이 들어가는데 버튼
+          안의 버튼은 안 된다. 그래서 형제로 두고 위치를 따로 잡는다. */}
+      {hintOpen && !isOpen && (
+        <div className="aiChatHint" role="status">
+          <strong>무엇이든 물어보세요</strong>
+          <span>
+            “녹지율 5%p 높여줘”처럼 말하면 시뮬레이션을 돌려주고, 용어도 설명해 줍니다.
+          </span>
+          <button
+            className="aiChatHintClose"
+            type="button"
+            aria-label="안내 닫기"
+            onClick={dismissHint}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <button
         ref={fabRef}
         type="button"
-        className={`aiChatFab${isOpen ? ' isOpen' : ''}`}
+        className={`aiChatFab${isOpen ? ' isOpen' : ''}${hintOpen ? ' hasHint' : ''}`}
         aria-label={
           isOpen
             ? 'GA:ON AI 챗봇 닫기'
@@ -159,6 +227,7 @@ export default function AiChatLauncher({
         }
         aria-expanded={isOpen}
         onClick={() => {
+          dismissHint();
           if (isOpen) {
             close();
           } else {

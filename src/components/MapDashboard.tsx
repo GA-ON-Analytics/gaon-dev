@@ -30,15 +30,18 @@ import {
   getResolutionGrid
 } from '../services/api';
 import type {
+  BatchSimulationResponse,
   DongSearchIndexEntry,
   GridAnalysisProperties,
   GridResolution,
   LayerKey
 } from '../types/dashboard';
 import GridDetailSidePanel from './GridDetailSidePanel';
+import OnboardingGuide, { shouldShowOnboarding } from './OnboardingGuide';
 import AiChatLauncher from './AiChatLauncher';
 import MapLegend from './MapLegend';
 import CanvasGridLayer, { featureContainsPoint } from './CanvasGridLayer';
+import Map3DOverlay from '../features/map3d/Map3DOverlay';
 
 const ALL_DISTRICTS = '전체';
 const DEFAULT_DISTRICT = ALL_DISTRICTS;
@@ -80,6 +83,12 @@ interface AggregateGridSearchHit {
   feature: Feature<Geometry>;
   resolution: AggregateGridResolution;
   district: string;
+}
+
+interface PolicyBatchContext {
+  resolution: GridResolution;
+  district: string;
+  selectedGridId: string | null;
 }
 
 interface LayerOption {
@@ -661,8 +670,15 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
+type ShelterPin = {
+  position: [number, number];
+  name: string;
+  addr: string;
+  distance: number | null;
+};
+
 // 선택 격자의 '가장 가까운 무더위쉼터'를 지도 핀으로 찍기 위한 정보 (좌표 없으면 null)
-function getShelterPin(properties: GridAnalysisProperties | null) {
+function getShelterPin(properties: GridAnalysisProperties | null): ShelterPin | null {
   if (!properties) return null;
   const lat = toFiniteNumber(properties.nearest_shelter_lat);
   const lon = toFiniteNumber(properties.nearest_shelter_lon);
@@ -747,6 +763,123 @@ function buildGridTooltip(feature: Feature<Geometry>, layer: LayerKey, gridMeter
   `;
 }
 
+/** 라벨이 격자 팝업을 피해 내려가는 거리. styles.css 의 .shelterTipBelow 와 같아야 한다. */
+const SHELTER_LABEL_SHIFT = 112;
+
+/**
+ * 쉼터 핀과 라벨.
+ *
+ * 라벨이 격자 정보 팝업과 겹치는 문제가 있었다. 쉼터가 가까운 격자
+ * (예: 11680_03624 는 6m)에서는 팝업이 라벨을 통째로 덮었다.
+ * z-index 로 올리면 이번엔 라벨이 팝업을 덮어 둘 중 하나는 못 읽는다.
+ * 그래서 **겹칠 자리면 라벨을 핀 아래로 내린다**. 둘 다 읽을 수 있다.
+ *
+ * 판단은 라벨의 현재 위치가 아니라 '핀 기준으로 라벨이 차지할 자리'로 한다.
+ * 현재 위치로 재면 내렸다가 안 겹치니 다시 올리는 진동이 생긴다.
+ */
+function ShelterMarker({ shelter }: { shelter: ShelterPin | null }) {
+  const map = useMap();
+  const shelterKey = shelter ? `${shelter.position[0]},${shelter.position[1]}` : '';
+
+  useEffect(() => {
+    if (!shelter) return;
+
+    const update = () => {
+      const label = document.querySelector('.leaflet-tooltip.shelterTip');
+      const popup = document.querySelector('.gridTempTooltip');
+      if (!label) return;
+      if (!popup) {
+        label.classList.remove('shelterTipBelow');
+        return;
+      }
+
+      // 판단 기준은 라벨의 '원래 자리'(핀 위)다. 지금 내려가 있으면 내린 만큼
+      // 되돌려서 잰다. 핀 좌표로 재려 했더니 핀과 라벨의 기준 원점이 달라
+      // 어긋났고, 현재 자리로 재면 내렸다 올렸다 진동한다.
+      const shifted = label.classList.contains('shelterTipBelow');
+      const box = label.getBoundingClientRect();
+      const top = shifted ? box.top - SHELTER_LABEL_SHIFT : box.top;
+      const bottom = shifted ? box.bottom - SHELTER_LABEL_SHIFT : box.bottom;
+      const popupBox = popup.getBoundingClientRect();
+
+      label.classList.toggle(
+        'shelterTipBelow',
+        !(
+          box.right < popupBox.left ||
+          box.left > popupBox.right ||
+          bottom < popupBox.top ||
+          top > popupBox.bottom
+        )
+      );
+    };
+
+    // 언제 다시 재는가 — 여기가 핵심이다.
+    //
+    // `move`·`zoom` 은 애니메이션 도중에 계속 발생한다. 그때는 라벨과 팝업이
+    // 아직 옮겨지는 중이라 위치가 틀리고(줌 중에는 pane 에 scale 까지 걸린다),
+    // 그 값으로 판단하면 확대·축소할 때마다 겹쳤다 안 겹쳤다 한다.
+    // 끝난 뒤(`moveend`·`zoomend`)에만 재고, 그마저도 자리가 완전히 잡히도록
+    // 한 박자 늦춰 한 번 더 잰다. 격자 팝업은 이동이 끝난 뒤에 붙으므로
+    // `popupopen` 도 듣는다.
+    let timers: number[] = [];
+    const schedule = () => {
+      timers.forEach(window.clearTimeout);
+      timers = [window.setTimeout(update, 0), window.setTimeout(update, 220)];
+    };
+
+    schedule();
+    map.on('moveend zoomend resize popupopen popupclose', schedule);
+    return () => {
+      timers.forEach(window.clearTimeout);
+      map.off('moveend zoomend resize popupopen popupclose', schedule);
+    };
+  }, [map, shelter, shelterKey]);
+
+  if (!shelter) return null;
+
+  // 핀은 기본 마커 pane(600)에 둔다. 팝업(700) 위로 올렸더니 핀이 격자 코드를
+  // 가렸다. 핀은 실제 쉼터 좌표라 피할 수가 없으므로 겹치면 팝업이 이기게 두고,
+  // 아래로 삐져나온 부분만 보이게 한다. 라벨은 아래 Tooltip 이 팝업을 피해
+  // 내려가므로 온전히 보인다.
+  return (
+    <Marker
+      position={shelter.position}
+      icon={SHELTER_PIN_ICON}
+      alt={`무더위쉼터 ${shelter.name}`}
+    >
+      {/* 항상 보이는 라벨.
+          hover로 띄우면 두 가지가 걸린다. (1) 격자 hover 툴팁이 sticky라 마우스를
+          따라다니며 이 라벨을 덮는다. (2) 핀 그림(-45도 회전한 28x28)의 대각선이
+          아이콘 클릭영역(28x34) 밖으로 나와, 삐져나온 부분을 클릭하면 아래 격자
+          레이어로 통과해 다른 격자가 선택된다.
+          항상 띄워두면 hover도 클릭도 필요 없어 둘 다 우회한다.
+
+          '아래로 내리기'는 위 useEffect 가 DOM 클래스로 직접 건다. React 로 하면
+          두 가지가 걸린다 — className 은 Leaflet 툴팁을 만들 때 한 번만 반영되고,
+          key 로 다시 만들면 위치 계산이 어긋나 핀에서 350px 떨어진 곳에 뜬다(실측). */}
+      {/* 전용 pane 을 만들어 팝업 위로 올리지 않는다. 자리를 피하는 것으로
+          대부분 해결되고, 그래도 겹치는 드문 경우에는 격자 설명이 이겨야 한다
+          — Leaflet 기본값이 툴팁(650) < 팝업(700)이라 그대로 두면 된다. */}
+      <Tooltip className="shelterTip" direction="top" opacity={1} permanent>
+        <b>무더위쉼터</b>
+        <span>{shelter.name}</span>
+        {shelter.distance !== null && (
+          <span className="stDist">
+            여기서 약 {Math.round(shelter.distance).toLocaleString()}m
+          </span>
+        )}
+      </Tooltip>
+      <Popup className="shelterPopup" autoPan={false}>
+        <strong>{shelter.name}</strong>
+        {shelter.addr && <span>{shelter.addr}</span>}
+        {shelter.distance !== null && (
+          <span>선택 격자에서 약 {Math.round(shelter.distance)}m</span>
+        )}
+      </Popup>
+    </Marker>
+  );
+}
+
 function MapZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
   const map = useMapEvents({
     zoomend: (event) => onZoomChange(event.target.getZoom())
@@ -828,6 +961,38 @@ function LoadingContent({ message }: { message: string }) {
   );
 }
 
+function PolicyScopeLayer({ data }: { data: FeatureCollection | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!data || data.features.length === 0) return;
+
+    let pane = map.getPane('gridPolicyScopePane');
+    if (!pane) pane = map.createPane('gridPolicyScopePane');
+    // 100m canvas(350) 위, 기존 단일 선택 outline(450) 아래에 정책 범위만 표시한다.
+    pane.style.zIndex = '425';
+    pane.style.pointerEvents = 'none';
+
+    const layer = L.geoJSON(data, {
+      pane: 'gridPolicyScopePane',
+      interactive: false,
+      style: {
+        color: '#1f5121',
+        weight: 2.5,
+        opacity: 1,
+        dashArray: '6 3',
+        fill: false
+      }
+    }).addTo(map);
+
+    return () => {
+      layer.removeFrom(map);
+    };
+  }, [data, map]);
+
+  return null;
+}
+
 function initialDetailPanelOpen() {
   return typeof window === 'undefined' || !window.matchMedia(MOBILE_LAYOUT_QUERY).matches;
 }
@@ -843,14 +1008,29 @@ export function MapDashboard() {
   selectedGridResolutionRef.current = selectedGridResolution;
   const [selectedGridProperties, setSelectedGridProperties] =
     useState<GridAnalysisProperties | null>(null);
+  // 정책 결과의 단일 source of truth. 2D/3D는 이 결과에서 표현 값만 파생한다.
+  const [batchSimulationResult, setBatchSimulationResult] =
+    useState<BatchSimulationResponse | null>(null);
+  const [batchSimulationContext, setBatchSimulationContext] =
+    useState<PolicyBatchContext | null>(null);
   // 선택 격자가 속한 '구'의 전체 격자 수 (priority_rank의 분모). 100m 상세 로딩 때 채운다.
   const [selectedGridGuTotal, setSelectedGridGuTotal] = useState<number | null>(null);
   const [selected100mFeature, setSelected100mFeature] =
     useState<Feature<Geometry> | null>(null);
   const [selected100mPopupPosition, setSelected100mPopupPosition] =
     useState<L.LatLng | null>(null);
+  const [selectedAggregateFeature, setSelectedAggregateFeature] =
+    useState<Feature<Geometry> | null>(null);
+  const [selectedAggregatePopupPosition, setSelectedAggregatePopupPosition] =
+    useState<L.LatLng | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(initialDetailPanelOpen);
   const [activeTool, setActiveTool] = useState('지도선택');
+  // 첫 접속이면 사용 가이드를 띄운다. 판단은 마운트 때 한 번만 —
+  // 렌더 중에 localStorage를 읽으면 닫은 뒤에도 다시 뜬다.
+  const [guideOpen, setGuideOpen] = useState(false);
+  useEffect(() => {
+    if (shouldShowOnboarding()) setGuideOpen(true);
+  }, []);
   const activeToolRef = useRef(activeTool);
   activeToolRef.current = activeTool;   // 항상 최신 모드를 담아둠 (클릭 핸들러가 참조)
   const selectedGridIdRef = useRef<string | null>(null);   // 현재 팝업이 열린 격자 id
@@ -864,7 +1044,26 @@ export function MapDashboard() {
   const districtAggregateRequestRef = useRef(
     new Map<string, Promise<FeatureCollection>>()
   );
+  const gridGeoJsonRef = useRef(gridGeoJson);
+  gridGeoJsonRef.current = gridGeoJson;
   const dongSearchRequestRef = useRef(0);
+  const selectedDistrictRef = useRef(selectedDistrict);
+  selectedDistrictRef.current = selectedDistrict;
+  const handleBatchSimulationResult = useCallback(
+    (result: BatchSimulationResponse | null) => {
+      setBatchSimulationResult(result);
+      setBatchSimulationContext(
+        result
+          ? {
+              resolution: selectedGridResolutionRef.current,
+              district: selectedDistrictRef.current,
+              selectedGridId: selectedGridIdRef.current
+            }
+          : null
+      );
+    },
+    []
+  );
 
   // Phase 3 — 격자 비교(두 번째 격자). A(주 격자)는 그대로 두고 B에 담는다.
   const [comparePropertiesB, setComparePropertiesB] =
@@ -1105,8 +1304,11 @@ export function MapDashboard() {
     setGridFocus(null);
     setGridSearchError(null);
     setAggregateGridSearchHit(null);
+    handleBatchSimulationResult(null);
+    // 3D를 연 채 지역을 바꿀 때 이전 지역 source가 새 context로 잠시 보이지 않게 비운다.
+    setGridGeoJson(null);
     setSelectedDistrict(district);
-  }, []);
+  }, [handleBatchSimulationResult]);
   const handleDongSearch = useCallback(
     async (entry: DongSearchIndexEntry) => {
       const resolution = selectedGridResolution;
@@ -1171,8 +1373,11 @@ export function MapDashboard() {
     setGridFocus(null);
     setGridSearchError(null);
     setAggregateGridSearchHit(null);
+    handleBatchSimulationResult(null);
+    // MapLibre instance는 유지하되 새 해상도 데이터가 올 때까지 기존 source를 비운다.
+    setGridGeoJson(null);
     setSelectedGridResolution(resolution);
-  }, []);
+  }, [handleBatchSimulationResult]);
 
   // 구 선택 직후 상세 속성을 선로딩해 100m 격자 클릭 시 경량→상세 전환 깜빡임을 줄인다.
   useEffect(() => {
@@ -1199,6 +1404,8 @@ export function MapDashboard() {
     selectedGridIdRef.current = null;
     setSelected100mFeature(null);
     setSelected100mPopupPosition(null);
+    setSelectedAggregateFeature(null);
+    setSelectedAggregatePopupPosition(null);
     setSelectedGridProperties(null);
     const sigCode = isAllDistricts ? null : districtCodeByName.get(selectedDistrict);
 
@@ -1239,6 +1446,8 @@ export function MapDashboard() {
     selectedGridIdRef.current = null;
     setSelected100mFeature(null);
     setSelected100mPopupPosition(null);
+    setSelectedAggregateFeature(null);
+    setSelectedAggregatePopupPosition(null);
     setSelectedGridProperties(null);
 
     // 구 모드는 격자를 쓰지 않는다. 남아 있던 격자를 비워야 지도에 겹쳐 그려지지 않는다.
@@ -1423,6 +1632,11 @@ export function MapDashboard() {
   const selected100mGridId = selected100mFeature
     ? getGridIdentifier(getFeatureProperties(selected100mFeature))
     : null;
+  const selectedAggregateGridId = selectedAggregateFeature
+    ? String(getFeatureProperties(selectedAggregateFeature).display_grid_id ?? '').trim() || null
+    : null;
+  const selectedMapGridId =
+    selectedGridResolution === '100m' ? selected100mGridId : selectedAggregateGridId;
   const compareGridId = comparePropertiesB ? getGridIdentifier(comparePropertiesB) : null;
   const handle100mFeatureClick = useCallback(
     (feature: Feature<Geometry>, latLng: L.LatLng, selectAsPrimary = false) => {
@@ -1454,16 +1668,101 @@ export function MapDashboard() {
       if (selectAsPrimary) setIsPickingCompare(false);
 
       selectedResetRef.current?.();
+      handleBatchSimulationResult(null);
       selectedGridIdRef.current = gridId;
       selectedGridLayerRef.current = null;
       setSelected100mFeature(feature);
       setSelected100mPopupPosition(latLng);
+      setSelectedAggregateFeature(null);
+      setSelectedAggregatePopupPosition(null);
       // 상세 캐시가 있으면 경량 속성을 거치지 않고 완성된 속성을 한 번에 반영한다.
       setSelectedGridProperties(fullProperties ?? properties);
       setSelectedGridGuTotal(cached?.features.length ?? null);
       if (!fullProperties) hydrateSelectedGridProperties(properties);
     },
-    [districtCodeByName, hydrateSelectedGridProperties, hydrateCompareProperties]
+    [
+      districtCodeByName,
+      handleBatchSimulationResult,
+      hydrateSelectedGridProperties,
+      hydrateCompareProperties
+    ]
+  );
+  const handleAggregateFeatureClick = useCallback(
+    (feature: Feature<Geometry>, latLng: L.LatLng) => {
+      const properties = getFeatureProperties(feature);
+      const gridId =
+        typeof properties.display_grid_id === 'string'
+          ? properties.display_grid_id.trim()
+          : '';
+      if (!gridId) return;
+
+      // 비교 선택 의미는 2D와 동일하게 유지하되, 3D에는 별도 B highlight를 만들지 않는다.
+      if (isPickingCompareRef.current) {
+        if (gridId === selectedGridIdRef.current) return;
+        compareResetRef.current?.();
+        compareGridIdRef.current = gridId;
+        setComparePropertiesB(properties);
+        setIsPickingCompare(false);
+        return;
+      }
+
+      selectedResetRef.current?.();
+      handleBatchSimulationResult(null);
+      selectedGridIdRef.current = gridId;
+      selectedGridLayerRef.current = null;
+      setSelected100mFeature(null);
+      setSelected100mPopupPosition(null);
+      setSelectedAggregateFeature(feature);
+      setSelectedAggregatePopupPosition(latLng);
+      setSelectedGridProperties(properties);
+
+      const guKey = properties.gu_code ?? properties.gu_name;
+      const features = gridGeoJsonRef.current?.features ?? [];
+      const total =
+        guKey != null
+          ? features.filter((candidate) => {
+              const candidateProperties = getFeatureProperties(
+                candidate as Feature<Geometry>
+              );
+              return (candidateProperties.gu_code ?? candidateProperties.gu_name) === guKey;
+            }).length
+          : features.length;
+      setSelectedGridGuTotal(total || null);
+    },
+    [handleBatchSimulationResult]
+  );
+  const clearSelectedMapGrid = useCallback((gridId: string) => {
+    if (selectedGridIdRef.current !== gridId) return;
+    selectedResetRef.current?.();
+    selectedGridIdRef.current = null;
+    setSelected100mFeature(null);
+    setSelected100mPopupPosition(null);
+    setSelectedAggregateFeature(null);
+    setSelectedAggregatePopupPosition(null);
+    setSelectedGridProperties(null);
+    handleBatchSimulationResult(null);
+  }, [handleBatchSimulationResult]);
+  const handle3DGridFeatureClick = useCallback(
+    (
+      feature: Feature<Geometry>,
+      position: { lng: number; lat: number }
+    ) => {
+      if (activeToolRef.current !== '지도선택') return;
+      const latLng = L.latLng(position.lat, position.lng);
+      if (selectedGridResolutionRef.current === '100m') {
+        handle100mFeatureClick(feature, latLng);
+      } else {
+        handleAggregateFeatureClick(feature, latLng);
+      }
+    },
+    [handle100mFeatureClick, handleAggregateFeatureClick]
+  );
+  const handle3DDistrictDrillDown = useCallback(
+    (guCode: string) => {
+      const districtName = districtNameByCode.get(guCode);
+      if (districtName) handleDistrictChange(districtName);
+    },
+    [districtNameByCode, handleDistrictChange]
   );
   // 구·해상도 전환 effect가 기존 선택을 비운 뒤 검색 결과를 실제 100m 클릭과 같은 경로로 반영한다.
   useEffect(() => {
@@ -1476,14 +1775,149 @@ export function MapDashboard() {
     (feature: Feature<Geometry>) => buildGridTooltip(feature, selectedLayer, 100),
     [selectedLayer]
   );
+  const buildMapGridTooltip = useCallback(
+    (feature: Feature<Geometry>) =>
+      buildGridTooltip(feature, selectedLayer, getResolutionMeters(selectedGridResolution)),
+    [selectedGridResolution, selectedLayer]
+  );
+  const mapGridInfoSign = useMemo(
+    () => {
+      const selectedFeature =
+        selectedGridResolution === '100m'
+          ? selected100mFeature
+          : selectedAggregateFeature;
+      const popupPosition =
+        selectedGridResolution === '100m'
+          ? selected100mPopupPosition
+          : selectedAggregatePopupPosition;
+      return selectedFeature && popupPosition && selectedMapGridId
+        ? {
+            gridId: selectedMapGridId,
+            position: {
+              lng: popupPosition.lng,
+              lat: popupPosition.lat
+            },
+            html: buildMapGridTooltip(selectedFeature)
+          }
+        : null;
+    },
+    [
+      buildMapGridTooltip,
+      selectedAggregateFeature,
+      selectedAggregatePopupPosition,
+      selectedGridResolution,
+      selectedMapGridId,
+      selected100mFeature,
+      selected100mPopupPosition
+    ]
+  );
+  const mapShelterSign = useMemo(
+    () => getShelterPin(selectedGridProperties),
+    [selectedGridProperties]
+  );
+  const selectedDistrictCode = districtCodeByName.get(selectedDistrict) ?? null;
+  const policyContextMatches =
+    batchSimulationContext?.resolution === selectedGridResolution &&
+    batchSimulationContext.district === selectedDistrict &&
+    batchSimulationContext.selectedGridId === selectedMapGridId;
+  const isActiveSeoulPolicyResult =
+    selectedDistrict === ALL_DISTRICTS &&
+    selectedGridResolution !== 'gu' &&
+    batchSimulationResult?.target_mode === 'seoul' &&
+    (selectedGridResolution === '100m'
+      ? batchSimulationResult.display_resolution === undefined ||
+        batchSimulationResult.display_resolution === '100m'
+      : batchSimulationResult.display_resolution === selectedGridResolution);
+  const isActive100mPolicyResult =
+    selectedGridResolution === '100m' &&
+    selectedDistrict !== ALL_DISTRICTS &&
+    (batchSimulationResult?.target_mode === 'spatial_scope' ||
+      (batchSimulationResult?.target_mode === 'district' &&
+        batchSimulationResult.gu_code === selectedDistrictCode &&
+        (batchSimulationResult.display_resolution === undefined ||
+          batchSimulationResult.display_resolution === '100m')));
+  const isActiveAggregatePolicyResult =
+    (selectedGridResolution === '250m' || selectedGridResolution === '500m') &&
+    selectedDistrict !== ALL_DISTRICTS &&
+    selectedMapGridId !== null &&
+    batchSimulationResult?.target_mode === 'aggregate' &&
+    batchSimulationResult.aggregate_resolution === selectedGridResolution &&
+    batchSimulationResult.aggregate_id === selectedMapGridId;
+  const isActiveDistrictDisplayPolicyResult =
+    (selectedGridResolution === '250m' || selectedGridResolution === '500m') &&
+    selectedDistrict !== ALL_DISTRICTS &&
+    batchSimulationResult?.target_mode === 'district' &&
+    batchSimulationResult.gu_code === selectedDistrictCode &&
+    batchSimulationResult.display_resolution === selectedGridResolution;
+  const activePolicyBatchResult =
+    policyContextMatches &&
+    (isActiveSeoulPolicyResult ||
+      isActive100mPolicyResult ||
+      isActiveAggregatePolicyResult ||
+      isActiveDistrictDisplayPolicyResult)
+      ? batchSimulationResult
+      : null;
+  const policyGridIds = useMemo(() => {
+    if (activePolicyBatchResult?.target_mode !== 'spatial_scope') return [];
+    const ids = activePolicyBatchResult?.results
+      .map((result) => result.grid_id.trim())
+      .filter(Boolean) ?? [];
+    return [...new Set(ids)];
+  }, [activePolicyBatchResult]);
+  const policyScopeGridData = useMemo<FeatureCollection | null>(() => {
+    if (policyGridIds.length === 0) return null;
+
+    const targetIds = new Set(policyGridIds);
+    const targetFeatures: FeatureCollection['features'] = [];
+    for (const feature of seoul100mMapCacheRef.current?.features ?? []) {
+      const gridId = getGridIdentifier(
+        getFeatureProperties(feature as Feature<Geometry>)
+      );
+      if (!targetIds.has(gridId)) continue;
+      targetFeatures.push(feature);
+      if (targetFeatures.length === targetIds.size) break;
+    }
+
+    return {
+      type: 'FeatureCollection',
+      features: targetFeatures
+    };
+  }, [policyGridIds]);
+  const map3DGridData = useMemo<FeatureCollection | null>(() => {
+    if (!gridGeoJson || isGuResolution(selectedGridResolution)) {
+      return null;
+    }
+    // 250m/500m는 기존 2D가 로드한 실제 aggregate collection을 그대로 시각화한다.
+    if (selectedGridResolution !== '100m') return gridGeoJson;
+    if (selectedDistrict === ALL_DISTRICTS) return gridGeoJson;
+    if (!policyScopeGridData) return gridGeoJson;
+
+    const currentGridIds = new Set(
+      gridGeoJson.features.map((feature) =>
+        getGridIdentifier(getFeatureProperties(feature as Feature<Geometry>))
+      )
+    );
+    const missingTargetFeatures = policyScopeGridData.features.filter((feature) => {
+      const gridId = getGridIdentifier(
+        getFeatureProperties(feature as Feature<Geometry>)
+      );
+      return !currentGridIds.has(gridId);
+    });
+    if (missingTargetFeatures.length === 0) return gridGeoJson;
+
+    // 선택 자치구 + 경계 밖 정책 대상만 새 collection으로 합친다.
+    // 원본 cache/gridGeoJson은 mutate하지 않고, 서울 전체를 MapLibre에 넘기지 않는다.
+    return {
+      ...gridGeoJson,
+      features: [...gridGeoJson.features, ...missingTargetFeatures]
+    };
+  }, [gridGeoJson, policyScopeGridData, selectedDistrict, selectedGridResolution]);
   const selectedLayerKeyRef = useRef(selectedLayer);
   const isDistrictOverviewRef = useRef(isDistrictOverview);
   const hydrateSelectedGridPropertiesRef = useRef(hydrateSelectedGridProperties);
   selectedLayerKeyRef.current = selectedLayer;
   isDistrictOverviewRef.current = isDistrictOverview;
   hydrateSelectedGridPropertiesRef.current = hydrateSelectedGridProperties;
-  const gridGeoJsonRef = useRef(gridGeoJson);
-  gridGeoJsonRef.current = gridGeoJson;   // 현재 화면에 로드된 격자들 (250/500m 분모 계산용)
   const resolutionGridLayerRef = useRef<L.GeoJSON | null>(null);
 
   const selectGridFeatureLayer = useCallback(
@@ -1515,14 +1949,22 @@ export function MapDashboard() {
       if (selectAsPrimary) setIsPickingCompare(false);
 
       selectedResetRef.current?.();
+      handleBatchSimulationResult(null);
       layer.setStyle({ color: '#111827', weight: 3, opacity: 1 });
       selectedGridLayerRef.current = layer;
       setSelectedGridProperties(props);
       setSelectedGridGuTotal(null);
       selectedGridIdRef.current = gridId;
       if (resolution === '100m') {
+        setSelectedAggregateFeature(null);
+        setSelectedAggregatePopupPosition(null);
         hydrateSelectedGridPropertiesRef.current(props);
       } else {
+        const popupPosition = L.geoJSON(feature).getBounds().getCenter();
+        setSelected100mFeature(null);
+        setSelected100mPopupPosition(null);
+        setSelectedAggregateFeature(feature);
+        setSelectedAggregatePopupPosition(popupPosition);
         // 250/500m: priority_rank는 구 내부 순위 → 같은 구의 그 해상도 격자 수가 분모
         const guKey = props.gu_code ?? props.gu_name;
         const feats = gridGeoJsonRef.current?.features ?? [];
@@ -1554,7 +1996,10 @@ export function MapDashboard() {
         );
         layer.closePopup();
         layer.unbindPopup();
+        setSelectedAggregateFeature(null);
+        setSelectedAggregatePopupPosition(null);
         setSelectedGridProperties(null);
+        handleBatchSimulationResult(null);
       };
 
       layer.once('popupclose', () => {
@@ -1566,10 +2011,13 @@ export function MapDashboard() {
           gridFeatureStyle(feature, selectedLayerKeyRef.current, isDistrictOverviewRef.current)
         );
         layer.unbindPopup();
+        setSelectedAggregateFeature(null);
+        setSelectedAggregatePopupPosition(null);
         setSelectedGridProperties(null);
+        handleBatchSimulationResult(null);
       });
     },
-    []
+    [handleBatchSimulationResult]
   );
 
   const handleGridClick = useCallback(
@@ -1774,6 +2222,9 @@ export function MapDashboard() {
               onFeatureClick={handle100mFeatureClick}
             />
           )}
+          {selectedGridResolution === '100m' && (
+            <PolicyScopeLayer data={policyScopeGridData} />
+          )}
           {gridGeoJson && selectedGridResolution !== '100m' && !isGuMode && (
             <GeoJSON
               ref={resolutionGridLayerRef}
@@ -1834,13 +2285,7 @@ export function MapDashboard() {
                 autoPan={false}
                 closeOnClick={false}
                 eventHandlers={{
-                  remove: () => {
-                    if (selectedGridIdRef.current !== selected100mGridId) return;
-                    selectedGridIdRef.current = null;
-                    setSelected100mFeature(null);
-                    setSelected100mPopupPosition(null);
-                    setSelectedGridProperties(null);
-                  }
+                  remove: () => clearSelectedMapGrid(selected100mGridId)
                 }}
               >
                 <div
@@ -1858,41 +2303,8 @@ export function MapDashboard() {
               eventHandlers={{ click: () => handleDistrictChange(district.district) }}
             />
           ))}
-          {(() => {
-            // 선택 격자의 가장 가까운 쉼터를 지도에 핀으로 표시 (100m는 hydrate 후 좌표가 채워짐)
-            const shelter = getShelterPin(selectedGridProperties);
-            if (!shelter) return null;
-            return (
-              <Marker
-                position={shelter.position}
-                icon={SHELTER_PIN_ICON}
-                alt={`무더위쉼터 ${shelter.name}`}
-              >
-                {/* 항상 보이는 라벨.
-                    hover로 띄우면 두 가지가 걸린다. (1) 격자 hover 툴팁이 sticky라 마우스를
-                    따라다니며 이 라벨을 덮는다. (2) 핀 그림(-45도 회전한 28x28)의 대각선이
-                    아이콘 클릭영역(28x34) 밖으로 나와, 삐져나온 부분을 클릭하면 아래 격자
-                    레이어로 통과해 다른 격자가 선택된다.
-                    항상 띄워두면 hover도 클릭도 필요 없어 둘 다 우회한다. */}
-                <Tooltip className="shelterTip" direction="top" opacity={1} permanent>
-                  <b>무더위쉼터</b>
-                  <span>{shelter.name}</span>
-                  {shelter.distance !== null && (
-                    <span className="stDist">
-                      여기서 약 {Math.round(shelter.distance).toLocaleString()}m
-                    </span>
-                  )}
-                </Tooltip>
-                <Popup className="shelterPopup" autoPan={false}>
-                  <strong>{shelter.name}</strong>
-                  {shelter.addr && <span>{shelter.addr}</span>}
-                  {shelter.distance !== null && (
-                    <span>선택 격자에서 약 {Math.round(shelter.distance)}m</span>
-                  )}
-                </Popup>
-              </Marker>
-            );
-          })()}
+          {/* 선택 격자의 가장 가까운 쉼터를 지도에 핀으로 표시 (100m는 hydrate 후 좌표가 채워짐) */}
+          <ShelterMarker shelter={getShelterPin(selectedGridProperties)} />
           {/* 줌·축척을 우측 상단 도구 팔레트(.rightToolbar) 옆으로 모았다.
               지도 조작 컨트롤이 화면 양 끝에 흩어져 있으면 시선이 두 번 움직인다. */}
           <ZoomControl position="topright" />
@@ -1901,6 +2313,18 @@ export function MapDashboard() {
           <ScaleControl position="topright" metric imperial={false} maxWidth={40} />
         </MapContainer>
       )}
+      <Map3DOverlay
+        gridData={map3DGridData}
+        batchSimulationResult={activePolicyBatchResult}
+        resolution={selectedGridResolution}
+        selectedDistrict={selectedDistrict}
+        selectedGridId={selectedMapGridId}
+        gridInfoSign={mapGridInfoSign}
+        shelterSign={mapShelterSign}
+        onGridFeatureClick={handle3DGridFeatureClick}
+        onDistrictDrillDown={handle3DDistrictDrillDown}
+        onClearSelectedGrid={clearSelectedMapGrid}
+      />
       {!loading && !error && gridLoading && (
         <div className="mapLoadingOverlay">
           <LoadingContent message={`${selectedGridResolution} 격자 데이터 로딩 중`} />
@@ -1908,6 +2332,7 @@ export function MapDashboard() {
       )}
       <div className="leftOverlayRail">
         <SearchPanel
+          onOpenGuide={() => setGuideOpen(true)}
           districts={districts}
           dongSearchEntries={dongSearchEntries}
           dongSearchLoading={dongSearchLoading}
@@ -1950,12 +2375,14 @@ export function MapDashboard() {
         isPickingCompare={isPickingCompare}
         onStartCompare={handleStartCompare}
         onClearCompare={handleClearCompare}
+        onBatchSimulationResult={handleBatchSimulationResult}
       />
       <AiChatLauncher
         selectedGridId={chatGridId}
         selectedDisplayGridId={chatDisplayGridId}
         selectedGuName={chatGuName}
       />
+      {guideOpen && <OnboardingGuide onClose={() => setGuideOpen(false)} />}
     </div>
   );
 }
@@ -1976,6 +2403,7 @@ interface SearchPanelProps {
   onGridResolutionChange: (resolution: GridResolution) => void;
   onLayerChange: (layer: LayerKey) => void;
   onGridSearch: (code: string) => void;
+  onOpenGuide: () => void;
 }
 
 function SearchPanel({
@@ -1993,7 +2421,8 @@ function SearchPanel({
   onDongSelect,
   onGridResolutionChange,
   onLayerChange,
-  onGridSearch
+  onGridSearch,
+  onOpenGuide
 }: SearchPanelProps) {
   const [locationQuery, setLocationQuery] = useState('');
   const [gridCodeInput, setGridCodeInput] = useState('');
@@ -2127,6 +2556,17 @@ function SearchPanel({
           <p>Urban Heat Island</p>
           <h1>도시 열섬 해결 대시보드</h1>
         </div>
+        {/* 가이드를 닫은 뒤에도 다시 찾을 수 있어야 한다. 챗봇 창을 옮기고 못 찾는
+            문제를 더블클릭 초기화로 푼 것과 같은 이유다. */}
+        <button
+          className="heatPanelGuide"
+          type="button"
+          onClick={onOpenGuide}
+          title="사용 가이드 다시 보기"
+          aria-label="사용 가이드 다시 보기"
+        >
+          ?
+        </button>
       </div>
 
       <div className="heatControlBlock">

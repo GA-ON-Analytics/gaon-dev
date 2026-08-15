@@ -5,6 +5,7 @@ import type {
   GridResolution,
   PolicyPresetsResponse,
   SimulationRequest,
+  SimulationBatchScope,
   SimulationResponse
 } from '../types/dashboard';
 import type {
@@ -165,7 +166,7 @@ export function getPolicyPresets(): Promise<PolicyPresetsResponse> {
   return fetchJson<PolicyPresetsResponse>('/api/policies');
 }
 
-// 여러 100m 격자에 같은 정책을 적용해 평균 저감을 구한다 (250/500m 집계 격자 시뮬레이션용).
+// 명시한 여러 100m 격자에 같은 정책을 적용하는 기존 batch contract.
 export function simulateBatchGridPolicy(
   gridIds: string[],
   changes: Record<string, number>,
@@ -178,5 +179,107 @@ export function simulateBatchGridPolicy(
     grid_ids: gridIds,
     changes,
     couple_land_cover: coupleLandCover
+  });
+}
+
+// 250/500m aggregate geometry를 구성하는 실제 100m 지도 격자를 backend가 선택한다.
+// aggregate row 자체는 ML 입력으로 보내지 않는다.
+export function simulateAggregateGridPolicy(
+  resolution: '250m' | '500m',
+  aggregateId: string,
+  changes: Record<string, number>,
+  coupleLandCover = true
+): Promise<BatchSimulationResponse> {
+  return postJson<
+    BatchSimulationResponse,
+    {
+      aggregate_resolution: '250m' | '500m';
+      aggregate_id: string;
+      changes: Record<string, number>;
+      couple_land_cover: boolean;
+    }
+  >('/api/simulate/batch', {
+    aggregate_resolution: resolution,
+    aggregate_id: aggregateId,
+    changes,
+    couple_land_cover: coupleLandCover
+  });
+}
+
+// 중심 100m 격자와 실제 공간 범위를 보내면 backend가 자치구 경계와 무관하게 대상 셀을 찾는다.
+export function simulateScopedGridPolicy(
+  gridId: string,
+  scopeM: SimulationBatchScope,
+  changes: Record<string, number>,
+  coupleLandCover = true
+): Promise<BatchSimulationResponse> {
+  return postJson<
+    BatchSimulationResponse,
+    {
+      grid_id: string;
+      scope_m: SimulationBatchScope;
+      changes: Record<string, number>;
+      couple_land_cover: boolean;
+    }
+  >('/api/simulate/batch', {
+    grid_id: gridId,
+    scope_m: scopeM,
+    changes,
+    couple_land_cover: coupleLandCover
+  });
+}
+
+// 선택 자치구의 실제 지도 100m 격자 ID는 backend가 gu_code로 찾고 compact 결과만 반환한다.
+export function simulateDistrictGridPolicy(
+  guCode: string,
+  changes: Record<string, number>,
+  coupleLandCover = true,
+  displayResolution: Exclude<GridResolution, 'gu'> = '100m'
+): Promise<BatchSimulationResponse> {
+  const displayRequest =
+    displayResolution === '100m' ? {} : { display_resolution: displayResolution };
+  return postJson<
+    BatchSimulationResponse,
+    {
+      gu_code: string;
+      scope_mode: 'district';
+      compact: true;
+      changes: Record<string, number>;
+      couple_land_cover: boolean;
+      display_resolution?: '250m' | '500m';
+    }
+  >('/api/simulate/batch', {
+    gu_code: guCode,
+    scope_mode: 'district',
+    compact: true,
+    changes,
+    couple_land_cover: coupleLandCover,
+    ...displayRequest
+  });
+}
+
+// ML 대상은 항상 서울의 실제 100m 전체다. 250/500m는 응답 결과만 표시 격자로 집계한다.
+export function simulateSeoulGridPolicy(
+  changes: Record<string, number>,
+  coupleLandCover = true,
+  displayResolution: Exclude<GridResolution, 'gu'> = '100m'
+): Promise<BatchSimulationResponse> {
+  const displayRequest =
+    displayResolution === '100m' ? {} : { display_resolution: displayResolution };
+  return postJson<
+    BatchSimulationResponse,
+    {
+      scope_mode: 'seoul';
+      compact: true;
+      changes: Record<string, number>;
+      couple_land_cover: boolean;
+      display_resolution?: '250m' | '500m';
+    }
+  >('/api/simulate/batch', {
+    scope_mode: 'seoul',
+    compact: true,
+    changes,
+    couple_land_cover: coupleLandCover,
+    ...displayRequest
   });
 }
