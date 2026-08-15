@@ -30,6 +30,7 @@ import {
   getResolutionGrid
 } from '../services/api';
 import type {
+  BatchSimulationResponse,
   DongSearchIndexEntry,
   GridAnalysisProperties,
   GridResolution,
@@ -40,6 +41,7 @@ import OnboardingGuide, { shouldShowOnboarding } from './OnboardingGuide';
 import AiChatLauncher from './AiChatLauncher';
 import MapLegend from './MapLegend';
 import CanvasGridLayer, { featureContainsPoint } from './CanvasGridLayer';
+import Map3DOverlay from '../features/map3d/Map3DOverlay';
 
 const ALL_DISTRICTS = '전체';
 const DEFAULT_DISTRICT = ALL_DISTRICTS;
@@ -81,6 +83,12 @@ interface AggregateGridSearchHit {
   feature: Feature<Geometry>;
   resolution: AggregateGridResolution;
   district: string;
+}
+
+interface PolicyBatchContext {
+  resolution: GridResolution;
+  district: string;
+  selectedGridId: string | null;
 }
 
 interface LayerOption {
@@ -953,6 +961,38 @@ function LoadingContent({ message }: { message: string }) {
   );
 }
 
+function PolicyScopeLayer({ data }: { data: FeatureCollection | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!data || data.features.length === 0) return;
+
+    let pane = map.getPane('gridPolicyScopePane');
+    if (!pane) pane = map.createPane('gridPolicyScopePane');
+    // 100m canvas(350) 위, 기존 단일 선택 outline(450) 아래에 정책 범위만 표시한다.
+    pane.style.zIndex = '425';
+    pane.style.pointerEvents = 'none';
+
+    const layer = L.geoJSON(data, {
+      pane: 'gridPolicyScopePane',
+      interactive: false,
+      style: {
+        color: '#1f5121',
+        weight: 2.5,
+        opacity: 1,
+        dashArray: '6 3',
+        fill: false
+      }
+    }).addTo(map);
+
+    return () => {
+      layer.removeFrom(map);
+    };
+  }, [data, map]);
+
+  return null;
+}
+
 function initialDetailPanelOpen() {
   return typeof window === 'undefined' || !window.matchMedia(MOBILE_LAYOUT_QUERY).matches;
 }
@@ -968,11 +1008,20 @@ export function MapDashboard() {
   selectedGridResolutionRef.current = selectedGridResolution;
   const [selectedGridProperties, setSelectedGridProperties] =
     useState<GridAnalysisProperties | null>(null);
+  // 정책 결과의 단일 source of truth. 2D/3D는 이 결과에서 표현 값만 파생한다.
+  const [batchSimulationResult, setBatchSimulationResult] =
+    useState<BatchSimulationResponse | null>(null);
+  const [batchSimulationContext, setBatchSimulationContext] =
+    useState<PolicyBatchContext | null>(null);
   // 선택 격자가 속한 '구'의 전체 격자 수 (priority_rank의 분모). 100m 상세 로딩 때 채운다.
   const [selectedGridGuTotal, setSelectedGridGuTotal] = useState<number | null>(null);
   const [selected100mFeature, setSelected100mFeature] =
     useState<Feature<Geometry> | null>(null);
   const [selected100mPopupPosition, setSelected100mPopupPosition] =
+    useState<L.LatLng | null>(null);
+  const [selectedAggregateFeature, setSelectedAggregateFeature] =
+    useState<Feature<Geometry> | null>(null);
+  const [selectedAggregatePopupPosition, setSelectedAggregatePopupPosition] =
     useState<L.LatLng | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(initialDetailPanelOpen);
   const [activeTool, setActiveTool] = useState('지도선택');
@@ -995,7 +1044,26 @@ export function MapDashboard() {
   const districtAggregateRequestRef = useRef(
     new Map<string, Promise<FeatureCollection>>()
   );
+  const gridGeoJsonRef = useRef(gridGeoJson);
+  gridGeoJsonRef.current = gridGeoJson;
   const dongSearchRequestRef = useRef(0);
+  const selectedDistrictRef = useRef(selectedDistrict);
+  selectedDistrictRef.current = selectedDistrict;
+  const handleBatchSimulationResult = useCallback(
+    (result: BatchSimulationResponse | null) => {
+      setBatchSimulationResult(result);
+      setBatchSimulationContext(
+        result
+          ? {
+              resolution: selectedGridResolutionRef.current,
+              district: selectedDistrictRef.current,
+              selectedGridId: selectedGridIdRef.current
+            }
+          : null
+      );
+    },
+    []
+  );
 
   // Phase 3 — 격자 비교(두 번째 격자). A(주 격자)는 그대로 두고 B에 담는다.
   const [comparePropertiesB, setComparePropertiesB] =
@@ -1236,8 +1304,11 @@ export function MapDashboard() {
     setGridFocus(null);
     setGridSearchError(null);
     setAggregateGridSearchHit(null);
+    handleBatchSimulationResult(null);
+    // 3D를 연 채 지역을 바꿀 때 이전 지역 source가 새 context로 잠시 보이지 않게 비운다.
+    setGridGeoJson(null);
     setSelectedDistrict(district);
-  }, []);
+  }, [handleBatchSimulationResult]);
   const handleDongSearch = useCallback(
     async (entry: DongSearchIndexEntry) => {
       const resolution = selectedGridResolution;
@@ -1302,8 +1373,11 @@ export function MapDashboard() {
     setGridFocus(null);
     setGridSearchError(null);
     setAggregateGridSearchHit(null);
+    handleBatchSimulationResult(null);
+    // MapLibre instance는 유지하되 새 해상도 데이터가 올 때까지 기존 source를 비운다.
+    setGridGeoJson(null);
     setSelectedGridResolution(resolution);
-  }, []);
+  }, [handleBatchSimulationResult]);
 
   // 구 선택 직후 상세 속성을 선로딩해 100m 격자 클릭 시 경량→상세 전환 깜빡임을 줄인다.
   useEffect(() => {
@@ -1330,6 +1404,8 @@ export function MapDashboard() {
     selectedGridIdRef.current = null;
     setSelected100mFeature(null);
     setSelected100mPopupPosition(null);
+    setSelectedAggregateFeature(null);
+    setSelectedAggregatePopupPosition(null);
     setSelectedGridProperties(null);
     const sigCode = isAllDistricts ? null : districtCodeByName.get(selectedDistrict);
 
@@ -1370,6 +1446,8 @@ export function MapDashboard() {
     selectedGridIdRef.current = null;
     setSelected100mFeature(null);
     setSelected100mPopupPosition(null);
+    setSelectedAggregateFeature(null);
+    setSelectedAggregatePopupPosition(null);
     setSelectedGridProperties(null);
 
     // 구 모드는 격자를 쓰지 않는다. 남아 있던 격자를 비워야 지도에 겹쳐 그려지지 않는다.
@@ -1554,6 +1632,11 @@ export function MapDashboard() {
   const selected100mGridId = selected100mFeature
     ? getGridIdentifier(getFeatureProperties(selected100mFeature))
     : null;
+  const selectedAggregateGridId = selectedAggregateFeature
+    ? String(getFeatureProperties(selectedAggregateFeature).display_grid_id ?? '').trim() || null
+    : null;
+  const selectedMapGridId =
+    selectedGridResolution === '100m' ? selected100mGridId : selectedAggregateGridId;
   const compareGridId = comparePropertiesB ? getGridIdentifier(comparePropertiesB) : null;
   const handle100mFeatureClick = useCallback(
     (feature: Feature<Geometry>, latLng: L.LatLng, selectAsPrimary = false) => {
@@ -1585,16 +1668,101 @@ export function MapDashboard() {
       if (selectAsPrimary) setIsPickingCompare(false);
 
       selectedResetRef.current?.();
+      handleBatchSimulationResult(null);
       selectedGridIdRef.current = gridId;
       selectedGridLayerRef.current = null;
       setSelected100mFeature(feature);
       setSelected100mPopupPosition(latLng);
+      setSelectedAggregateFeature(null);
+      setSelectedAggregatePopupPosition(null);
       // 상세 캐시가 있으면 경량 속성을 거치지 않고 완성된 속성을 한 번에 반영한다.
       setSelectedGridProperties(fullProperties ?? properties);
       setSelectedGridGuTotal(cached?.features.length ?? null);
       if (!fullProperties) hydrateSelectedGridProperties(properties);
     },
-    [districtCodeByName, hydrateSelectedGridProperties, hydrateCompareProperties]
+    [
+      districtCodeByName,
+      handleBatchSimulationResult,
+      hydrateSelectedGridProperties,
+      hydrateCompareProperties
+    ]
+  );
+  const handleAggregateFeatureClick = useCallback(
+    (feature: Feature<Geometry>, latLng: L.LatLng) => {
+      const properties = getFeatureProperties(feature);
+      const gridId =
+        typeof properties.display_grid_id === 'string'
+          ? properties.display_grid_id.trim()
+          : '';
+      if (!gridId) return;
+
+      // 비교 선택 의미는 2D와 동일하게 유지하되, 3D에는 별도 B highlight를 만들지 않는다.
+      if (isPickingCompareRef.current) {
+        if (gridId === selectedGridIdRef.current) return;
+        compareResetRef.current?.();
+        compareGridIdRef.current = gridId;
+        setComparePropertiesB(properties);
+        setIsPickingCompare(false);
+        return;
+      }
+
+      selectedResetRef.current?.();
+      handleBatchSimulationResult(null);
+      selectedGridIdRef.current = gridId;
+      selectedGridLayerRef.current = null;
+      setSelected100mFeature(null);
+      setSelected100mPopupPosition(null);
+      setSelectedAggregateFeature(feature);
+      setSelectedAggregatePopupPosition(latLng);
+      setSelectedGridProperties(properties);
+
+      const guKey = properties.gu_code ?? properties.gu_name;
+      const features = gridGeoJsonRef.current?.features ?? [];
+      const total =
+        guKey != null
+          ? features.filter((candidate) => {
+              const candidateProperties = getFeatureProperties(
+                candidate as Feature<Geometry>
+              );
+              return (candidateProperties.gu_code ?? candidateProperties.gu_name) === guKey;
+            }).length
+          : features.length;
+      setSelectedGridGuTotal(total || null);
+    },
+    [handleBatchSimulationResult]
+  );
+  const clearSelectedMapGrid = useCallback((gridId: string) => {
+    if (selectedGridIdRef.current !== gridId) return;
+    selectedResetRef.current?.();
+    selectedGridIdRef.current = null;
+    setSelected100mFeature(null);
+    setSelected100mPopupPosition(null);
+    setSelectedAggregateFeature(null);
+    setSelectedAggregatePopupPosition(null);
+    setSelectedGridProperties(null);
+    handleBatchSimulationResult(null);
+  }, [handleBatchSimulationResult]);
+  const handle3DGridFeatureClick = useCallback(
+    (
+      feature: Feature<Geometry>,
+      position: { lng: number; lat: number }
+    ) => {
+      if (activeToolRef.current !== '지도선택') return;
+      const latLng = L.latLng(position.lat, position.lng);
+      if (selectedGridResolutionRef.current === '100m') {
+        handle100mFeatureClick(feature, latLng);
+      } else {
+        handleAggregateFeatureClick(feature, latLng);
+      }
+    },
+    [handle100mFeatureClick, handleAggregateFeatureClick]
+  );
+  const handle3DDistrictDrillDown = useCallback(
+    (guCode: string) => {
+      const districtName = districtNameByCode.get(guCode);
+      if (districtName) handleDistrictChange(districtName);
+    },
+    [districtNameByCode, handleDistrictChange]
   );
   // 구·해상도 전환 effect가 기존 선택을 비운 뒤 검색 결과를 실제 100m 클릭과 같은 경로로 반영한다.
   useEffect(() => {
@@ -1607,14 +1775,149 @@ export function MapDashboard() {
     (feature: Feature<Geometry>) => buildGridTooltip(feature, selectedLayer, 100),
     [selectedLayer]
   );
+  const buildMapGridTooltip = useCallback(
+    (feature: Feature<Geometry>) =>
+      buildGridTooltip(feature, selectedLayer, getResolutionMeters(selectedGridResolution)),
+    [selectedGridResolution, selectedLayer]
+  );
+  const mapGridInfoSign = useMemo(
+    () => {
+      const selectedFeature =
+        selectedGridResolution === '100m'
+          ? selected100mFeature
+          : selectedAggregateFeature;
+      const popupPosition =
+        selectedGridResolution === '100m'
+          ? selected100mPopupPosition
+          : selectedAggregatePopupPosition;
+      return selectedFeature && popupPosition && selectedMapGridId
+        ? {
+            gridId: selectedMapGridId,
+            position: {
+              lng: popupPosition.lng,
+              lat: popupPosition.lat
+            },
+            html: buildMapGridTooltip(selectedFeature)
+          }
+        : null;
+    },
+    [
+      buildMapGridTooltip,
+      selectedAggregateFeature,
+      selectedAggregatePopupPosition,
+      selectedGridResolution,
+      selectedMapGridId,
+      selected100mFeature,
+      selected100mPopupPosition
+    ]
+  );
+  const mapShelterSign = useMemo(
+    () => getShelterPin(selectedGridProperties),
+    [selectedGridProperties]
+  );
+  const selectedDistrictCode = districtCodeByName.get(selectedDistrict) ?? null;
+  const policyContextMatches =
+    batchSimulationContext?.resolution === selectedGridResolution &&
+    batchSimulationContext.district === selectedDistrict &&
+    batchSimulationContext.selectedGridId === selectedMapGridId;
+  const isActiveSeoulPolicyResult =
+    selectedDistrict === ALL_DISTRICTS &&
+    selectedGridResolution !== 'gu' &&
+    batchSimulationResult?.target_mode === 'seoul' &&
+    (selectedGridResolution === '100m'
+      ? batchSimulationResult.display_resolution === undefined ||
+        batchSimulationResult.display_resolution === '100m'
+      : batchSimulationResult.display_resolution === selectedGridResolution);
+  const isActive100mPolicyResult =
+    selectedGridResolution === '100m' &&
+    selectedDistrict !== ALL_DISTRICTS &&
+    (batchSimulationResult?.target_mode === 'spatial_scope' ||
+      (batchSimulationResult?.target_mode === 'district' &&
+        batchSimulationResult.gu_code === selectedDistrictCode &&
+        (batchSimulationResult.display_resolution === undefined ||
+          batchSimulationResult.display_resolution === '100m')));
+  const isActiveAggregatePolicyResult =
+    (selectedGridResolution === '250m' || selectedGridResolution === '500m') &&
+    selectedDistrict !== ALL_DISTRICTS &&
+    selectedMapGridId !== null &&
+    batchSimulationResult?.target_mode === 'aggregate' &&
+    batchSimulationResult.aggregate_resolution === selectedGridResolution &&
+    batchSimulationResult.aggregate_id === selectedMapGridId;
+  const isActiveDistrictDisplayPolicyResult =
+    (selectedGridResolution === '250m' || selectedGridResolution === '500m') &&
+    selectedDistrict !== ALL_DISTRICTS &&
+    batchSimulationResult?.target_mode === 'district' &&
+    batchSimulationResult.gu_code === selectedDistrictCode &&
+    batchSimulationResult.display_resolution === selectedGridResolution;
+  const activePolicyBatchResult =
+    policyContextMatches &&
+    (isActiveSeoulPolicyResult ||
+      isActive100mPolicyResult ||
+      isActiveAggregatePolicyResult ||
+      isActiveDistrictDisplayPolicyResult)
+      ? batchSimulationResult
+      : null;
+  const policyGridIds = useMemo(() => {
+    if (activePolicyBatchResult?.target_mode !== 'spatial_scope') return [];
+    const ids = activePolicyBatchResult?.results
+      .map((result) => result.grid_id.trim())
+      .filter(Boolean) ?? [];
+    return [...new Set(ids)];
+  }, [activePolicyBatchResult]);
+  const policyScopeGridData = useMemo<FeatureCollection | null>(() => {
+    if (policyGridIds.length === 0) return null;
+
+    const targetIds = new Set(policyGridIds);
+    const targetFeatures: FeatureCollection['features'] = [];
+    for (const feature of seoul100mMapCacheRef.current?.features ?? []) {
+      const gridId = getGridIdentifier(
+        getFeatureProperties(feature as Feature<Geometry>)
+      );
+      if (!targetIds.has(gridId)) continue;
+      targetFeatures.push(feature);
+      if (targetFeatures.length === targetIds.size) break;
+    }
+
+    return {
+      type: 'FeatureCollection',
+      features: targetFeatures
+    };
+  }, [policyGridIds]);
+  const map3DGridData = useMemo<FeatureCollection | null>(() => {
+    if (!gridGeoJson || isGuResolution(selectedGridResolution)) {
+      return null;
+    }
+    // 250m/500m는 기존 2D가 로드한 실제 aggregate collection을 그대로 시각화한다.
+    if (selectedGridResolution !== '100m') return gridGeoJson;
+    if (selectedDistrict === ALL_DISTRICTS) return gridGeoJson;
+    if (!policyScopeGridData) return gridGeoJson;
+
+    const currentGridIds = new Set(
+      gridGeoJson.features.map((feature) =>
+        getGridIdentifier(getFeatureProperties(feature as Feature<Geometry>))
+      )
+    );
+    const missingTargetFeatures = policyScopeGridData.features.filter((feature) => {
+      const gridId = getGridIdentifier(
+        getFeatureProperties(feature as Feature<Geometry>)
+      );
+      return !currentGridIds.has(gridId);
+    });
+    if (missingTargetFeatures.length === 0) return gridGeoJson;
+
+    // 선택 자치구 + 경계 밖 정책 대상만 새 collection으로 합친다.
+    // 원본 cache/gridGeoJson은 mutate하지 않고, 서울 전체를 MapLibre에 넘기지 않는다.
+    return {
+      ...gridGeoJson,
+      features: [...gridGeoJson.features, ...missingTargetFeatures]
+    };
+  }, [gridGeoJson, policyScopeGridData, selectedDistrict, selectedGridResolution]);
   const selectedLayerKeyRef = useRef(selectedLayer);
   const isDistrictOverviewRef = useRef(isDistrictOverview);
   const hydrateSelectedGridPropertiesRef = useRef(hydrateSelectedGridProperties);
   selectedLayerKeyRef.current = selectedLayer;
   isDistrictOverviewRef.current = isDistrictOverview;
   hydrateSelectedGridPropertiesRef.current = hydrateSelectedGridProperties;
-  const gridGeoJsonRef = useRef(gridGeoJson);
-  gridGeoJsonRef.current = gridGeoJson;   // 현재 화면에 로드된 격자들 (250/500m 분모 계산용)
   const resolutionGridLayerRef = useRef<L.GeoJSON | null>(null);
 
   const selectGridFeatureLayer = useCallback(
@@ -1646,14 +1949,22 @@ export function MapDashboard() {
       if (selectAsPrimary) setIsPickingCompare(false);
 
       selectedResetRef.current?.();
+      handleBatchSimulationResult(null);
       layer.setStyle({ color: '#111827', weight: 3, opacity: 1 });
       selectedGridLayerRef.current = layer;
       setSelectedGridProperties(props);
       setSelectedGridGuTotal(null);
       selectedGridIdRef.current = gridId;
       if (resolution === '100m') {
+        setSelectedAggregateFeature(null);
+        setSelectedAggregatePopupPosition(null);
         hydrateSelectedGridPropertiesRef.current(props);
       } else {
+        const popupPosition = L.geoJSON(feature).getBounds().getCenter();
+        setSelected100mFeature(null);
+        setSelected100mPopupPosition(null);
+        setSelectedAggregateFeature(feature);
+        setSelectedAggregatePopupPosition(popupPosition);
         // 250/500m: priority_rank는 구 내부 순위 → 같은 구의 그 해상도 격자 수가 분모
         const guKey = props.gu_code ?? props.gu_name;
         const feats = gridGeoJsonRef.current?.features ?? [];
@@ -1685,7 +1996,10 @@ export function MapDashboard() {
         );
         layer.closePopup();
         layer.unbindPopup();
+        setSelectedAggregateFeature(null);
+        setSelectedAggregatePopupPosition(null);
         setSelectedGridProperties(null);
+        handleBatchSimulationResult(null);
       };
 
       layer.once('popupclose', () => {
@@ -1697,10 +2011,13 @@ export function MapDashboard() {
           gridFeatureStyle(feature, selectedLayerKeyRef.current, isDistrictOverviewRef.current)
         );
         layer.unbindPopup();
+        setSelectedAggregateFeature(null);
+        setSelectedAggregatePopupPosition(null);
         setSelectedGridProperties(null);
+        handleBatchSimulationResult(null);
       });
     },
-    []
+    [handleBatchSimulationResult]
   );
 
   const handleGridClick = useCallback(
@@ -1905,6 +2222,9 @@ export function MapDashboard() {
               onFeatureClick={handle100mFeatureClick}
             />
           )}
+          {selectedGridResolution === '100m' && (
+            <PolicyScopeLayer data={policyScopeGridData} />
+          )}
           {gridGeoJson && selectedGridResolution !== '100m' && !isGuMode && (
             <GeoJSON
               ref={resolutionGridLayerRef}
@@ -1965,13 +2285,7 @@ export function MapDashboard() {
                 autoPan={false}
                 closeOnClick={false}
                 eventHandlers={{
-                  remove: () => {
-                    if (selectedGridIdRef.current !== selected100mGridId) return;
-                    selectedGridIdRef.current = null;
-                    setSelected100mFeature(null);
-                    setSelected100mPopupPosition(null);
-                    setSelectedGridProperties(null);
-                  }
+                  remove: () => clearSelectedMapGrid(selected100mGridId)
                 }}
               >
                 <div
@@ -1999,6 +2313,18 @@ export function MapDashboard() {
           <ScaleControl position="topright" metric imperial={false} maxWidth={40} />
         </MapContainer>
       )}
+      <Map3DOverlay
+        gridData={map3DGridData}
+        batchSimulationResult={activePolicyBatchResult}
+        resolution={selectedGridResolution}
+        selectedDistrict={selectedDistrict}
+        selectedGridId={selectedMapGridId}
+        gridInfoSign={mapGridInfoSign}
+        shelterSign={mapShelterSign}
+        onGridFeatureClick={handle3DGridFeatureClick}
+        onDistrictDrillDown={handle3DDistrictDrillDown}
+        onClearSelectedGrid={clearSelectedMapGrid}
+      />
       {!loading && !error && gridLoading && (
         <div className="mapLoadingOverlay">
           <LoadingContent message={`${selectedGridResolution} 격자 데이터 로딩 중`} />
@@ -2049,6 +2375,7 @@ export function MapDashboard() {
         isPickingCompare={isPickingCompare}
         onStartCompare={handleStartCompare}
         onClearCompare={handleClearCompare}
+        onBatchSimulationResult={handleBatchSimulationResult}
       />
       <AiChatLauncher
         selectedGridId={chatGridId}

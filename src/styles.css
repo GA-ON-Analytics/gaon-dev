@@ -54,6 +54,10 @@
 .aiChatDock,
 .aiChatFab,
 .aiChatHint,
+.map3dViewHeader,
+.heat3dMapNotice,
+.map3dLegend,
+.map3dToggle,
 .leaflet-control-container {
   zoom: var(--ui-scale);
 }
@@ -2408,6 +2412,33 @@ td {
 .gridDetailSidePanel .policyPresetNotice{
   margin:-6px 0 13px; color:var(--gdp-ink3); font-size:11px; line-height:1.5;
 }
+.gridDetailSidePanel .policyScopeSelector{
+  display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px;
+  margin:0 0 12px; padding:0; border:0;
+}
+.gridDetailSidePanel .policyScopeSelector legend{
+  grid-column:1 / -1; margin-bottom:2px; color:var(--gdp-ink2); font-size:10px; font-weight:800;
+}
+.gridDetailSidePanel .policyScopeSelector label{ position:relative; cursor:pointer; }
+.gridDetailSidePanel .policyScopeSelector input{ position:absolute; opacity:0; pointer-events:none; }
+.gridDetailSidePanel .policyScopeSelector label > span{
+  display:flex; min-height:52px; padding:4px; flex-direction:column; align-items:center; justify-content:center;
+  gap:2px; border:1px solid var(--gdp-line); border-radius:8px; background:#fff;
+}
+.gridDetailSidePanel .policyScopeSelector b{ font-size:11px; }
+.gridDetailSidePanel .policyScopeSelector small{ color:var(--gdp-ink3); font-size:8.5px; line-height:1.25; text-align:center; }
+.gridDetailSidePanel .policyScopeSelector input:checked + span{
+  border-color:var(--gdp-green); background:var(--gdp-green-soft); color:var(--gdp-green);
+}
+.gridDetailSidePanel .policyScopeSelector input:focus-visible + span{
+  outline:2px solid var(--gdp-green); outline-offset:2px;
+}
+.gridDetailSidePanel .policyScopeSelector input:disabled + span{
+  opacity:.48; cursor:not-allowed;
+}
+.gridDetailSidePanel .policyScopeSelector > p{
+  grid-column:1 / -1; margin:0; color:var(--gdp-ink3); font-size:9px; line-height:1.4;
+}
 .gridDetailSidePanel .policyPresetGrid{
   display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px;
 }
@@ -2503,9 +2534,11 @@ td {
 .gridDetailSidePanel .policyAnomalyRows > div:last-child{ border-bottom:0; }
 .gridDetailSidePanel .policyAnomalyRows dt{ color:var(--gdp-ink2); font-size:11px; }
 .gridDetailSidePanel .policyAnomalyRows dd{
-  margin:0; color:var(--gdp-ink); font-size:12px; font-weight:800; font-variant-numeric:tabular-nums;
+  max-width:58%; margin:0; color:var(--gdp-ink); font-size:12px; font-weight:800;
+  font-variant-numeric:tabular-nums; overflow-wrap:anywhere; text-align:right;
 }
-.gridDetailSidePanel .policyAnomalyRows .policyDeltaRow dd{ color:var(--gdp-green); font-size:16px; }
+.gridDetailSidePanel .policyAnomalyRows .policyDeltaRow dt{ color:var(--gdp-green); font-weight:800; }
+.gridDetailSidePanel .policyAnomalyRows .policyDeltaRow dd{ color:var(--gdp-green); font-size:18px; }
 .gridDetailSidePanel .policyAnomalyNote{
   margin:7px 0 12px; color:var(--gdp-ink3); font-size:9.5px; line-height:1.45;
 }
