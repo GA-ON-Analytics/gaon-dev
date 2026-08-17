@@ -33,7 +33,9 @@
   position: absolute;
   top: var(--panel-edge-gap);
   left: calc(50% + (var(--left-panel-width) - var(--map-tool-width)) / 4);
-  z-index: 2;
+  /* 3D surface(699)의 자식이 아니라 형제가 되었으므로 그보다 위여야 한다.
+     3D 토글 버튼과 같은 층. */
+  z-index: 710;
   display: grid;
   justify-items: center;
   gap: 5px;

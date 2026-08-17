@@ -42,6 +42,7 @@ import AiChatLauncher from './AiChatLauncher';
 import MapLegend from './MapLegend';
 import CanvasGridLayer, { featureContainsPoint } from './CanvasGridLayer';
 import Map3DOverlay from '../features/map3d/Map3DOverlay';
+import type { Map3DViewMode } from '../features/map3d/Heat3DMap';
 
 const ALL_DISTRICTS = '전체';
 const DEFAULT_DISTRICT = ALL_DISTRICTS;
@@ -733,14 +734,31 @@ function buildDistrictTooltip(feature: Feature<Geometry>, selectedLayer: LayerKe
   `;
 }
 
+/* 정책 적용 후 색. 3D(Heat3DMap.prepareExtrusionData)와 같은 기준을 쓴다 —
+   관측 LST에 모델이 낸 delta_c를 더한 시나리오 값이며 실측 After가 아니다.
+   afterDeltas가 null이면(=현재 보기) 평소의 레이어 색으로 떨어진다. */
+function afterPolicyColor(
+  properties: GridAnalysisProperties,
+  afterDeltas: ReadonlyMap<string, number> | null
+) {
+  if (!afterDeltas) return null;
+  const delta = afterDeltas.get(String(getGridIdentifier(properties)));
+  if (delta === undefined) return null;
+  const lst = getNumericProperty(properties, LST_LAYER);
+  if (lst === null) return null;
+  return pickByBreaks(lst + delta, [35, 38, 41], true);
+}
+
 function gridFeatureStyle(
   feature: Feature<Geometry>,
   layer: LayerKey,
-  isDistrictOverview: boolean
+  isDistrictOverview: boolean,
+  afterDeltas: ReadonlyMap<string, number> | null = null
 ): PathOptions {
   const properties = getFeatureProperties(feature);
   const hasLayerValue = getNumericProperty(properties, layer) !== null;
-  const gridColor = colorByLayerValue(properties, layer);
+  const gridColor =
+    afterPolicyColor(properties, afterDeltas) ?? colorByLayerValue(properties, layer);
   return {
     color: gridColor,
     fillColor: gridColor,
@@ -1020,9 +1038,12 @@ export function MapDashboard() {
     },
     [is3DOpen, selectedLayer]
   );
+  // 정책 결과가 지도 전체를 덮고 있는 동안은 지표를 못 바꾸게 잠근다(3D와 같은 규칙).
+  // 잠금 여부는 activePolicyBatchResult에서 파생되며, 아래에서 ref에 담아 둔다.
+  const isPolicyLayerLockedRef = useRef(false);
   const handleLayerChange = useCallback(
     (layer: LayerKey) => {
-      if (is3DOpen && layer !== LST_LAYER) return;
+      if ((is3DOpen || isPolicyLayerLockedRef.current) && layer !== LST_LAYER) return;
       setSelectedLayer(layer);
     },
     [is3DOpen]
@@ -1036,6 +1057,8 @@ export function MapDashboard() {
   // 정책 결과의 단일 source of truth. 2D/3D는 이 결과에서 표현 값만 파생한다.
   const [batchSimulationResult, setBatchSimulationResult] =
     useState<BatchSimulationResponse | null>(null);
+  // 현재/정책 적용 후 보기. 2D·3D가 같은 상태를 쓰므로 모드를 오가도 보던 쪽이 유지된다.
+  const [policyViewMode, setPolicyViewMode] = useState<Map3DViewMode>('before');
   const [batchSimulationContext, setBatchSimulationContext] =
     useState<PolicyBatchContext | null>(null);
   // 선택 격자가 속한 '구'의 전체 격자 수 (priority_rank의 분모). 100m 상세 로딩 때 채운다.
@@ -1841,6 +1864,13 @@ export function MapDashboard() {
     [selectedGridProperties]
   );
   const selectedDistrictCode = districtCodeByName.get(selectedDistrict) ?? null;
+  // 분석 지역이 '전체'여도 격자를 고르면 그 격자의 구를 대상으로 정책을 돌릴 수 있다.
+  // 그때는 자치구 코드를 선택 격자에서 가져온다.
+  const selectedGridGuCode =
+    selectedGridProperties?.gu_code != null
+      ? String(selectedGridProperties.gu_code)
+      : null;
+  const policyDistrictCode = selectedDistrictCode ?? selectedGridGuCode;
   const policyContextMatches =
     batchSimulationContext?.resolution === selectedGridResolution &&
     batchSimulationContext.district === selectedDistrict &&
@@ -1855,24 +1885,23 @@ export function MapDashboard() {
       : batchSimulationResult.display_resolution === selectedGridResolution);
   const isActive100mPolicyResult =
     selectedGridResolution === '100m' &&
-    selectedDistrict !== ALL_DISTRICTS &&
     (batchSimulationResult?.target_mode === 'spatial_scope' ||
       (batchSimulationResult?.target_mode === 'district' &&
-        batchSimulationResult.gu_code === selectedDistrictCode &&
+        policyDistrictCode !== null &&
+        batchSimulationResult.gu_code === policyDistrictCode &&
         (batchSimulationResult.display_resolution === undefined ||
           batchSimulationResult.display_resolution === '100m')));
   const isActiveAggregatePolicyResult =
     (selectedGridResolution === '250m' || selectedGridResolution === '500m') &&
-    selectedDistrict !== ALL_DISTRICTS &&
     selectedMapGridId !== null &&
     batchSimulationResult?.target_mode === 'aggregate' &&
     batchSimulationResult.aggregate_resolution === selectedGridResolution &&
     batchSimulationResult.aggregate_id === selectedMapGridId;
   const isActiveDistrictDisplayPolicyResult =
     (selectedGridResolution === '250m' || selectedGridResolution === '500m') &&
-    selectedDistrict !== ALL_DISTRICTS &&
     batchSimulationResult?.target_mode === 'district' &&
-    batchSimulationResult.gu_code === selectedDistrictCode &&
+    policyDistrictCode !== null &&
+    batchSimulationResult.gu_code === policyDistrictCode &&
     batchSimulationResult.display_resolution === selectedGridResolution;
   const activePolicyBatchResult =
     policyContextMatches &&
@@ -1882,6 +1911,57 @@ export function MapDashboard() {
       isActiveDistrictDisplayPolicyResult)
       ? batchSimulationResult
       : null;
+
+  // 새 결과는 바로 '정책 적용 후'로 보여주고, 결과가 풀리면 '현재'로 되돌린다.
+  useEffect(() => {
+    setPolicyViewMode(activePolicyBatchResult ? 'after' : 'before');
+  }, [activePolicyBatchResult]);
+
+  // 정책 결과가 붙으면 지도 지표를 지표면온도로 맞춘다. delta_c는 온도 변화량이라
+  // 우선순위·녹지율 위에 덧칠하면 범례와 색이 서로 다른 것을 가리키게 된다.
+  // is3DOpen도 본다 — 3D를 닫으면 handle3DOpenChange가 이전 지표를 되돌리는데,
+  // 결과가 살아 있는 채로 되돌아가면 2D에서 전후 토글이 색을 못 바꾼다.
+  useEffect(() => {
+    if (!activePolicyBatchResult) return;
+    setSelectedLayer(LST_LAYER);
+  }, [activePolicyBatchResult, is3DOpen]);
+
+  // grid_id → delta_c. 2D 채색이 격자마다 찾아 쓰므로 결과당 한 번만 만든다.
+  const policyAfterDeltas = useMemo(() => {
+    if (!activePolicyBatchResult) return null;
+    const deltas = new Map<string, number>();
+
+    // aggregate 결과의 results는 구성 100m 셀이라 지도에 그려지는 250/500m 격자와
+    // ID가 맞지 않는다. 3D와 같이 선택한 집계 격자 하나에 평균값을 칠한다.
+    if (activePolicyBatchResult.target_mode === 'aggregate') {
+      const mean = activePolicyBatchResult.mean_delta_c;
+      const aggregateId = activePolicyBatchResult.aggregate_id;
+      if (aggregateId && typeof mean === 'number' && Number.isFinite(mean)) {
+        deltas.set(aggregateId, mean);
+      }
+      return deltas.size > 0 ? deltas : null;
+    }
+
+    for (const result of activePolicyBatchResult.results) {
+      if (result.status !== 'success') continue;
+      const delta = result.delta_c;
+      if (typeof delta === 'number' && Number.isFinite(delta)) {
+        deltas.set(result.grid_id, delta);
+      }
+    }
+    return deltas.size > 0 ? deltas : null;
+  }, [activePolicyBatchResult]);
+  // 격자를 고르지 않은 채 정책을 돌리면 결과가 지도 전체를 덮는다. 그동안 지표를 바꾸면
+  // 범례와 색이 서로 다른 것을 가리키므로 지표 선택을 잠근다.
+  // 격자를 클릭하면 결과가 지워지고(selectGridFeatureLayer) 잠금도 함께 풀린다.
+  const isPolicyLayerLocked = Boolean(activePolicyBatchResult) && !selectedGridProperties;
+  isPolicyLayerLockedRef.current = isPolicyLayerLocked;
+
+  // 격자를 고른 뒤에는 잠기지 않으므로 사용자가 다른 지표로 바꿀 수 있다.
+  // 그때는 덧칠을 멈춰야 범례와 색이 어긋나지 않는다.
+  const activeAfterDeltas =
+    policyViewMode === 'after' && selectedLayer === LST_LAYER ? policyAfterDeltas : null;
+
   const policyGridIds = useMemo(() => {
     if (activePolicyBatchResult?.target_mode !== 'spatial_scope') return [];
     const ids = activePolicyBatchResult?.results
@@ -1964,9 +2044,7 @@ export function MapDashboard() {
         compareResetRef.current = () => {
           compareGridLayerRef.current = null;
           compareResetRef.current = null;
-          layer.setStyle(
-            gridFeatureStyle(feature, selectedLayerKeyRef.current, isDistrictOverviewRef.current)
-          );
+          layer.setStyle(gridStyleRef.current(feature));
         };
         return;
       }
@@ -2016,9 +2094,7 @@ export function MapDashboard() {
         selectedGridIdRef.current = null;
         selectedGridLayerRef.current = null;
         selectedResetRef.current = null;
-        layer.setStyle(
-          gridFeatureStyle(feature, selectedLayerKeyRef.current, isDistrictOverviewRef.current)
-        );
+        layer.setStyle(gridStyleRef.current(feature));
         layer.closePopup();
         layer.unbindPopup();
         setSelectedAggregateFeature(null);
@@ -2032,9 +2108,7 @@ export function MapDashboard() {
         selectedGridIdRef.current = null;
         selectedGridLayerRef.current = null;
         selectedResetRef.current = null;
-        layer.setStyle(
-          gridFeatureStyle(feature, selectedLayerKeyRef.current, isDistrictOverviewRef.current)
-        );
+        layer.setStyle(gridStyleRef.current(feature));
         layer.unbindPopup();
         setSelectedAggregateFeature(null);
         setSelectedAggregatePopupPosition(null);
@@ -2093,9 +2167,16 @@ export function MapDashboard() {
   // (안 그러면 선택 격자에 준 테두리가 리렌더마다 지워짐)
   const gridStyle = useCallback(
     (feature?: Feature<Geometry>) =>
-      gridFeatureStyle(feature as Feature<Geometry>, selectedLayer, isDistrictOverview),
-    [selectedLayer, isDistrictOverview]
+      gridFeatureStyle(
+        feature as Feature<Geometry>,
+        selectedLayer,
+        isDistrictOverview,
+        activeAfterDeltas
+      ),
+    [selectedLayer, isDistrictOverview, activeAfterDeltas]
   );
+  const gridStyleRef = useRef(gridStyle);
+  gridStyleRef.current = gridStyle;
 
   // 지표/줌 변경으로 전체 격자 스타일이 갱신된 뒤에도 선택 테두리는 유지한다.
   useEffect(() => {
@@ -2291,9 +2372,7 @@ export function MapDashboard() {
                     selectedGridLayerRef.current !== layer &&
                     compareGridLayerRef.current !== layer
                   ) {
-                    (layer as L.Path).setStyle(
-                      gridFeatureStyle(layer.feature, selectedLayer, isDistrictOverview)
-                    );
+                    (layer as L.Path).setStyle(gridStyleRef.current(layer.feature));
                   }
                 }
               }}
@@ -2343,6 +2422,8 @@ export function MapDashboard() {
         on3DOpenChange={handle3DOpenChange}
         gridData={map3DGridData}
         batchSimulationResult={activePolicyBatchResult}
+        viewMode={policyViewMode}
+        onViewModeChange={setPolicyViewMode}
         resolution={selectedGridResolution}
         selectedDistrict={selectedDistrict}
         selectedGridId={selectedMapGridId}
@@ -2367,6 +2448,7 @@ export function MapDashboard() {
           selectedDistrict={selectedDistrict}
           selectedLayer={selectedLayer}
           is3DMode={is3DOpen}
+          isPolicyLayerLocked={isPolicyLayerLocked}
           selectedGridResolution={selectedGridResolution}
           selectedGridProperties={selectedGridProperties}
           gridSearchError={gridSearchError}
@@ -2423,6 +2505,7 @@ interface SearchPanelProps {
   selectedDistrict: string;
   selectedLayer: LayerKey;
   is3DMode: boolean;
+  isPolicyLayerLocked: boolean;
   selectedGridResolution: GridResolution;
   selectedGridProperties: GridAnalysisProperties | null;
   gridSearchError: string | null;
@@ -2443,6 +2526,7 @@ function SearchPanel({
   selectedDistrict,
   selectedLayer,
   is3DMode,
+  isPolicyLayerLocked,
   selectedGridResolution,
   selectedGridProperties,
   gridSearchError,
@@ -2793,6 +2877,14 @@ function SearchPanel({
           <strong>지도 지표 선택</strong>
           <span>{getLayerLabel(selectedLayer)}</span>
         </div>
+        {/* 버튼만 비활성으로 두면 왜 안 눌리는지 알 수 없다. 이유와 푸는 법을 함께 적는다. */}
+        {(is3DMode || isPolicyLayerLocked) && (
+          <p className="indicatorLockNote" role="status">
+            {is3DMode
+              ? '3D에서는 지표면온도만 볼 수 있어요.'
+              : '정책 결과를 보는 동안은 지표면온도로 고정돼요. 지도에서 격자를 클릭하면 풀립니다.'}
+          </p>
+        )}
         <div className="indicatorList">
           {INDICATOR_GROUPS.map((group) => (
             <div className="indicatorGroup" key={group.key}>
@@ -2805,7 +2897,9 @@ function SearchPanel({
                     key={indicator.key}
                     type="button"
                     className={selectedLayer === indicator.key ? 'active' : ''}
-                    disabled={is3DMode && indicator.key !== LST_LAYER}
+                    disabled={
+                      (is3DMode || isPolicyLayerLocked) && indicator.key !== LST_LAYER
+                    }
                     onClick={() => onLayerChange(indicator.key)}
                     onMouseEnter={(event) => showTip(event, indicator.desc)}
                     onMouseLeave={hideTip}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import type { FeatureCollection } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { BatchSimulationResponse, GridResolution } from '../../types/dashboard';
@@ -18,6 +18,8 @@ interface Map3DOverlayProps {
   on3DOpenChange: (isOpen: boolean) => void;
   gridData: FeatureCollection | null;
   batchSimulationResult: BatchSimulationResponse | null;
+  viewMode: Map3DViewMode;
+  onViewModeChange: (viewMode: Map3DViewMode) => void;
   resolution: GridResolution;
   selectedDistrict: string;
   selectedGridId: string | null;
@@ -33,6 +35,8 @@ export default function Map3DOverlay({
   on3DOpenChange,
   gridData,
   batchSimulationResult,
+  viewMode,
+  onViewModeChange,
   resolution,
   selectedDistrict,
   selectedGridId,
@@ -42,7 +46,6 @@ export default function Map3DOverlay({
   onDistrictDrillDown,
   onClearSelectedGrid
 }: Map3DOverlayProps) {
-  const [viewMode, setViewMode] = useState<Map3DViewMode>('before');
   const supports3DResolution =
     resolution === '100m' || resolution === '250m' || resolution === '500m';
   const has3DGridData = Boolean(gridData?.features.length);
@@ -52,11 +55,6 @@ export default function Map3DOverlay({
   const contextLabel = `${
     selectedDistrict === '전체' ? '서울시 전체' : selectedDistrict
   } · ${resolution} 열 분포`;
-
-  useEffect(() => {
-    // 새 시뮬레이션 결과는 즉시 After로 보이고, 결과 reset 시 Before로 복귀한다.
-    setViewMode(activeBatchSimulationResult ? 'after' : 'before');
-  }, [activeBatchSimulationResult]);
 
   useEffect(() => {
     if (!supports3DResolution && is3DOpen) on3DOpenChange(false);
@@ -79,35 +77,43 @@ export default function Map3DOverlay({
             onDistrictDrillDown={onDistrictDrillDown}
             onClearSelectedGrid={onClearSelectedGrid}
           />
-          <div className="map3dViewHeader">
-            <div className="map3dContextLabel" aria-label={`현재 3D 분석 범위: ${contextLabel}`}>
-              {contextLabel}
-            </div>
-            {activeBatchSimulationResult && (
-              <div
-                className="map3dPolicyViewControl"
-                role="group"
-                aria-label="정책 시뮬레이션 전후 비교"
-              >
-                <button
-                  type="button"
-                  className={viewMode === 'before' ? 'isActive' : ''}
-                  aria-pressed={viewMode === 'before'}
-                  onClick={() => setViewMode('before')}
-                >
-                  현재
-                </button>
-                <button
-                  type="button"
-                  className={viewMode === 'after' ? 'isActive' : ''}
-                  aria-pressed={viewMode === 'after'}
-                  onClick={() => setViewMode('after')}
-                >
-                  정책 적용 후
-                </button>
-              </div>
-            )}
+        </div>
+      )}
+      {/* 헤더는 3D surface 밖에 둔다. 2D도 같은 결과로 색을 칠하므로 전후 토글이
+          두 모드에 다 필요하고, 3D를 열지 않아도 보여야 한다.
+          2D에서는 정책 결과가 있을 때만 띄워서 평소 지도를 가리지 않는다. */}
+      {(is3DOpen || activeBatchSimulationResult) && (
+        <div className="map3dViewHeader">
+          <div
+            className="map3dContextLabel"
+            aria-label={`현재 ${is3DOpen ? '3D' : '2D'} 분석 범위: ${contextLabel}`}
+          >
+            {contextLabel}
           </div>
+          {activeBatchSimulationResult && (
+            <div
+              className="map3dPolicyViewControl"
+              role="group"
+              aria-label="정책 시뮬레이션 전후 비교"
+            >
+              <button
+                type="button"
+                className={viewMode === 'before' ? 'isActive' : ''}
+                aria-pressed={viewMode === 'before'}
+                onClick={() => onViewModeChange('before')}
+              >
+                현재
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'after' ? 'isActive' : ''}
+                aria-pressed={viewMode === 'after'}
+                onClick={() => onViewModeChange('after')}
+              >
+                정책 적용 후
+              </button>
+            </div>
+          )}
         </div>
       )}
       {supports3DResolution && (canOpen3D || is3DOpen) && (
