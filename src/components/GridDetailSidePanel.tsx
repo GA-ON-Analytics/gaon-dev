@@ -354,6 +354,15 @@ function GridDetailSidePanel({
   onBatchSimulationResult
 }: Props) {
   const fmt = (key: keyof GridAnalysisProperties) => formatValue(properties, key);
+  // 격자를 고르지 않은 서울 전체 보기에서만 '서울시 전체' 정책 카드를 띄운다.
+  // 격자를 고르면 아래 SimulationCard가 그 격자 기준 정책 시나리오를 맡는다 —
+  // 둘을 같이 두면 '정책 시나리오'가 두 벌이 되어 어느 쪽을 돌리는지 알 수 없다.
+  // 값(해상도)으로 들고 있어야 SeoulSimulationCard의 'gu' 제외 타입이 좁혀진다.
+  const seoulPolicyResolution =
+    selectedDistrict === '전체' && selectedGridResolution !== 'gu' && !properties
+      ? selectedGridResolution
+      : null;
+  const showSeoulPolicyCard = seoulPolicyResolution !== null;
   const guLabel = properties
     ? [properties.gu_name, properties.dong_name].filter(Boolean).join(' ')
     : '';
@@ -431,12 +440,6 @@ function GridDetailSidePanel({
       <div className="sidePanelBody">
         <section className="rightPanelDashboard">
           <div className="gridReport">
-            {selectedDistrict === '전체' && selectedGridResolution !== 'gu' && (
-              <SeoulSimulationCard
-                selectedGridResolution={selectedGridResolution}
-                onBatchSimulationResult={onBatchSimulationResult}
-              />
-            )}
             {properties ? (
             <>
             <div className="card">
@@ -689,14 +692,48 @@ function GridDetailSidePanel({
             />
             </>
           ) : (
-            <div className="gridReportEmpty">
+            <>
+            {/* 빈 화면과 정책 카드가 서로 남처럼 놓여 있었다. 할 수 있는 일을 순서로
+                묶고, 마지막 단계가 바로 아래 정책 카드를 가리키게 해서 이어 붙인다. */}
+            <div
+              className={`gridReportEmpty${showSeoulPolicyCard ? ' withPolicyBelow' : ''}`}
+            >
               <div className="emptyIcon" aria-hidden="true">🗺️</div>
               <h2>{selectionTitle(selectedDistrict, selectedGridResolution)}</h2>
               <p>{selectionPrompt(selectedDistrict, selectedGridResolution)}</p>
-              <p className="emptyHint">
-                격자를 클릭하면 온도·녹지·취약성과 개선 시뮬레이션을 볼 수 있어요.
-              </p>
+              <ol className="emptyGuide">
+                <li>
+                  <span className="egStep">1</span>
+                  <span className="egText">
+                    <b>지도에서 격자 클릭</b>
+                    그 격자의 온도·녹지·취약성과 개선 시뮬레이션이 여기에 나와요.
+                  </span>
+                </li>
+                <li>
+                  <span className="egStep">2</span>
+                  <span className="egText">
+                    <b>왼쪽 ‘지도 지표 선택’</b>
+                    지도 색이 무엇을 뜻하는지 바꿔 볼 수 있어요.
+                  </span>
+                </li>
+                {showSeoulPolicyCard && (
+                  <li>
+                    <span className="egStep">3</span>
+                    <span className="egText">
+                      <b>아래 ‘정책 시나리오’</b>
+                      격자를 고르지 않아도 서울시 전체에 정책을 적용해 볼 수 있어요.
+                    </span>
+                  </li>
+                )}
+              </ol>
             </div>
+            {seoulPolicyResolution && (
+              <SeoulSimulationCard
+                selectedGridResolution={seoulPolicyResolution}
+                onBatchSimulationResult={onBatchSimulationResult}
+              />
+            )}
+            </>
             )}
           </div>
         </section>
@@ -1092,6 +1129,14 @@ function PolicyPresetSection({
     : '100m';
   const skipsSingleGridApplicability =
     isBatchResolution || isDistrictScope || isSeoulScope;
+  // 분석 지역이 '전체'일 때도 격자를 고르면 '구 전체'를 돌릴 수 있다(guCode는 격자에서 온다).
+  // 그때 selectedDistrict를 그대로 쓰면 "전체 전체 100m 격자"가 되므로 격자의 구 이름을 쓴다.
+  const districtLabel =
+    selectedDistrict !== '전체'
+      ? selectedDistrict
+      : typeof properties?.gu_name === 'string' && properties.gu_name.trim()
+      ? properties.gu_name.trim()
+      : '선택 격자의 구';
   const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyPreset['id'] | null>(null);
   const [policyBatchResult, setPolicyBatchResult] = useState<BatchSimulationResponse | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
@@ -1337,7 +1382,7 @@ function PolicyPresetSection({
               {
                 scope: 'district',
                 label: '구 전체',
-                description: `${selectedDistrict} 전체 100m 격자`
+                description: `${districtLabel} 전체 100m 격자`
               }
             ] as const).map((option) => (
             <label key={option.scope}>
@@ -1357,7 +1402,7 @@ function PolicyPresetSection({
           ))}
           <p>
             {isDistrictScope
-              ? `선택한 ${selectedDistrict}의 모든 100m 격자에 동일 정책을 적용합니다.`
+              ? `선택한 ${districtLabel}의 모든 100m 격자에 동일 정책을 적용합니다.`
               : '서울 경계에서는 실제 존재하는 격자 수가 달라질 수 있습니다.'}
           </p>
         </fieldset>
@@ -1390,7 +1435,7 @@ function PolicyPresetSection({
             />
             <span>
               <b>구 전체</b>
-              <small>{selectedDistrict} 전체 실제 100m 격자</small>
+              <small>{districtLabel} 전체 실제 100m 격자</small>
             </span>
           </label>
           <p>
@@ -1516,7 +1561,7 @@ function PolicyPresetSection({
                 {policyBatchResult.target_mode === 'seoul'
                   ? '서울시 전체'
                   : policyBatchResult.target_mode === 'district'
-                  ? `${selectedDistrict} 전체`
+                  ? `${districtLabel} 전체`
                   : policyBatchResult.target_mode === 'aggregate'
                   ? `선택한 ${selectedGridResolution} 격자`
                   : policyBatchResult.scope_m
@@ -1748,10 +1793,6 @@ function SimulationCard({
     } finally {
       setLoading(false);
     }
-  }
-
-  if (selectedDistrict === '전체' && selectedGridResolution === '100m') {
-    return null;
   }
 
   if (!canSimulate) {
