@@ -1088,6 +1088,18 @@ td {
   font-weight: 700;
 }
 
+/* 지표 선택이 잠겼을 때의 사유 문구. 비활성 버튼 바로 위에 붙어야 연결이 보인다. */
+.indicatorLockNote {
+  margin: 0 2px 8px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: var(--gdp-green-soft);
+  color: var(--gdp-green);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
 /* 지금 보고 있는 지표를 새겨 넣은 칩으로. 파여 보이는 건 두 그림자의 조합이라
    (안쪽 위 그림자 + 바깥 아래 1px 흰 선) 둘 중 하나만 빼면 그냥 어두운 알약이 된다.
    글자 크기는 고정 라벨(12px)보다 작지 않아야 한다 — 원래 11px이라 안내 문구가
@@ -2191,6 +2203,60 @@ td {
 .gridDetailSidePanel .gridReportEmpty .emptyHint {
   color: var(--gdp-ink3);
   font-weight: 500;
+}
+
+/* 정책 카드가 뒤따르면 이 카드가 패널의 첫 요소가 된다. 44px을 그대로 두면
+   두 카드가 화면 아래쪽으로 밀려 붙고, 그래서 서로 남처럼 보였다. */
+.gridDetailSidePanel .gridReportEmpty.withPolicyBelow {
+  margin-top: 0;
+  padding: 26px 22px 22px;
+}
+
+.gridDetailSidePanel .emptyGuide {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin: 12px 0 0;
+  padding: 14px 14px 14px 12px;
+  border-radius: 13px;
+  background: var(--gdp-sub);
+  list-style: none;
+  text-align: left;
+}
+
+.gridDetailSidePanel .emptyGuide li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.gridDetailSidePanel .emptyGuide .egStep {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--gdp-green);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.gridDetailSidePanel .emptyGuide .egText {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gdp-ink2);
+  line-height: 1.5;
+}
+
+.gridDetailSidePanel .emptyGuide .egText b {
+  display: block;
+  color: var(--gdp-ink);
+  font-size: 12.5px;
+  font-weight: 700;
 }
 
 /* ===================== 격자 상세 패널 (목업 이식) ===================== */
