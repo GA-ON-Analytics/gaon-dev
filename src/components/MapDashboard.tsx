@@ -2251,7 +2251,7 @@ export function MapDashboard() {
              이 앱에서는 그 렌더러가 지도에 붙지 않아 구 경계·250m/500m 격자가
              통째로 안 그려졌다(캔버스 draw 호출 0회. 레이어와 style 함수는 정상 동작해서
              로그만으로는 정상으로 보였다).
-             64,574개짜리 100m 격자는 CanvasGridLayer가 따로 캔버스로 그리므로
+             64,672개짜리 100m 격자는 CanvasGridLayer가 따로 캔버스로 그리므로
              preferCanvas 없이도 성능 문제가 없다. */
         >
           <TileLayer
