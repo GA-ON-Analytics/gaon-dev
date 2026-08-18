@@ -289,6 +289,11 @@ export interface GridAnalysisProperties {
   building_ratio?: number;
   // building_ratio가 위성 지표면 기반 추정값이면 true (VWorld 건물 도형 누락 보정)
   building_ratio_estimated?: boolean;
+  /**
+   * 위성 지표면온도 관측이 있었는지. false 면 온도·순위 값이 아예 없다.
+   * scripts/patch-missing-lst-grids.py 가 되살린 격자에만 붙는다.
+   */
+  lst_observed?: boolean;
   green_ratio?: number;
   ndvi?: number;
   impervious_ratio?: number;

@@ -372,7 +372,10 @@ function GridDetailSidePanel({
   const anomaly = properties?.mean_actual_anomaly;
   const level = heatLevel(anomaly);
   // 핵심 피처 결측 격자면 모델 기반 분석(SHAP·시뮬레이션)을 신뢰불가로 처리한다.
-  const incomplete = isIncompleteGrid(properties);
+  // 위성 온도 관측이 없는 격자(lst_observed === false)도 분석 불가로 묶는다.
+  // 값 자체가 없어 온도·순위·시뮬레이션이 성립하지 않는다.
+  const lstMissing = properties?.lst_observed === false;
+  const incomplete = isIncompleteGrid(properties) || lstMissing;
   // 요약 카드의 '이 격자 개선해보기' 버튼 조건. SimulationCard의 canSimulate와
   // 같아야 한다 — 결측 격자(예: 11680_02607)에서 버튼만 남으면 눌러도
   // '시뮬레이션을 제공하지 않아요' 문구로 떨어진다.
@@ -456,10 +459,20 @@ function GridDetailSidePanel({
                   <div className={`ht-num ${level.tone}`}>
                     {lst != null ? lst.toFixed(1) : '—'}<span>℃</span>
                   </div>
+                  {/* 값이 없을 때 '낮음'이라고 단정하지 않는다. 위성 관측이 없는
+                      격자에서 '— 낮음'으로 나와 사실과 다른 말이 됐다. */}
                   <div className="ht-sub">
-                    지표면온도 · 구 평균보다{' '}
-                    <b className={level.tone}>{anomaly != null ? `${anomaly > 0 ? '+' : ''}${anomaly.toFixed(1)}℃` : '—'}</b>{' '}
-                    {anomaly != null && anomaly >= 0 ? '높음' : '낮음'}
+                    {anomaly != null ? (
+                      <>
+                        지표면온도 · 구 평균보다{' '}
+                        <b className={level.tone}>
+                          {`${anomaly > 0 ? '+' : ''}${anomaly.toFixed(1)}℃`}
+                        </b>{' '}
+                        {anomaly >= 0 ? '높음' : '낮음'}
+                      </>
+                    ) : (
+                      '지표면온도 · 관측값 없음'
+                    )}
                   </div>
                 </div>
                 <span className={`risk ${level.tone}`}>{level.label}</span>
@@ -498,11 +511,19 @@ function GridDetailSidePanel({
             {incomplete && (
               <div className="card gdpIncomplete">
                 <div className="sec-title">⚠ 데이터 불완전 격자</div>
-                <p className="gdpNote">
-                  이 격자는 위성·지형 데이터 일부가 없어 모델이 온전히 분석할 수 없어요.
-                  온도 영향 요인(TOP)과 시뮬레이션은 신뢰도가 낮아 제공하지 않습니다.
-                  (서울 전체의 약 0.05% · 대부분 한강 수면·경계 격자)
-                </p>
+                {lstMissing ? (
+                  <p className="gdpNote">
+                    이 격자는 위성 지표면온도 관측이 없어 온도·순위·시뮬레이션을 제공하지
+                    않습니다. 아래 환경 프로필(녹지·건물·식생 등)은 정상 값이에요.
+                    (서울 전체 102개 · 약 0.16%)
+                  </p>
+                ) : (
+                  <p className="gdpNote">
+                    이 격자는 위성·지형 데이터 일부가 없어 모델이 온전히 분석할 수 없어요.
+                    온도 영향 요인(TOP)과 시뮬레이션은 신뢰도가 낮아 제공하지 않습니다.
+                    (서울 전체의 약 0.05% · 대부분 한강 수면·경계 격자)
+                  </p>
+                )}
               </div>
             )}
 
