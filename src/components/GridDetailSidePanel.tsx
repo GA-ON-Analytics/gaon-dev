@@ -372,7 +372,10 @@ function GridDetailSidePanel({
   const anomaly = properties?.mean_actual_anomaly;
   const level = heatLevel(anomaly);
   // 핵심 피처 결측 격자면 모델 기반 분석(SHAP·시뮬레이션)을 신뢰불가로 처리한다.
-  const incomplete = isIncompleteGrid(properties);
+  // 위성 온도 관측이 없는 격자(lst_observed === false)도 분석 불가로 묶는다.
+  // 값 자체가 없어 온도·순위·시뮬레이션이 성립하지 않는다.
+  const lstMissing = properties?.lst_observed === false;
+  const incomplete = isIncompleteGrid(properties) || lstMissing;
   // 요약 카드의 '이 격자 개선해보기' 버튼 조건. SimulationCard의 canSimulate와
   // 같아야 한다 — 결측 격자(예: 11680_02607)에서 버튼만 남으면 눌러도
   // '시뮬레이션을 제공하지 않아요' 문구로 떨어진다.
@@ -456,10 +459,20 @@ function GridDetailSidePanel({
                   <div className={`ht-num ${level.tone}`}>
                     {lst != null ? lst.toFixed(1) : '—'}<span>℃</span>
                   </div>
+                  {/* 값이 없을 때 '낮음'이라고 단정하지 않는다. 위성 관측이 없는
+                      격자에서 '— 낮음'으로 나와 사실과 다른 말이 됐다. */}
                   <div className="ht-sub">
-                    지표면온도 · 구 평균보다{' '}
-                    <b className={level.tone}>{anomaly != null ? `${anomaly > 0 ? '+' : ''}${anomaly.toFixed(1)}℃` : '—'}</b>{' '}
-                    {anomaly != null && anomaly >= 0 ? '높음' : '낮음'}
+                    {anomaly != null ? (
+                      <>
+                        지표면온도 · 구 평균보다{' '}
+                        <b className={level.tone}>
+                          {`${anomaly > 0 ? '+' : ''}${anomaly.toFixed(1)}℃`}
+                        </b>{' '}
+                        {anomaly >= 0 ? '높음' : '낮음'}
+                      </>
+                    ) : (
+                      '지표면온도 · 관측값 없음'
+                    )}
                   </div>
                 </div>
                 <span className={`risk ${level.tone}`}>{level.label}</span>
@@ -498,11 +511,19 @@ function GridDetailSidePanel({
             {incomplete && (
               <div className="card gdpIncomplete">
                 <div className="sec-title">⚠ 데이터 불완전 격자</div>
-                <p className="gdpNote">
-                  이 격자는 위성·지형 데이터 일부가 없어 모델이 온전히 분석할 수 없어요.
-                  온도 영향 요인(TOP)과 시뮬레이션은 신뢰도가 낮아 제공하지 않습니다.
-                  (서울 전체의 약 0.05% · 대부분 한강 수면·경계 격자)
-                </p>
+                {lstMissing ? (
+                  <p className="gdpNote">
+                    이 격자는 위성 지표면온도 관측이 없어 온도·순위·시뮬레이션을 제공하지
+                    않습니다. 아래 환경 프로필(녹지·건물·식생 등)은 정상 값이에요.
+                    (서울 전체 102개 · 약 0.16%)
+                  </p>
+                ) : (
+                  <p className="gdpNote">
+                    이 격자는 위성·지형 데이터 일부가 없어 모델이 온전히 분석할 수 없어요.
+                    온도 영향 요인(TOP)과 시뮬레이션은 신뢰도가 낮아 제공하지 않습니다.
+                    (서울 전체의 약 0.05% · 대부분 한강 수면·경계 격자)
+                  </p>
+                )}
               </div>
             )}
 
@@ -1088,7 +1109,6 @@ function SeoulSimulationCard({
         properties={null}
         featureRanges={null}
         policyScope="seoul"
-        onScopeChange={() => undefined}
         onBatchSimulationResult={onBatchSimulationResult}
       />
     </div>
@@ -1104,7 +1124,6 @@ function PolicyPresetSection({
   properties,
   featureRanges,
   policyScope,
-  onScopeChange,
   onBatchSimulationResult
 }: {
   gridId: string;
@@ -1115,7 +1134,6 @@ function PolicyPresetSection({
   properties: GridAnalysisProperties | null;
   featureRanges: Record<string, FeatureRange> | null;
   policyScope: SimulationPolicyScope;
-  onScopeChange: (scope: SimulationPolicyScope) => void;
   onBatchSimulationResult: (result: BatchSimulationResponse | null) => void;
 }) {
   const isBatchResolution =
@@ -1192,15 +1210,6 @@ function PolicyPresetSection({
     onBatchSimulationResult(null);
   }
 
-  function changeScope(scope: SimulationPolicyScope) {
-    requestVersionRef.current += 1;
-    setPolicyBatchResult(null);
-    setPolicyError(null);
-    setPolicyWarnings([]);
-    setPolicyLoading(false);
-    onScopeChange(scope);
-    onBatchSimulationResult(null);
-  }
 
   async function runPolicy() {
     if (!selectedPolicy) return;
@@ -1341,7 +1350,13 @@ function PolicyPresetSection({
         />
       </div>
       <p className="policyPresetNotice">
-        선택한 범위의 각 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.
+        {isSeoulScope
+          ? '서울의 모든 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.'
+          : selectedGridResolution === 'gu'
+          ? `${districtLabel} 전체 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.`
+          : selectedGridResolution === '100m'
+          ? '선택한 100m 격자에 정책 조건을 적용하는 비교 시나리오입니다.'
+          : `선택한 ${selectedGridResolution} 격자를 구성하는 각 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.`}
       </p>
 
       {isSeoulScope && (
@@ -1368,80 +1383,6 @@ function PolicyPresetSection({
             {selectedGridResolution === '100m'
               ? '서울의 모든 실제 100m 격자에 동일 정책을 적용합니다.'
               : '서울의 모든 실제 100m 격자에 동일 정책을 적용하고 현재 해상도로 집계합니다.'}
-          </p>
-        </fieldset>
-      )}
-
-      {selectedGridResolution === '100m' && !isSeoulScope && (
-        <fieldset className="policyScopeSelector">
-          <legend>정책 적용 범위</legend>
-          {([
-              { scope: 100, label: '100m', description: '현재 격자' },
-              { scope: 300, label: '300m', description: '주변 약 9개 100m 격자' },
-              { scope: 500, label: '500m', description: '주변 약 25개 100m 격자' },
-              {
-                scope: 'district',
-                label: '구 전체',
-                description: `${districtLabel} 전체 100m 격자`
-              }
-            ] as const).map((option) => (
-            <label key={option.scope}>
-              <input
-                type="radio"
-                name={`policy-scope-${gridId}`}
-                value={option.scope}
-                checked={policyScope === option.scope}
-                disabled={option.scope === 'district' && !guCode}
-                onChange={() => changeScope(option.scope)}
-              />
-              <span>
-                <b>{option.label}</b>
-                <small>{option.description}</small>
-              </span>
-            </label>
-          ))}
-          <p>
-            {isDistrictScope
-              ? `선택한 ${districtLabel}의 모든 100m 격자에 동일 정책을 적용합니다.`
-              : '서울 경계에서는 실제 존재하는 격자 수가 달라질 수 있습니다.'}
-          </p>
-        </fieldset>
-      )}
-
-      {isBatchResolution && !isSeoulScope && (
-        <fieldset className="policyScopeSelector">
-          <legend>정책 적용 범위</legend>
-          <label>
-            <input
-              type="radio"
-              name={`policy-scope-${aggregateGridId ?? selectedGridResolution}`}
-              value={selectedGridResolution}
-              checked={isAggregateSelection}
-              onChange={() => changeScope(100)}
-            />
-            <span>
-              <b>선택한 {selectedGridResolution} 격자</b>
-              <small>실제 구성 100m 격자를 개별 예측</small>
-            </span>
-          </label>
-          <label>
-            <input
-              type="radio"
-              name={`policy-scope-${aggregateGridId ?? selectedGridResolution}`}
-              value="district"
-              checked={isDistrictScope}
-              disabled={!guCode}
-              onChange={() => changeScope('district')}
-            />
-            <span>
-              <b>구 전체</b>
-              <small>{districtLabel} 전체 실제 100m 격자</small>
-            </span>
-          </label>
-          <p>
-            {isDistrictScope
-              ? `선택 자치구의 모든 실제 100m 격자에 동일 정책을 적용하고 ${selectedGridResolution} 단위로 집계합니다.`
-              : '이 영역을 구성하는 실제 100m 격자에 동일 정책을 적용합니다.'}
           </p>
         </fieldset>
       )}
@@ -1564,9 +1505,7 @@ function PolicyPresetSection({
                   ? `${districtLabel} 전체`
                   : policyBatchResult.target_mode === 'aggregate'
                   ? `선택한 ${selectedGridResolution} 격자`
-                  : policyBatchResult.scope_m
-                  ? `${policyBatchResult.scope_m}m × ${policyBatchResult.scope_m}m`
-                  : `${selectedGridResolution} 구성 셀`}
+                  : `선택한 ${selectedGridResolution} 격자`}
               </dd>
             </div>
             <div>
@@ -1709,15 +1648,15 @@ function SimulationCard({
     null
   );
   const [couple, setCouple] = useState(true);
-  const [policyScope, setPolicyScope] = useState<SimulationPolicyScope>(500);
+  // 정책 적용 범위는 좌측 대시보드의 '격자 크기' 선택을 그대로 따른다.
+  //   100m -> 선택한 그 격자 하나
+  //   250m/500m -> 그 집계 셀을 구성하는 실제 100m 격자
+  //   구 -> 그 자치구 전체
+  const policyScope: SimulationPolicyScope =
+    selectedGridResolution === 'gu' ? 'district' : 100;
   const featureRanges = useFeatureRanges();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // aggregate를 새로 선택하거나 해상도를 바꾸면 기존 동작인 '선택 격자'를 기본값으로 복귀시킨다.
-  useEffect(() => {
-    setPolicyScope(isBatchResolution ? 100 : 500);
-  }, [aggregateGridId, isBatchResolution, selectedGridResolution]);
 
   // 연동 중에는 불투수면이 녹지에서 파생되므로 슬라이더를 잠그고 파생값을 대신 보여준다.
   // (예전엔 슬라이더 기본값 imp=5가 항상 changes에 실려 연동이 한 번도 걸리지 않았다)
@@ -1822,9 +1761,6 @@ function SimulationCard({
         properties={properties}
         featureRanges={featureRanges}
         policyScope={policyScope}
-        onScopeChange={(scope) => {
-          setPolicyScope(scope);
-        }}
         onBatchSimulationResult={onBatchSimulationResult}
       />
       <div className="sec-title manualSimulationTitle">
