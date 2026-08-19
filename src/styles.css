@@ -2487,88 +2487,32 @@ td {
 .gridDetailSidePanel .policyPresetNotice{
   margin:-6px 0 13px; color:var(--gdp-ink3); font-size:11px; line-height:1.5;
 }
-/* 넓은 범위 적용 스위치 (#116). 격자 크기와 무관하게 구·서울 전체로 돌리는
-   스위치라 정책 프리셋 위, 안내 문구 앞에 둔다.
-   문구와 스위치 두 칸으로만 둔다. 정책 프리셋 버튼들이 이미 이모지를 달고 있어서
-   여기까지 아이콘을 붙이면 카드 안이 아이콘 밭이 된다. */
+/* 넓은 범위 적용 버튼 (#116).
+   흰 카드 위에 흰 버튼이면 마우스를 올리기 전에는 글자만 떠 있는 것처럼 보인다.
+   바로 아래 정책 프리셋들이 쓰는 회색 바탕을 그대로 써서 같은 결로 맞추고,
+   글자를 가운데 두어 한 줄짜리 스위치처럼 읽히게 한다. */
 .gridDetailSidePanel .policyScopeToggle{
-  display:flex; width:100%; margin:-2px 0 12px; padding:9px 11px;
-  align-items:center; gap:10px;
-  border:1px solid var(--gdp-line); border-radius:11px;
-  background:#fff; color:inherit; text-align:left; cursor:pointer;
-  transition:border-color .15s ease, background .15s ease, box-shadow .15s ease;
+  display:block; width:100%; margin:-2px 0 11px; padding:9px 12px;
+  border:1px solid transparent; border-radius:9px; background:var(--gdp-sub);
+  color:var(--gdp-ink2); font-size:11.5px; font-weight:800; text-align:center;
+  cursor:pointer;
+  transition:border-color .15s ease, background .15s ease, color .15s ease;
 }
 .gridDetailSidePanel .policyScopeToggle:hover:not(:disabled){
-  border-color:var(--gdp-green); box-shadow:0 1px 6px rgba(16,84,48,.08);
+  border-color:var(--gdp-green); color:var(--gdp-green);
 }
 .gridDetailSidePanel .policyScopeToggle:focus-visible{
   outline:2px solid var(--gdp-green); outline-offset:2px;
 }
-
-.gridDetailSidePanel .policyScopeToggle .pstBody{
-  display:flex; min-width:0; flex:1; flex-direction:column; gap:1px;
-}
-.gridDetailSidePanel .policyScopeToggle .pstBody b{ font-size:11.5px; font-weight:800; }
-.gridDetailSidePanel .policyScopeToggle .pstBody small{
-  color:var(--gdp-ink3); font-size:9.5px; line-height:1.35;
-}
-
-/* 스위치. 트랙 안에서 손잡이가 움직여 켜짐/꺼짐을 나타낸다. */
-.gridDetailSidePanel .policyScopeToggle .pstSwitch{
-  position:relative; flex:none; width:32px; height:18px;
-  border-radius:999px; background:#d8dde3; transition:background .18s ease;
-}
-.gridDetailSidePanel .policyScopeToggle .pstSwitch i{
-  position:absolute; top:2px; left:2px; width:14px; height:14px;
-  border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(20,30,45,.28);
-  transition:transform .18s ease;
-}
-.gridDetailSidePanel .policyScopeToggle.isOn .pstSwitch{ background:var(--gdp-green); }
-.gridDetailSidePanel .policyScopeToggle.isOn .pstSwitch i{ transform:translateX(14px); }
-
 /* 켜진 상태 — 선택된 정책 프리셋과 같은 초록으로 '지금 이 범위가 걸려 있다'를 알린다. */
 .gridDetailSidePanel .policyScopeToggle.isOn{
-  border-color:var(--gdp-green); background:var(--gdp-green-soft);
-}
-.gridDetailSidePanel .policyScopeToggle.isOn .pstBody b{ color:var(--gdp-green); }
-
-/* 기본 범위여서 끌 수 없는 상태. 흐리게 죽이지 않고 '기본' 배지로 이유를 밝힌다 —
-   흐린 버튼은 '고장난 것'처럼 보이는데 여기서는 이미 켜져 있다는 뜻이다. */
-.gridDetailSidePanel .policyScopeToggle.isLocked{ cursor:default; }
-.gridDetailSidePanel .policyScopeToggle .pstBadge{
-  flex:none; padding:3px 7px; border-radius:999px;
-  background:rgba(16,84,48,.10); color:var(--gdp-green);
-  font-size:9px; font-weight:800; letter-spacing:.02em;
-}
-.gridDetailSidePanel .policyScopeToggle:disabled:not(.isLocked){ opacity:.45; cursor:not-allowed; }
-
-.gridDetailSidePanel .policyScopeSelector{
-  display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px;
-  margin:0 0 12px; padding:0; border:0;
-}
-.gridDetailSidePanel .policyScopeSelector legend{
-  grid-column:1 / -1; margin-bottom:2px; color:var(--gdp-ink2); font-size:10px; font-weight:800;
-}
-.gridDetailSidePanel .policyScopeSelector label{ position:relative; cursor:pointer; }
-.gridDetailSidePanel .policyScopeSelector input{ position:absolute; opacity:0; pointer-events:none; }
-.gridDetailSidePanel .policyScopeSelector label > span{
-  display:flex; min-height:52px; padding:4px; flex-direction:column; align-items:center; justify-content:center;
-  gap:2px; border:1px solid var(--gdp-line); border-radius:8px; background:#fff;
-}
-.gridDetailSidePanel .policyScopeSelector b{ font-size:11px; }
-.gridDetailSidePanel .policyScopeSelector small{ color:var(--gdp-ink3); font-size:8.5px; line-height:1.25; text-align:center; }
-.gridDetailSidePanel .policyScopeSelector input:checked + span{
   border-color:var(--gdp-green); background:var(--gdp-green-soft); color:var(--gdp-green);
 }
-.gridDetailSidePanel .policyScopeSelector input:focus-visible + span{
-  outline:2px solid var(--gdp-green); outline-offset:2px;
-}
-.gridDetailSidePanel .policyScopeSelector input:disabled + span{
-  opacity:.48; cursor:not-allowed;
-}
-.gridDetailSidePanel .policyScopeSelector > p{
-  grid-column:1 / -1; margin:0; color:var(--gdp-ink3); font-size:9px; line-height:1.4;
-}
+/* 기본 범위여서 끌 수 없는 상태. 흐리게 죽이면 고장난 것처럼 보이는데
+   여기서는 이미 켜져 있다는 뜻이라, 켜진 모양 그대로 두고 커서만 바꾼다. */
+.gridDetailSidePanel .policyScopeToggle.isLocked{ cursor:default; }
+.gridDetailSidePanel .policyScopeToggle:disabled:not(.isLocked){ opacity:.45; cursor:not-allowed; }
+
 .gridDetailSidePanel .policyPresetGrid{
   display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px;
 }

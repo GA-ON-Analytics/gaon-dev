@@ -1207,19 +1207,13 @@ function PolicyPresetSection({
   /* ML 대상은 어느 범위든 항상 실제 100m 격자다. 바뀌는 건 결과를 어느 단위로
      보여주느냐뿐이라, 버튼에도 그 단위를 적는다. 250m를 보면서 '모든 100m
      격자가 대상'이라고만 하면 지도에 250m로 그려지는 이유가 설명되지 않는다. */
+  /* 100m는 계산 단위와 표시 단위가 같아 덧붙일 말이 없다. 그때만 빈 문자열이다. */
   const wideScopeUnitNote =
     selectedGridResolution === 'gu'
-      ? '자치구로 집계해 표시'
+      ? ' 결과는 자치구 단위로 집계해 표시합니다.'
       : selectedGridResolution === '100m'
-      ? '100m 격자로 표시'
-      : `${selectedGridResolution} 격자로 집계해 표시`;
-  // 버튼을 껐을 때 돌아갈 기본 범위를 사람 말로 적는다.
-  const scopeLabel =
-    selectedGridResolution === '100m'
-      ? '선택한 100m 격자'
-      : isBatchResolution
-      ? `선택한 ${selectedGridResolution} 격자`
-      : `${districtLabel} 전체`;
+      ? ''
+      : ` 결과는 ${selectedGridResolution} 격자로 집계해 표시합니다.`;
   const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyPreset['id'] | null>(null);
   const [policyBatchResult, setPolicyBatchResult] = useState<BatchSimulationResponse | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
@@ -1436,9 +1430,9 @@ function PolicyPresetSection({
           }
         />
       </div>
-      {/* 넓은 범위 적용 스위치. 격자 크기·격자 선택 여부와 상관없이 항상 보인다.
-          켜고 끄는 것이라 체크박스가 아니라 스위치 모양으로 뒀다 —
-          누르면 무슨 일이 일어나는지가 '+ / ✓' 글자보다 먼저 읽힌다.
+      {/* 넓은 범위 적용 버튼. 격자 크기·격자 선택 여부와 상관없이 항상 보인다.
+          한 줄짜리 버튼으로 두고 설명은 바로 아래 안내 문구에 맡긴다 — 버튼 안에
+          작은 설명을 또 넣으면 정책 프리셋 위에서 덩어리가 하나 더 생긴다.
           기본 범위가 이미 이 범위면 켜진 채 고정된다(누를 것이 없다). */}
       <button
         type="button"
@@ -1456,60 +1450,18 @@ function PolicyPresetSection({
         }
         onClick={toggleWideScope}
       >
-        <span className="pstBody">
-          <b>{wideScopeLabel} 전체 적용</b>
-          <small>
-            {isWideScopeOn
-              ? `100m 격자 전체 대상 · ${wideScopeUnitNote}`
-              : `${scopeLabel} 대신 ${wideScopeLabel} 전체에 적용`}
-          </small>
-        </span>
-        {isWideScopeDefault ? (
-          <span className="pstBadge">기본</span>
-        ) : (
-          <span className="pstSwitch" aria-hidden="true">
-            <i />
-          </span>
-        )}
+        {isWideScopeOn ? `✓ ${wideScopeLabel} 전체 적용 중` : `${wideScopeLabel} 전체 적용`}
       </button>
 
       <p className="policyPresetNotice">
         {isSeoulScope
-          ? '서울의 모든 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.'
+          ? `서울의 모든 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.${wideScopeUnitNote}`
           : isDistrictScope
-          ? `${districtLabel} 전체 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.`
+          ? `${districtLabel} 전체 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.${wideScopeUnitNote}`
           : selectedGridResolution === '100m'
           ? '선택한 100m 격자에 정책 조건을 적용하는 비교 시나리오입니다.'
           : `선택한 ${selectedGridResolution} 격자를 구성하는 각 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.`}
       </p>
-
-      {isSeoulScope && (
-        <fieldset className="policyScopeSelector">
-          <legend>정책 적용 범위</legend>
-          <label style={{ gridColumn: '1 / -1' }}>
-            <input
-              type="radio"
-              name="policy-scope-seoul"
-              value="seoul"
-              checked
-              readOnly
-            />
-            <span>
-              <b>서울시 전체</b>
-              <small>
-                {selectedGridResolution === '100m'
-                  ? '서울의 모든 실제 100m 격자'
-                  : `실제 100m 격자를 ${selectedGridResolution}로 집계`}
-              </small>
-            </span>
-          </label>
-          <p>
-            {selectedGridResolution === '100m'
-              ? '서울의 모든 실제 100m 격자에 동일 정책을 적용합니다.'
-              : '서울의 모든 실제 100m 격자에 동일 정책을 적용하고 현재 해상도로 집계합니다.'}
-          </p>
-        </fieldset>
-      )}
 
       <div className="policyPresetGrid">
         {policyPresets.map((preset) => {
