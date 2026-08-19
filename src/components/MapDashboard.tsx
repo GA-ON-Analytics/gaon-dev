@@ -625,12 +625,25 @@ function getBoundaryStyle(
   selectedDistrict: string,
   selectedLayer: LayerKey,
   isGuMode: boolean,
-  quantileSpec: QuantileBreaks | null
+  quantileSpec: QuantileBreaks | null,
+  /* 구 단위 정책 결과. gu_code → 그 구 100m 격자들의 평균 delta_c.
+     격자 모드의 afterPolicyColor와 달리 고정 임계값으로 다시 칠하지 않고,
+     '적용 후 값'을 현재 분포에서 뽑은 같은 사분위에 넣는다. 전후가 다른 잣대로
+     칠해지면 색이 변해도 그게 개선인지 분류가 바뀐 것인지 알 수 없다. */
+  afterDeltas: ReadonlyMap<string, number> | null = null
 ): PathOptions {
   const districtName = feature ? getDistrictName(feature) : '';
   const isSelected = districtName === selectedDistrict;
   const properties = feature ? getFeatureProperties(feature) : {};
-  const layerValue = getLayerValue(properties, selectedLayer, isGuMode);
+  const beforeValue = getLayerValue(properties, selectedLayer, isGuMode);
+  const afterDelta =
+    afterDeltas && properties.gu_code != null
+      ? afterDeltas.get(String(properties.gu_code))
+      : undefined;
+  const layerValue =
+    beforeValue !== null && afterDelta !== undefined
+      ? beforeValue + afterDelta
+      : beforeValue;
   const hasLayerValue = layerValue !== null;
 
   if (isGuMode) {
@@ -1750,7 +1763,8 @@ export function MapDashboard() {
           : '';
       if (!gridId) return;
 
-      // 비교 선택 의미는 2D와 동일하게 유지하되, 3D에는 별도 B highlight를 만들지 않는다.
+      // 비교 선택 의미는 2D와 동일하다. 3D의 B 강조는 compareGridId를
+      // Map3DOverlay로 내려 Heat3DMap이 직접 그린다(2D와 같은 파란색).
       if (isPickingCompareRef.current) {
         if (gridId === selectedGridIdRef.current) return;
         compareResetRef.current?.();
@@ -1909,12 +1923,22 @@ export function MapDashboard() {
     policyDistrictCode !== null &&
     batchSimulationResult.gu_code === policyDistrictCode &&
     batchSimulationResult.display_resolution === selectedGridResolution;
+  /* 격자 크기가 '구'면 지도에 100m 격자가 없다. 그래도 정책 결과를 보여줘야 하므로
+     (#116) 100m 결과를 자치구 평균으로 모아 구 폴리곤에 칠한다. 서울 전체 결과든
+     한 구 결과든 대상 격자의 grid_id 앞자리가 gu_code라 같은 방식으로 모을 수 있다. */
+  const isActiveDistrictOverviewPolicyResult =
+    selectedGridResolution === 'gu' &&
+    (batchSimulationResult?.target_mode === 'seoul' ||
+      (batchSimulationResult?.target_mode === 'district' &&
+        policyDistrictCode !== null &&
+        batchSimulationResult.gu_code === policyDistrictCode));
   const activePolicyBatchResult =
     policyContextMatches &&
     (isActiveSeoulPolicyResult ||
       isActive100mPolicyResult ||
       isActiveAggregatePolicyResult ||
-      isActiveDistrictDisplayPolicyResult)
+      isActiveDistrictDisplayPolicyResult ||
+      isActiveDistrictOverviewPolicyResult)
       ? batchSimulationResult
       : null;
 
@@ -1939,6 +1963,26 @@ export function MapDashboard() {
 
     // aggregate 결과의 results는 구성 100m 셀이라 지도에 그려지는 250/500m 격자와
     // ID가 맞지 않는다. 3D와 같이 선택한 집계 격자 하나에 평균값을 칠한다.
+    // 구 단위 지도: grid_id 앞자리(gu_code)로 묶어 평균 delta를 구 하나에 칠한다.
+    if (isGuResolution(selectedGridResolution)) {
+      const sums = new Map<string, { total: number; count: number }>();
+      for (const result of activePolicyBatchResult.results) {
+        if (result.status !== 'success') continue;
+        const delta = result.delta_c;
+        if (typeof delta !== 'number' || !Number.isFinite(delta)) continue;
+        const guCode = result.grid_id.split('_')[0];
+        if (!guCode) continue;
+        const bucket = sums.get(guCode) ?? { total: 0, count: 0 };
+        bucket.total += delta;
+        bucket.count += 1;
+        sums.set(guCode, bucket);
+      }
+      for (const [guCode, bucket] of sums) {
+        deltas.set(guCode, bucket.total / bucket.count);
+      }
+      return deltas.size > 0 ? deltas : null;
+    }
+
     if (activePolicyBatchResult.target_mode === 'aggregate') {
       const mean = activePolicyBatchResult.mean_delta_c;
       const aggregateId = activePolicyBatchResult.aggregate_id;
@@ -1956,7 +2000,7 @@ export function MapDashboard() {
       }
     }
     return deltas.size > 0 ? deltas : null;
-  }, [activePolicyBatchResult]);
+  }, [activePolicyBatchResult, selectedGridResolution]);
   // 격자를 고르지 않은 채 정책을 돌리면 결과가 지도 전체를 덮는다. 그동안 지표를 바꾸면
   // 범례와 색이 서로 다른 것을 가리키므로 지표 선택을 잠근다.
   // 격자를 클릭하면 결과가 지워지고(selectGridFeatureLayer) 잠금도 함께 풀린다.
@@ -2271,7 +2315,12 @@ export function MapDashboard() {
           />
           <RightDragPan />
           <GeoJSON
-            key={`${selectedDistrict}-${selectedLayer}-${isGuMode}`}
+            /* 전/후 토글은 style 함수만 바꿔서는 반영되지 않는다(react-leaflet은
+               같은 레이어를 다시 칠하지 않는다). key에 넣어 다시 그리게 한다 —
+               구 폴리곤 25개라 비용이 없다. */
+            key={`${selectedDistrict}-${selectedLayer}-${isGuMode}-${
+              activeAfterDeltas ? 'after' : 'before'
+            }`}
             data={geoJson}
             interactive={isGuMode}
             style={(feature) =>
@@ -2280,7 +2329,8 @@ export function MapDashboard() {
                 selectedDistrict,
                 selectedLayer,
                 isGuMode,
-                districtQuantiles
+                districtQuantiles,
+                activeAfterDeltas
               )
             }
             onEachFeature={(feature, layer) => {
@@ -2315,7 +2365,8 @@ export function MapDashboard() {
                         selectedDistrict,
                         selectedLayer,
                         isGuMode,
-                        districtQuantiles
+                        districtQuantiles,
+                        activeAfterDeltas
                       )
                     );
                   }
@@ -2433,6 +2484,7 @@ export function MapDashboard() {
         resolution={selectedGridResolution}
         selectedDistrict={selectedDistrict}
         selectedGridId={selectedMapGridId}
+        compareGridId={compareGridId}
         gridInfoSign={mapGridInfoSign}
         shelterSign={mapShelterSign}
         onGridFeatureClick={handle3DGridFeatureClick}
@@ -2483,6 +2535,7 @@ export function MapDashboard() {
         properties={selectedGridProperties}
         guGridTotal={selectedGridGuTotal}
         selectedDistrict={selectedDistrict}
+        selectedDistrictCode={selectedDistrictCode}
         selectedGridResolution={selectedGridResolution}
         isOpen={isPanelOpen}
         onToggle={() => setIsPanelOpen((prev) => !prev)}

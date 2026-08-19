@@ -34,6 +34,9 @@ interface Props {
   // 선택 격자가 속한 구의 전체 격자 수 (priority_rank의 분모). 없으면 순위만 표시.
   guGridTotal: number | null;
   selectedDistrict: string;
+  // 분석 지역이 자치구일 때 그 구의 코드. 격자를 고르지 않아도 '구 전체' 정책을
+  // 돌릴 수 있어야 해서, 선택 격자의 gu_code와 별개로 받는다.
+  selectedDistrictCode: string | null;
   selectedGridResolution: GridResolution;
   isOpen: boolean;
   onToggle: () => void;
@@ -343,6 +346,7 @@ function GridDetailSidePanel({
   properties,
   guGridTotal,
   selectedDistrict,
+  selectedDistrictCode,
   selectedGridResolution,
   isOpen,
   onToggle,
@@ -354,15 +358,20 @@ function GridDetailSidePanel({
   onBatchSimulationResult
 }: Props) {
   const fmt = (key: keyof GridAnalysisProperties) => formatValue(properties, key);
-  // 격자를 고르지 않은 서울 전체 보기에서만 '서울시 전체' 정책 카드를 띄운다.
+  // 격자를 고르지 않았을 때만 넓은 범위 정책 카드를 띄운다.
   // 격자를 고르면 아래 SimulationCard가 그 격자 기준 정책 시나리오를 맡는다 —
   // 둘을 같이 두면 '정책 시나리오'가 두 벌이 되어 어느 쪽을 돌리는지 알 수 없다.
-  // 값(해상도)으로 들고 있어야 SeoulSimulationCard의 'gu' 제외 타입이 좁혀진다.
-  const seoulPolicyResolution =
-    selectedDistrict === '전체' && selectedGridResolution !== 'gu' && !properties
-      ? selectedGridResolution
-      : null;
-  const showSeoulPolicyCard = seoulPolicyResolution !== null;
+  // 범위는 좌측 '분석 지역'을 따라간다: 자치구면 그 구 전체, '전체'면 서울시 전체.
+  const wideAreaPolicyScope: 'seoul' | 'district' | null = properties
+    ? null
+    : selectedDistrict === '전체'
+    ? 'seoul'
+    : selectedDistrictCode
+    ? 'district'
+    : null;
+  const showWideAreaPolicyCard = wideAreaPolicyScope !== null;
+  const wideAreaPolicyLabel =
+    wideAreaPolicyScope === 'district' ? `${selectedDistrict} 전체` : '서울시 전체';
   const guLabel = properties
     ? [properties.gu_name, properties.dong_name].filter(Boolean).join(' ')
     : '';
@@ -697,6 +706,7 @@ function GridDetailSidePanel({
             <SimulationCard
               properties={properties}
               selectedDistrict={selectedDistrict}
+              selectedDistrictCode={selectedDistrictCode}
               selectedGridResolution={selectedGridResolution}
               incomplete={incomplete}
               onBatchSimulationResult={onBatchSimulationResult}
@@ -717,7 +727,7 @@ function GridDetailSidePanel({
             {/* 빈 화면과 정책 카드가 서로 남처럼 놓여 있었다. 할 수 있는 일을 순서로
                 묶고, 마지막 단계가 바로 아래 정책 카드를 가리키게 해서 이어 붙인다. */}
             <div
-              className={`gridReportEmpty${showSeoulPolicyCard ? ' withPolicyBelow' : ''}`}
+              className={`gridReportEmpty${showWideAreaPolicyCard ? ' withPolicyBelow' : ''}`}
             >
               <div className="emptyIcon" aria-hidden="true">🗺️</div>
               <h2>{selectionTitle(selectedDistrict, selectedGridResolution)}</h2>
@@ -737,20 +747,23 @@ function GridDetailSidePanel({
                     지도 색이 무엇을 뜻하는지 바꿔 볼 수 있어요.
                   </span>
                 </li>
-                {showSeoulPolicyCard && (
+                {showWideAreaPolicyCard && (
                   <li>
                     <span className="egStep">3</span>
                     <span className="egText">
                       <b>아래 ‘정책 시나리오’</b>
-                      격자를 고르지 않아도 서울시 전체에 정책을 적용해 볼 수 있어요.
+                      격자를 고르지 않아도 {wideAreaPolicyLabel}에 정책을 적용해 볼 수 있어요.
                     </span>
                   </li>
                 )}
               </ol>
             </div>
-            {seoulPolicyResolution && (
-              <SeoulSimulationCard
-                selectedGridResolution={seoulPolicyResolution}
+            {wideAreaPolicyScope && (
+              <WideAreaSimulationCard
+                scope={wideAreaPolicyScope}
+                selectedDistrict={selectedDistrict}
+                selectedDistrictCode={selectedDistrictCode}
+                selectedGridResolution={selectedGridResolution}
                 onBatchSimulationResult={onBatchSimulationResult}
               />
             )}
@@ -1091,11 +1104,21 @@ function formatPolicyFeatureValue(feature: PolicyFeature, value: number): string
   return isPolicyRatio(feature) ? `${(value * 100).toFixed(1)}%` : value.toFixed(3);
 }
 
-function SeoulSimulationCard({
+/* 격자를 고르지 않은 상태의 정책 카드.
+   예전에는 '서울시 전체'만 있었다(분석 지역 '전체' + 격자 크기 100/250/500m).
+   격자를 고르지 않아도 지금 보고 있는 자치구 전체에는 정책을 돌릴 수 있어야 해서
+   범위를 인자로 받는 형태로 넓혔다(#116). 격자 크기 '구'에서도 뜬다. */
+function WideAreaSimulationCard({
+  scope,
+  selectedDistrict,
+  selectedDistrictCode,
   selectedGridResolution,
   onBatchSimulationResult
 }: {
-  selectedGridResolution: Exclude<GridResolution, 'gu'>;
+  scope: Extract<SimulationPolicyScope, 'seoul' | 'district'>;
+  selectedDistrict: string;
+  selectedDistrictCode: string | null;
+  selectedGridResolution: GridResolution;
   onBatchSimulationResult: (result: BatchSimulationResponse | null) => void;
 }) {
   return (
@@ -1104,11 +1127,12 @@ function SeoulSimulationCard({
         gridId=""
         aggregateGridId={null}
         guCode={null}
-        selectedDistrict="전체"
+        selectedDistrict={selectedDistrict}
+        selectedDistrictCode={selectedDistrictCode}
         selectedGridResolution={selectedGridResolution}
         properties={null}
         featureRanges={null}
-        policyScope="seoul"
+        policyScope={scope}
         onBatchSimulationResult={onBatchSimulationResult}
       />
     </div>
@@ -1120,6 +1144,7 @@ function PolicyPresetSection({
   aggregateGridId,
   guCode,
   selectedDistrict,
+  selectedDistrictCode,
   selectedGridResolution,
   properties,
   featureRanges,
@@ -1130,6 +1155,7 @@ function PolicyPresetSection({
   aggregateGridId: string | null;
   guCode: string | null;
   selectedDistrict: string;
+  selectedDistrictCode: string | null;
   selectedGridResolution: GridResolution;
   properties: GridAnalysisProperties | null;
   featureRanges: Record<string, FeatureRange> | null;
@@ -1138,8 +1164,30 @@ function PolicyPresetSection({
 }) {
   const isBatchResolution =
     selectedGridResolution === '250m' || selectedGridResolution === '500m';
-  const isDistrictScope = policyScope === 'district';
-  const isSeoulScope = policyScope === 'seoul';
+
+  /* 넓은 범위 적용 (#116)
+     policyScope는 좌측 '격자 크기'에서 파생된 기본 범위다(#109). 그것만으로는
+     100m를 보면서 구 전체를 돌릴 수 없어서(격자 크기를 '구'로 바꿔야 했다)
+     범위 버튼을 따로 둔다. 버튼의 범위는 좌측 '분석 지역'을 따라간다 —
+     자치구를 보고 있으면 그 구 전체, '전체'를 보고 있으면 서울시 전체다. */
+  const wideScopeKind: 'seoul' | 'district' =
+    selectedDistrict === '전체' ? 'seoul' : 'district';
+  // 격자를 고르면 그 격자의 구, 아니면 분석 지역의 구. 둘 다 없으면 구 전체는 못 돈다.
+  const districtScopeCode = guCode ?? selectedDistrictCode;
+  const [wideScopeOn, setWideScopeOn] = useState(false);
+  // 기본 범위가 이미 그 버튼과 같은 상황(격자 크기 '구' + 그 구를 보는 중, 서울 전체 카드)
+  // 에서는 토글할 것이 없다. 버튼은 켜진 채로 고정한다.
+  const isWideScopeDefault =
+    policyScope === 'seoul' ||
+    (policyScope === 'district' && wideScopeKind === 'district');
+  const isWideScopeOn = isWideScopeDefault || wideScopeOn;
+  const effectiveScope: SimulationPolicyScope = isWideScopeDefault
+    ? policyScope
+    : wideScopeOn
+    ? wideScopeKind
+    : policyScope;
+  const isDistrictScope = effectiveScope === 'district';
+  const isSeoulScope = effectiveScope === 'seoul';
   const isAggregateSelection =
     isBatchResolution && !isDistrictScope && !isSeoulScope;
   const displayResolution = isBatchResolution
@@ -1155,6 +1203,23 @@ function PolicyPresetSection({
       : typeof properties?.gu_name === 'string' && properties.gu_name.trim()
       ? properties.gu_name.trim()
       : '선택 격자의 구';
+  const wideScopeLabel = wideScopeKind === 'seoul' ? '서울시' : districtLabel;
+  /* ML 대상은 어느 범위든 항상 실제 100m 격자다. 바뀌는 건 결과를 어느 단위로
+     보여주느냐뿐이라, 버튼에도 그 단위를 적는다. 250m를 보면서 '모든 100m
+     격자가 대상'이라고만 하면 지도에 250m로 그려지는 이유가 설명되지 않는다. */
+  const wideScopeUnitNote =
+    selectedGridResolution === 'gu'
+      ? '자치구로 집계해 표시'
+      : selectedGridResolution === '100m'
+      ? '100m 격자로 표시'
+      : `${selectedGridResolution} 격자로 집계해 표시`;
+  // 버튼을 껐을 때 돌아갈 기본 범위를 사람 말로 적는다.
+  const scopeLabel =
+    selectedGridResolution === '100m'
+      ? '선택한 100m 격자'
+      : isBatchResolution
+      ? `선택한 ${selectedGridResolution} 격자`
+      : `${districtLabel} 전체`;
   const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyPreset['id'] | null>(null);
   const [policyBatchResult, setPolicyBatchResult] = useState<BatchSimulationResponse | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
@@ -1211,9 +1276,31 @@ function PolicyPresetSection({
   }
 
 
-  async function runPolicy() {
+  /* 범위를 인자로 받는다. 토글 직후 곧바로 다시 실행할 때 이 함수가 렌더 시점의
+     effectiveScope(아직 옛 범위)를 읽으면 방금 누른 범위와 다른 요청이 나간다. */
+  /* 범위를 바꾸면 이전 결과는 다른 범위의 숫자라 그대로 두면 안 된다. 지우고,
+     이미 결과를 본 뒤라면(=정책을 골라 실행까지 한 상태) 새 범위로 다시 돌린다. */
+  function toggleWideScope() {
+    const next = !wideScopeOn;
+    const nextScope: SimulationPolicyScope = next ? wideScopeKind : policyScope;
+    setWideScopeOn(next);
+    requestVersionRef.current += 1;
+    setPolicyBatchResult(null);
+    setPolicyError(null);
+    setPolicyWarnings([]);
+    setPolicyLoading(false);
+    onBatchSimulationResult(null);
+    if (selectedPolicy && policyBatchResult) void runPolicy(nextScope);
+  }
+
+  async function runPolicy(scopeOverride?: SimulationPolicyScope) {
     if (!selectedPolicy) return;
-    const applicability = skipsSingleGridApplicability
+    const scope = scopeOverride ?? effectiveScope;
+    const runsSeoulScope = scope === 'seoul';
+    const runsDistrictScope = scope === 'district';
+    const runsAggregateSelection =
+      isBatchResolution && !runsSeoulScope && !runsDistrictScope;
+    const applicability = isBatchResolution || runsSeoulScope || runsDistrictScope
       ? { applicable: true }
       : properties
       ? policyApplicability(selectedPolicy, properties, featureRanges)
@@ -1231,7 +1318,7 @@ function PolicyPresetSection({
     onBatchSimulationResult(null);
 
     try {
-      if (isAggregateSelection) {
+      if (runsAggregateSelection) {
         if (!aggregateGridId) {
           setPolicyError('선택한 집계 격자를 확인할 수 없어요.');
           return;
@@ -1270,16 +1357,16 @@ function PolicyPresetSection({
       }
 
       const request = policySimulationRequest(gridId || 'seoul', selectedPolicy);
-      const response = isSeoulScope
+      const response = runsSeoulScope
         ? await simulateSeoulGridPolicy(
             request.changes ?? {},
             request.couple_land_cover ?? false,
             displayResolution
           )
-        : isDistrictScope
-        ? guCode
+        : runsDistrictScope
+        ? districtScopeCode
           ? await simulateDistrictGridPolicy(
-              guCode,
+              districtScopeCode,
               request.changes ?? {},
               request.couple_land_cover ?? false,
               displayResolution
@@ -1287,7 +1374,7 @@ function PolicyPresetSection({
           : null
         : await simulateScopedGridPolicy(
             gridId,
-            policyScope,
+            scope,
             request.changes ?? {},
             request.couple_land_cover ?? false
           );
@@ -1349,10 +1436,47 @@ function PolicyPresetSection({
           }
         />
       </div>
+      {/* 넓은 범위 적용 스위치. 격자 크기·격자 선택 여부와 상관없이 항상 보인다.
+          켜고 끄는 것이라 체크박스가 아니라 스위치 모양으로 뒀다 —
+          누르면 무슨 일이 일어나는지가 '+ / ✓' 글자보다 먼저 읽힌다.
+          기본 범위가 이미 이 범위면 켜진 채 고정된다(누를 것이 없다). */}
+      <button
+        type="button"
+        className={`policyScopeToggle${isWideScopeOn ? ' isOn' : ''}${
+          isWideScopeDefault ? ' isLocked' : ''
+        }`}
+        aria-pressed={isWideScopeOn}
+        disabled={isWideScopeDefault || (wideScopeKind === 'district' && !districtScopeCode)}
+        title={
+          isWideScopeDefault
+            ? `격자 크기가 '${
+                selectedGridResolution === 'gu' ? '구' : selectedGridResolution
+              }'라 ${wideScopeLabel} 전체가 기본 범위입니다.`
+            : undefined
+        }
+        onClick={toggleWideScope}
+      >
+        <span className="pstBody">
+          <b>{wideScopeLabel} 전체 적용</b>
+          <small>
+            {isWideScopeOn
+              ? `100m 격자 전체 대상 · ${wideScopeUnitNote}`
+              : `${scopeLabel} 대신 ${wideScopeLabel} 전체에 적용`}
+          </small>
+        </span>
+        {isWideScopeDefault ? (
+          <span className="pstBadge">기본</span>
+        ) : (
+          <span className="pstSwitch" aria-hidden="true">
+            <i />
+          </span>
+        )}
+      </button>
+
       <p className="policyPresetNotice">
         {isSeoulScope
           ? '서울의 모든 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.'
-          : selectedGridResolution === 'gu'
+          : isDistrictScope
           ? `${districtLabel} 전체 100m 격자에 동일한 정책 조건을 적용하는 비교 시나리오입니다.`
           : selectedGridResolution === '100m'
           ? '선택한 100m 격자에 정책 조건을 적용하는 비교 시나리오입니다.'
@@ -1466,11 +1590,11 @@ function PolicyPresetSection({
           <button
             className="policyRunButton"
             type="button"
-            onClick={runPolicy}
+            onClick={() => void runPolicy()}
             disabled={
               !selectedApplicability.applicable ||
               policyLoading ||
-              (isDistrictScope && !guCode)
+              (isDistrictScope && !districtScopeCode)
             }
           >
             {policyLoading
@@ -1614,12 +1738,14 @@ function PolicyPresetSection({
 function SimulationCard({
   properties,
   selectedDistrict,
+  selectedDistrictCode,
   selectedGridResolution,
   incomplete,
   onBatchSimulationResult
 }: {
   properties: GridAnalysisProperties;
   selectedDistrict: string;
+  selectedDistrictCode: string | null;
   selectedGridResolution: GridResolution;
   incomplete: boolean;
   onBatchSimulationResult: (result: BatchSimulationResponse | null) => void;
@@ -1736,8 +1862,22 @@ function SimulationCard({
 
   if (!canSimulate) {
     return (
+      /* 이 격자 하나는 못 돌려도 구·서울 전체는 돌릴 수 있다. 정책 시나리오까지
+         같이 감추면 데이터가 빈 격자를 밟았다는 이유로 넓은 범위 적용이 막힌다(#116). */
       <div className="card gdpSim">
-        <div className="sec-title">직접 시뮬레이션</div>
+        <PolicyPresetSection
+          gridId={gridId}
+          aggregateGridId={aggregateGridId}
+          guCode={guCode}
+          selectedDistrict={selectedDistrict}
+          selectedDistrictCode={selectedDistrictCode}
+          selectedGridResolution={selectedGridResolution}
+          properties={properties}
+          featureRanges={featureRanges}
+          policyScope={policyScope}
+          onBatchSimulationResult={onBatchSimulationResult}
+        />
+        <div className="sec-title manualSimulationTitle">직접 시뮬레이션</div>
         <p className="gdpNote">
           {incomplete
             ? '데이터가 불완전한 격자라 시뮬레이션을 제공하지 않아요.'
@@ -1757,6 +1897,7 @@ function SimulationCard({
         aggregateGridId={aggregateGridId}
         guCode={guCode}
         selectedDistrict={selectedDistrict}
+        selectedDistrictCode={selectedDistrictCode}
         selectedGridResolution={selectedGridResolution}
         properties={properties}
         featureRanges={featureRanges}
