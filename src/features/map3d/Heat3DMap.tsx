@@ -37,6 +37,10 @@ const GRID_POLICY_SCOPE_OPACITY = 0.18;
 // 2D 선택 외곽선과 같은 색을 사용하며, 실제 데이터 높이와 구분되는 얇은 선택 cap이다.
 const GRID_SELECTION_COLOR = '#111827';
 const GRID_SELECTION_CAP_HEIGHT = 12;
+// 비교 격자(B)는 2D와 같은 파란색을 쓴다. 2D의 CanvasGridLayer 테두리,
+// 250/500m Leaflet 레이어 스타일도 같은 값이라 모드를 오가도 색이 유지된다.
+const GRID_COMPARE_LAYER_ID = 'gaon-100m-grid-compare';
+const GRID_COMPARE_COLOR = '#1c7ed6';
 // 기존 2D 지표면온도 범례와 동일한 고정 구간 및 색상이다.
 const LST_COLOR_LOW = '#6fbf73';
 const LST_COLOR_MEDIUM = '#f2cf5b';
@@ -97,6 +101,7 @@ interface Heat3DMapProps {
   resolution: GridResolution;
   selectedDistrict: string;
   selectedGridId: string | null;
+  compareGridId: string | null;
   gridInfoSign: Map3DGridInfoSign | null;
   shelterSign: Map3DShelterSign | null;
   onGridFeatureClick: Map3DGridFeatureClickHandler;
@@ -672,27 +677,26 @@ function getCapHeightExpression(
 }
 
 function getGridSelectionFilter(
-  selectedGridId: string | null,
+  gridId: string | null,
   resolution: GridResolution
 ): GridSelectionFilter {
-  if (selectedGridId === null) {
+  if (gridId === null) {
     return ['==', ['literal', true], ['literal', false]];
   }
 
   const idProperty = resolution === '100m' ? 'grid_id' : 'display_grid_id';
-  return ['==', ['to-string', ['get', idProperty]], selectedGridId];
+  return ['==', ['to-string', ['get', idProperty]], gridId];
 }
 
-function updateGridSelection(
+/** 선택 격자(A)·비교 격자(B)가 같은 방식으로 한 격자만 남기는 필터를 쓴다 */
+function updateGridHighlight(
   map: Map,
-  selectedGridId: string | null,
+  layerId: string,
+  gridId: string | null,
   resolution: GridResolution
 ): void {
-  if (!map.getLayer(GRID_SELECTION_LAYER_ID)) return;
-  map.setFilter(
-    GRID_SELECTION_LAYER_ID,
-    getGridSelectionFilter(selectedGridId, resolution)
-  );
+  if (!map.getLayer(layerId)) return;
+  map.setFilter(layerId, getGridSelectionFilter(gridId, resolution));
 }
 
 function getGridPolicyScopeFilter(policyGridIds: string[]): GridSelectionFilter {
@@ -789,6 +793,16 @@ function updateGridViewMode(map: Map, viewMode: Map3DViewMode): void {
       getCapHeightExpression(viewMode, GRID_SELECTION_CAP_HEIGHT)
     );
   }
+  // 비교 격자는 선택 격자와 같은 높이의 뚜껑을 쓴다. 높이가 다르면 둘 중
+  // 하나가 더 중요해 보이는데, A·B는 대등한 비교 대상이다.
+  if (map.getLayer(GRID_COMPARE_LAYER_ID)) {
+    map.setPaintProperty(GRID_COMPARE_LAYER_ID, 'fill-extrusion-base', height);
+    map.setPaintProperty(
+      GRID_COMPARE_LAYER_ID,
+      'fill-extrusion-height',
+      getCapHeightExpression(viewMode, GRID_SELECTION_CAP_HEIGHT)
+    );
+  }
 }
 
 function updateGridLayer(
@@ -877,6 +891,26 @@ function updateGridLayer(
     });
   }
 
+  if (!map.getLayer(GRID_COMPARE_LAYER_ID)) {
+    map.addLayer({
+      id: GRID_COMPARE_LAYER_ID,
+      type: 'fill-extrusion',
+      source: GRID_SOURCE_ID,
+      filter: getGridSelectionFilter(null, resolution),
+      paint: {
+        'fill-extrusion-base': getDisplayedHeightExpression(viewMode),
+        'fill-extrusion-base-transition': { duration: 400, delay: 0 },
+        'fill-extrusion-height': getCapHeightExpression(
+          viewMode,
+          GRID_SELECTION_CAP_HEIGHT
+        ),
+        'fill-extrusion-height-transition': { duration: 400, delay: 0 },
+        'fill-extrusion-color': GRID_COMPARE_COLOR,
+        'fill-extrusion-opacity': 1
+      }
+    });
+  }
+
   updateGridViewMode(map, viewMode);
 
   if (!gridData || gridData.features.length === 0) return;
@@ -900,6 +934,7 @@ export default function Heat3DMap({
   resolution,
   selectedDistrict,
   selectedGridId,
+  compareGridId,
   gridInfoSign,
   shelterSign,
   onGridFeatureClick,
@@ -915,6 +950,7 @@ export default function Heat3DMap({
   const viewModeRef = useRef(viewMode);
   const policyGridIdsRef = useRef(getPolicyGridIds(batchSimulationResult));
   const selectedGridIdRef = useRef(selectedGridId);
+  const compareGridIdRef = useRef(compareGridId);
   const gridInfoSignRef = useRef(gridInfoSign);
   const shelterSignRef = useRef(shelterSign);
   const onGridFeatureClickRef = useRef(onGridFeatureClick);
@@ -948,6 +984,7 @@ export default function Heat3DMap({
   const supportsGridDetails = hasSupportedGridData && !isSeoulOverview;
   const showsPolicyScope = getPolicyGridIds(batchSimulationResult).length > 0;
   selectedGridIdRef.current = supportsGridDetails ? selectedGridId : null;
+  compareGridIdRef.current = supportsGridDetails ? compareGridId : null;
   gridInfoSignRef.current = supportsGridDetails ? gridInfoSign : null;
   shelterSignRef.current = supportsGridDetails ? shelterSign : null;
 
@@ -1007,9 +1044,16 @@ export default function Heat3DMap({
           selectedGridIdRef.current
         );
         updateGridPolicyScope(map, policyGridIdsRef.current);
-        updateGridSelection(
+        updateGridHighlight(
           map,
+          GRID_SELECTION_LAYER_ID,
           selectedGridIdRef.current,
+          resolutionRef.current
+        );
+        updateGridHighlight(
+          map,
+          GRID_COMPARE_LAYER_ID,
+          compareGridIdRef.current,
           resolutionRef.current
         );
         gridClickSubscription = map.on('click', GRID_FILL_LAYER_ID, handleGridClick);
@@ -1082,12 +1126,19 @@ export default function Heat3DMap({
     const map = mapRef.current;
     if (!map || !isMapLoadedRef.current) return;
 
-    updateGridSelection(
+    updateGridHighlight(
       map,
+      GRID_SELECTION_LAYER_ID,
       supportsGridDetails ? selectedGridId : null,
       resolution
     );
-  }, [resolution, selectedGridId, supportsGridDetails]);
+    updateGridHighlight(
+      map,
+      GRID_COMPARE_LAYER_ID,
+      supportsGridDetails ? compareGridId : null,
+      resolution
+    );
+  }, [compareGridId, resolution, selectedGridId, supportsGridDetails]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1136,7 +1187,8 @@ export default function Heat3DMap({
               <span key={item.label}>{item.label}</span>
             ))}
           </div>
-          {(showsPolicyScope || (supportsGridDetails && selectedGridId)) && (
+          {(showsPolicyScope ||
+            (supportsGridDetails && (selectedGridId || compareGridId))) && (
             <div className="map3dLegendMarks">
               {showsPolicyScope && (
                 <span>
@@ -1148,6 +1200,12 @@ export default function Heat3DMap({
                 <span>
                   <i className="isSelectedGrid" />
                   선택 격자
+                </span>
+              )}
+              {supportsGridDetails && compareGridId && (
+                <span>
+                  <i className="isCompareGrid" />
+                  비교 격자
                 </span>
               )}
             </div>

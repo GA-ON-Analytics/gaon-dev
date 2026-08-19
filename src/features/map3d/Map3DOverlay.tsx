@@ -23,6 +23,7 @@ interface Map3DOverlayProps {
   resolution: GridResolution;
   selectedDistrict: string;
   selectedGridId: string | null;
+  compareGridId: string | null;
   gridInfoSign: Map3DGridInfoSign | null;
   shelterSign: Map3DShelterSign | null;
   onGridFeatureClick: Map3DGridFeatureClickHandler;
@@ -40,6 +41,7 @@ export default function Map3DOverlay({
   resolution,
   selectedDistrict,
   selectedGridId,
+  compareGridId,
   gridInfoSign,
   shelterSign,
   onGridFeatureClick,
@@ -71,6 +73,7 @@ export default function Map3DOverlay({
             resolution={resolution}
             selectedDistrict={selectedDistrict}
             selectedGridId={selectedGridId}
+            compareGridId={compareGridId}
             gridInfoSign={gridInfoSign}
             shelterSign={shelterSign}
             onGridFeatureClick={onGridFeatureClick}

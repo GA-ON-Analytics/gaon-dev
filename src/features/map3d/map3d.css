@@ -413,6 +413,10 @@
   background: #111827;
 }
 
+.map3dLegendMarks .isCompareGrid {
+  background: #1c7ed6;
+}
+
 .map3dToggle {
   position: absolute;
   top: var(--panel-edge-gap);
