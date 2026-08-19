@@ -521,8 +521,14 @@ function pickByBreaks(value: number, breaks: readonly number[], highIsRisk: bool
   return ramp[breaks.length];
 }
 
+/* 경계값은 실제 점수 분포를 보고 정했다. 서울 100m 격자 64,546개 기준
+   중앙값 49.3, 상위 5%가 69.4, 최댓값이 86.5다.
+   예전 경계(40/60/80)는 80점 이상이 0.2%(약 130개)뿐이라 '시급' 빨강이
+   지도에서 사실상 보이지 않았고, 60~80 노랑 구간이 55%를 차지했다.
+   40/55/70으로 내리면 22% / 42% / 32% / 4.4%로 네 등급이 고르게 퍼진다.
+   (250m·500m 격자도 같은 경향이라 해상도별로 따로 두지 않는다) */
 function colorByScore(value: number, highIsRisk = true) {
-  return pickByBreaks(value, [40, 60, 80], highIsRisk);
+  return pickByBreaks(value, [40, 55, 70], highIsRisk);
 }
 
 function colorByRatio(value: number, highIsRisk: boolean) {
