@@ -2487,6 +2487,30 @@ td {
 .gridDetailSidePanel .policyPresetNotice{
   margin:-6px 0 13px; color:var(--gdp-ink3); font-size:11px; line-height:1.5;
 }
+/* 넓은 범위 적용 버튼 (#116). 격자 크기와 무관하게 구·서울 전체로 돌리는 스위치라
+   정책 프리셋 위, 안내 문구 앞에 둔다. 켜진 상태는 선택된 프리셋과 같은 초록으로
+   칠해 '지금 이 범위가 걸려 있다'가 한눈에 보이게 한다. */
+.gridDetailSidePanel .policyWideScopeButton{
+  display:flex; width:100%; margin:-2px 0 10px; padding:9px 11px;
+  flex-direction:column; align-items:flex-start; gap:2px;
+  border:1px solid var(--gdp-line); border-radius:9px; background:#fff;
+  color:inherit; text-align:left; cursor:pointer;
+}
+.gridDetailSidePanel .policyWideScopeButton b{ font-size:11.5px; font-weight:800; }
+.gridDetailSidePanel .policyWideScopeButton small{
+  color:var(--gdp-ink3); font-size:9.5px; line-height:1.35;
+}
+.gridDetailSidePanel .policyWideScopeButton.isActive{
+  border-color:var(--gdp-green); background:var(--gdp-green-soft); color:var(--gdp-green);
+}
+.gridDetailSidePanel .policyWideScopeButton.isActive small{ color:var(--gdp-green); }
+.gridDetailSidePanel .policyWideScopeButton:focus-visible{
+  outline:2px solid var(--gdp-green); outline-offset:2px;
+}
+/* 기본 범위가 이미 이 범위여서 끌 수 없는 상태. 눌리지 않을 뿐 정보는 그대로 읽힌다. */
+.gridDetailSidePanel .policyWideScopeButton:disabled{ cursor:default; }
+.gridDetailSidePanel .policyWideScopeButton:disabled:not(.isActive){ opacity:.48; }
+
 .gridDetailSidePanel .policyScopeSelector{
   display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px;
   margin:0 0 12px; padding:0; border:0;
