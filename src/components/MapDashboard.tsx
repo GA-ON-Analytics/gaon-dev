@@ -1750,7 +1750,8 @@ export function MapDashboard() {
           : '';
       if (!gridId) return;
 
-      // 비교 선택 의미는 2D와 동일하게 유지하되, 3D에는 별도 B highlight를 만들지 않는다.
+      // 비교 선택 의미는 2D와 동일하다. 3D의 B 강조는 compareGridId를
+      // Map3DOverlay로 내려 Heat3DMap이 직접 그린다(2D와 같은 파란색).
       if (isPickingCompareRef.current) {
         if (gridId === selectedGridIdRef.current) return;
         compareResetRef.current?.();
@@ -2433,6 +2434,7 @@ export function MapDashboard() {
         resolution={selectedGridResolution}
         selectedDistrict={selectedDistrict}
         selectedGridId={selectedMapGridId}
+        compareGridId={compareGridId}
         gridInfoSign={mapGridInfoSign}
         shelterSign={mapShelterSign}
         onGridFeatureClick={handle3DGridFeatureClick}
