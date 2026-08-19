@@ -34,8 +34,8 @@ interface LegendSpec {
 const SPECS: Partial<Record<LayerKey, LegendSpec>> = {
   priority_score: {
     hint: '종합 점수 0~100',
-    probes: [20, 50, 70, 90],
-    ticks: ['40', '60', '80'],
+    probes: [30, 48, 62, 80],
+    ticks: ['40', '55', '70'],
     lowLabel: '여유',
     highLabel: '시급'
   },
