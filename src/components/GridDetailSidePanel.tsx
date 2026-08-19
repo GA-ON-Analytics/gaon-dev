@@ -1209,10 +1209,10 @@ function PolicyPresetSection({
      격자가 대상'이라고만 하면 지도에 250m로 그려지는 이유가 설명되지 않는다. */
   const wideScopeUnitNote =
     selectedGridResolution === 'gu'
-      ? '자치구 단위로 집계해 표시'
+      ? '자치구로 집계해 표시'
       : selectedGridResolution === '100m'
-      ? '100m 격자 단위로 표시'
-      : `${selectedGridResolution} 격자 단위로 집계해 표시`;
+      ? '100m 격자로 표시'
+      : `${selectedGridResolution} 격자로 집계해 표시`;
   // 버튼을 껐을 때 돌아갈 기본 범위를 사람 말로 적는다.
   const scopeLabel =
     selectedGridResolution === '100m'
@@ -1436,27 +1436,41 @@ function PolicyPresetSection({
           }
         />
       </div>
-      {/* 넓은 범위 적용 버튼. 격자 크기·격자 선택 여부와 상관없이 항상 보인다.
+      {/* 넓은 범위 적용 스위치. 격자 크기·격자 선택 여부와 상관없이 항상 보인다.
+          켜고 끄는 것이라 체크박스가 아니라 스위치 모양으로 뒀다 —
+          누르면 무슨 일이 일어나는지가 '+ / ✓' 글자보다 먼저 읽힌다.
           기본 범위가 이미 이 범위면 켜진 채 고정된다(누를 것이 없다). */}
       <button
         type="button"
-        className={`policyWideScopeButton${isWideScopeOn ? ' isActive' : ''}`}
+        className={`policyScopeToggle${isWideScopeOn ? ' isOn' : ''}${
+          isWideScopeDefault ? ' isLocked' : ''
+        }`}
         aria-pressed={isWideScopeOn}
         disabled={isWideScopeDefault || (wideScopeKind === 'district' && !districtScopeCode)}
+        title={
+          isWideScopeDefault
+            ? `격자 크기가 '${
+                selectedGridResolution === 'gu' ? '구' : selectedGridResolution
+              }'라 ${wideScopeLabel} 전체가 기본 범위입니다.`
+            : undefined
+        }
         onClick={toggleWideScope}
       >
-        <b>
-          {isWideScopeOn ? '✓ ' : '+ '}
-          {wideScopeLabel} 전체 적용
-          {isWideScopeOn ? ' 중' : '하기'}
-        </b>
-        <small>
-          {isWideScopeOn
-            ? `${wideScopeLabel} 전체 100m 격자가 대상 · ${wideScopeUnitNote}${
-                isWideScopeDefault ? '' : ' · 다시 누르면 해제'
-              }`
-            : `${scopeLabel} 대신 ${wideScopeLabel} 전체에 적용 · ${wideScopeUnitNote}`}
-        </small>
+        <span className="pstBody">
+          <b>{wideScopeLabel} 전체 적용</b>
+          <small>
+            {isWideScopeOn
+              ? `100m 격자 전체 대상 · ${wideScopeUnitNote}`
+              : `${scopeLabel} 대신 ${wideScopeLabel} 전체에 적용`}
+          </small>
+        </span>
+        {isWideScopeDefault ? (
+          <span className="pstBadge">기본</span>
+        ) : (
+          <span className="pstSwitch" aria-hidden="true">
+            <i />
+          </span>
+        )}
       </button>
 
       <p className="policyPresetNotice">
