@@ -1204,6 +1204,15 @@ function PolicyPresetSection({
       ? properties.gu_name.trim()
       : '선택 격자의 구';
   const wideScopeLabel = wideScopeKind === 'seoul' ? '서울시' : districtLabel;
+  /* ML 대상은 어느 범위든 항상 실제 100m 격자다. 바뀌는 건 결과를 어느 단위로
+     보여주느냐뿐이라, 버튼에도 그 단위를 적는다. 250m를 보면서 '모든 100m
+     격자가 대상'이라고만 하면 지도에 250m로 그려지는 이유가 설명되지 않는다. */
+  const wideScopeUnitNote =
+    selectedGridResolution === 'gu'
+      ? '자치구 단위로 집계해 표시'
+      : selectedGridResolution === '100m'
+      ? '100m 격자 단위로 표시'
+      : `${selectedGridResolution} 격자 단위로 집계해 표시`;
   // 버튼을 껐을 때 돌아갈 기본 범위를 사람 말로 적는다.
   const scopeLabel =
     selectedGridResolution === '100m'
@@ -1442,11 +1451,11 @@ function PolicyPresetSection({
           {isWideScopeOn ? ' 중' : '하기'}
         </b>
         <small>
-          {isWideScopeDefault
-            ? `${wideScopeLabel}의 모든 100m 격자가 대상입니다.`
-            : isWideScopeOn
-            ? '해제하면 원래 범위로 돌아갑니다.'
-            : `${scopeLabel} 대신 ${wideScopeLabel} 전체에 적용합니다.`}
+          {isWideScopeOn
+            ? `${wideScopeLabel} 전체 100m 격자가 대상 · ${wideScopeUnitNote}${
+                isWideScopeDefault ? '' : ' · 다시 누르면 해제'
+              }`
+            : `${scopeLabel} 대신 ${wideScopeLabel} 전체에 적용 · ${wideScopeUnitNote}`}
         </small>
       </button>
 
